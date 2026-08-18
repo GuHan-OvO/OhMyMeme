@@ -80,6 +80,14 @@ _LOG_MAX = 5000
 
 # 分页：主窗口单页展示的表情包数量（与前端 index.js MEME_PAGE 保持一致）
 MEME_PAGE = 200
+_UPLOAD_BODY_LIMIT = 28 * 1024 * 1024
+
+
+def _read_upload_body(stream):
+    body = stream.read(_UPLOAD_BODY_LIMIT + 1)
+    if len(body) > _UPLOAD_BODY_LIMIT:
+        return None
+    return body
 
 # 贡献者 SVG 缓存：TTL 1 小时，避免每次打开设置页都请求外网；刷新失败退避
 # 重试，避免上游不可用时每个请求都反复触发 10s 慢抓取
@@ -3782,10 +3790,17 @@ class WebUI:
                 import json
 
                 content_length = bottle.request.headers.get("Content-Length", "0")
-                if content_length.isdigit() and int(content_length) > 28 * 1024 * 1024:
+                if (
+                    content_length.isdigit()
+                    and int(content_length) > _UPLOAD_BODY_LIMIT
+                ):
                     bottle.response.status = 413
                     return {"ok": False, "error": "上传内容超过限制"}
-                data = json.loads(bottle.request.body.read())
+                body = _read_upload_body(bottle.request.body)
+                if body is None:
+                    bottle.response.status = 413
+                    return {"ok": False, "error": "上传内容超过限制"}
+                data = json.loads(body)
                 files = data.get("files", []) if isinstance(data, dict) else data
                 if not isinstance(files, list) or len(files) > 200:
                     bottle.response.status = 413
@@ -3798,7 +3813,7 @@ class WebUI:
                         continue
                     import base64
 
-                    if len(b64) > 28 * 1024 * 1024:
+                    if len(b64) > _UPLOAD_BODY_LIMIT:
                         continue
                     raw = base64.b64decode(b64)
                     tmp = str(self._cfg.cache_dir / f"_upload_{uuid.uuid4().hex}{ext}")
