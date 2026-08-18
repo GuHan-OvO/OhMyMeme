@@ -66,8 +66,9 @@ from .clipboard_util import (
     convert_image_mode_3,
     copy_image_to_clipboard,
 )
-from .config import _IMPORT_MAX_BYTES, _IMPORT_MAX_PX, get_config
+from .config import get_config
 from .database import get_db
+from .import_service import ImageImportService, ImportBytes, ImportPath
 from .manifest import build as build_manifest
 
 logger = logging.getLogger(__name__)
@@ -3782,16 +3783,13 @@ class WebUI:
 
                 data = json.loads(bottle.request.body.read())
                 files = data.get("files", []) if isinstance(data, dict) else data
-                allowed = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
-                paths, names = [], []
+                requests = []
                 for item in files:
                     oname = item.get("name", "")
                     b64 = item.get("data", "")
-                    ext = os.path.splitext(oname)[1].lower()
-                    if ext not in allowed or not b64:
+                    if not oname or not b64:
                         continue
                     import base64
-                    import uuid
 
                     raw = base64.b64decode(b64)
                     tmp = str(self._cfg.cache_dir / f"_upload_{uuid.uuid4().hex}{ext}")
@@ -3861,8 +3859,6 @@ class WebUI:
 
     def scan_cache(self):
         """扫描本地缓存目录，将已有文件自动注册到数据库"""
-        import hashlib
-
         cache_dir = self._cfg.cache_dir
         db = get_db()
         allowed_ext = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
