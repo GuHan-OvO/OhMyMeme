@@ -101,6 +101,7 @@ async function closeSettings() {
   try { pywebview.api.close_settings(); } catch(e) {}
 }
 
+
 /* Hotkey capture */
 let hotkeyCapturing = false;
 function startHotkeyCapture(input) {
@@ -702,6 +703,7 @@ async function resetSettings() {
   }
 }
 
+
 async function testSync() {
   const sync = collectSyncSettings();
   if (!validateSync(sync)) return;
@@ -920,6 +922,8 @@ async function syncPull() {
   await doSyncWithProgress('sync_pull', '下载中...', 's-show-dl-progress', 's-show-dl-done', 'btn-sync-pull', 's-sync-status');
 }
 
+
+
 /* QQ Import */
 let qqPollTimer = null;
 
@@ -1035,6 +1039,7 @@ async function startImportFromZip() {
 }
 
 /* 抖音表情包下载导入 */
+
 let dyPollTimer = null;
 
 function openDYImportDialog() {
@@ -1168,6 +1173,7 @@ async function startDYImport() {
     }
   }, 300);
 }
+
 
 /* Telegram 缓存导入 */
 let tgPollTimer = null;
@@ -1345,6 +1351,7 @@ async function startTGImport() {
     }
   }, 300);
 }
+
 
 /* 微信缓存导入 */
 let wechatPollTimer = null;
@@ -1583,6 +1590,7 @@ async function startWechatImport() {
   }, 300);
 }
 
+
 /* QQNT 提取向导 */
 let qqntPollTimer = null;
 let qqnt = { step: 1, env: null, accounts: [], qq: '', base: '', output_dir: '' };
@@ -1766,6 +1774,7 @@ async function qqntOpenDir() {
   await api('qqnt_open_dir', qqnt.output_dir);
 }
 
+
 /* Toast */
 let toastTimer;
 function showToast(msg) {
@@ -1873,6 +1882,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (e.key === 'Enter' && e.ctrlKey) saveSettings();
 });
+
 
 /* Update check */
 async function checkUpdate() {
@@ -2028,8 +2038,6 @@ async function dangerExec() {
     showToast('操作失败: ' + ((r && r.error) || '未知错误'));
   }
 }
-
-
 
 /* Init */
 let initRetries = 0;
