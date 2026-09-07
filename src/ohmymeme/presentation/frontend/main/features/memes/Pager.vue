@@ -25,7 +25,13 @@ const pages = computed<number[]>(() => {
 // 判断两页之间是否需要省略号
 function needDots(idx: number): boolean {
   if (idx === 0) return false
-  return pages.value[idx] - pages.value[idx - 1] > 1
+  const currentPage = pages.value[idx]
+  const previousPage = pages.value[idx - 1]
+  return (
+    currentPage !== undefined &&
+    previousPage !== undefined &&
+    currentPage - previousPage > 1
+  )
 }
 
 function go(p: number) {
