@@ -381,6 +381,9 @@ def test_handshake_retry_limit(lan_env):
 
 def test_pull_manifest(lan_env):
     cfg, db, tmp = lan_env
+    first = db.add_meme("first.png", file_hash="a" * 64)
+    second = db.add_meme("second.png", file_hash="b" * 64)
+    db.reorder_memes([second, first])
     sock = _connect()
     key = _handshake(sock, "test-secret")
     _send_frame(sock, key, {"cmd": "pull_manifest"})
@@ -388,6 +391,11 @@ def test_pull_manifest(lan_env):
     assert resp["ok"] is True
     assert "manifest" in resp
     assert isinstance(resp["manifest"].get("memes"), list)
+    assert [meme["filename"] for meme in resp["manifest"]["memes"]] == [
+        "second.png",
+        "first.png",
+    ]
+    assert [meme["sort_order"] for meme in resp["manifest"]["memes"]] == [0, 1]
     sock.close()
 
 

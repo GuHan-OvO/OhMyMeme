@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ohmymeme.cli.douyin_dl import gen_random_str, gen_verify_fp, sign_url
+from ohmymeme.integrations.imports import douyin
 
 
 class TestGenRandomStr(unittest.TestCase):
@@ -88,6 +89,23 @@ class TestSignUrl(unittest.TestCase):
         a1 = url1.split("a_bogus=")[1]
         a2 = url2.split("a_bogus=")[1]
         self.assertNotEqual(a1, a2)
+
+
+class TestDouyinCompatibility(unittest.TestCase):
+    def test_403_sticker_api_keeps_sign_failed_sentinel(self):
+        class Response:
+            status_code = 403
+
+        class Session:
+            def request(self, *_args, **_kwargs):
+                return Response()
+
+        original_request = douyin._policy_request
+        douyin._policy_request = lambda *_args, **_kwargs: Response()
+        try:
+            self.assertIsNone(douyin._fetch_sticker_list(Session()))
+        finally:
+            douyin._policy_request = original_request
 
 
 if __name__ == "__main__":
