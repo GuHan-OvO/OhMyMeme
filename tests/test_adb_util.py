@@ -2,6 +2,7 @@
 
 import subprocess
 import sys
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -87,3 +88,37 @@ def test_probe_timeout_propagates(monkeypatch):
 def test_cancel_during_probe_returns_none(monkeypatch):
     _setup(monkeypatch, {PRIMARY}, cancelled=True)
     assert A._find_qq_favorite_dir("adb") is None
+
+
+def test_adb_download_requires_configured_archive_and_binary_hashes(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "_get_adb_dir", lambda: tmp_path / ".adb")
+    monkeypatch.setattr(A, "_adb_download_url", lambda: "https://public.example/adb.zip")
+    monkeypatch.setitem(A._ADB_SHA256, "Windows", "")
+    monkeypatch.setitem(A._ADB_BINARY_SHA256, "Windows", "")
+    monkeypatch.setattr(A.platform, "system", lambda: "Windows")
+
+    assert A._download_with_progress() is False
+    assert not (tmp_path / ".adb" / "platform-tools.zip").exists()
+
+
+def test_adb_download_rejects_archive_hash_mismatch_before_extract(tmp_path, monkeypatch):
+    import io
+    import zipfile
+
+    archive_data = io.BytesIO()
+    with zipfile.ZipFile(archive_data, "w") as archive:
+        archive.writestr("platform-tools/adb", b"adb")
+
+    class Policy:
+        def download_to(self, url, destination, **kwargs):
+            destination.write_bytes(archive_data.getvalue())
+
+    monkeypatch.setattr(A, "_get_adb_dir", lambda: tmp_path / ".adb")
+    monkeypatch.setattr(A, "_adb_download_url", lambda: "https://public.example/adb.zip")
+    monkeypatch.setattr(A, "_FETCH_POLICY", Policy())
+    monkeypatch.setattr(A.platform, "system", lambda: "Windows")
+    monkeypatch.setitem(A._ADB_SHA256, "Windows", "0" * 64)
+    monkeypatch.setitem(A._ADB_BINARY_SHA256, "Windows", hashlib.sha256(b"adb").hexdigest())
+
+    assert A._download_with_progress() is False
+    assert not (tmp_path / ".adb" / "platform-tools" / "adb").exists()

@@ -88,3 +88,21 @@ def test_oracle_fixture_has_only_v1_wire_fields():
         "need_secret",
     ]
     assert oracle["secret_handshake"] == ["challenge", "proof", "ok"]
+
+
+def test_replay_cache_scopes_key_and_expires_oldest_entries():
+    now = [100.0]
+    cache = lan_protocol.ReplayCache(
+        capacity=2, ttl_seconds=600, clock=lambda: now[0]
+    )
+
+    assert cache.check_and_record("session-a", "in", b"one", "push_file") is False
+    assert cache.check_and_record("session-b", "in", b"one", "push_file") is False
+    assert cache.check_and_record("session-a", "out", b"one", "push_file") is False
+    assert len(cache) == 2
+    assert cache.check_and_record("session-a", "in", b"one", "push_file") is False
+
+    now[0] = 200.0
+    assert cache.check_and_record("session-a", "in", b"one", "push_file") is True
+    now[0] = 801.0
+    assert cache.check_and_record("session-a", "in", b"one", "push_file") is False
