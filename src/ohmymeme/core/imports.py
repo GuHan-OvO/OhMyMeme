@@ -1,20 +1,26 @@
 """图片导入应用服务。"""
 
+import base64
+import binascii
 import hashlib
 import io
+import json
 import logging
+import lzma
 import os
 import sqlite3
-import tempfile
+import struct
 import threading
 from collections.abc import Callable, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 from PIL import Image
 
-from .assets import AssetPaths
+from .adapters.filesystem.atomic_repository import AtomicFileRepository
+from .assets import AssetPaths, is_safe_filename
 from .config import _IMPORT_MAX_BYTES, _IMPORT_MAX_PX
 
 logger = logging.getLogger(__name__)
@@ -37,6 +43,14 @@ class MemeRepository(Protocol):
     ) -> int: ...
 
     def delete_meme(self, meme_id: int) -> None: ...
+
+
+class _MutationLease(Protocol):
+    def commit(self) -> None: ...
+
+
+class _MutationCoordinator(Protocol):
+    def mutation(self, entrypoint: str) -> AbstractContextManager[_MutationLease]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +103,17 @@ def _magic_extension(data: bytes) -> str:
     return ""
 
 
+def _decode_stego(data: bytes) -> bytes | None:
+    """在内存中还原 STG3，拒绝所有坏载荷。"""
+    try:
+        from .gif_stego import decode_bytes
+
+        restored, _extension = decode_bytes(data)
+    except (IndexError, OSError, ValueError, lzma.LZMAError, struct.error):
+        return None
+    return restored
+
+
 class ImageImportService:
     """原子接收图片并同步缓存、数据库和 manifest。"""
 
@@ -97,14 +122,17 @@ class ImageImportService:
         db: MemeRepository,
         assets: AssetPaths,
         build_manifest: Callable[[], None],
-        stego_decoder: Callable[[Path], Path | None] | None = None,
+        stego_decoder: Callable[[bytes], bytes | None] | None = None,
+        mutation_coordinator: _MutationCoordinator | None = None,
     ) -> None:
         self._db = db
         self._assets = assets
         self._cache_dir = assets.cache_dir
+        self._files = AtomicFileRepository(assets)
         self._build_manifest = build_manifest
-        self._stego_decoder = stego_decoder
+        self._stego_decoder = stego_decoder or _decode_stego
         self._lock = _IMPORT_LOCK
+        self._mutation_coordinator = mutation_coordinator
 
     def import_path(self, request: ImportPath) -> ImportResult:
         return self.import_batch((request,))
@@ -113,45 +141,51 @@ class ImageImportService:
         return self.import_batch((request,))
 
     def register_existing_path(self, request: ImportPath) -> ImportResult:
+        if self._mutation_coordinator is not None:
+            with self._mutation_coordinator.mutation("library.import.scan") as lease:
+                result = self._register_existing_path_locked(request)
+                if result.imported_ids:
+                    lease.commit()
+                return result
         with self._lock:
             return self._register_existing_path_locked(request)
 
     def _register_existing_path_locked(self, request: ImportPath) -> ImportResult:
-        validated = self._validate(request)
-        if validated is None:
-            return ImportResult((), 1)
-        if self._db.get_by_hash(validated.file_hash) is not None:
-            return ImportResult((), 0)
-        filename = request.path.name
-        created_path = None
-        if validated.from_stego:
-            filename = f"{validated.file_hash[:16]}{validated.extension}"
-            destination = self._cache_dir / filename
-            if not destination.exists():
-                self._install(destination, validated.data)
-                created_path = destination
-        try:
-            meme_id = self._db.add_meme(
-                filename=filename,
-                file_hash=validated.file_hash,
-                width=validated.width,
-                height=validated.height,
-                file_size=len(validated.data),
-                mime_type=f"image/{validated.extension[1:]}",
-                original_name=validated.original_name,
-                **({"from_stego": 1} if validated.from_stego else {}),
-            )
-        except (OSError, RuntimeError, sqlite3.Error):
-            if created_path is not None:
-                created_path.unlink(missing_ok=True)
-            raise
-        return ImportResult((meme_id,), 0)
-
-    def import_batch(self, requests: Sequence[ImportRequest]) -> ImportResult:
         with self._lock:
-            return self._import_batch_locked(requests)
+            validated = self._validate_path(request.path, request.original_name)
+            if validated is None:
+                return ImportResult((), 1)
+            result = self._import_batch_locked((request,))
+            destination = self._cache_dir / (
+                f"{validated.file_hash[:16]}{validated.extension}"
+            )
+            if (
+                result.imported_ids
+                and request.path != destination
+                and request.path.parent.resolve() == self._cache_dir.resolve()
+            ):
+                request.path.unlink()
+            return result
 
-    def _import_batch_locked(self, requests: Sequence[ImportRequest]) -> ImportResult:
+    def import_batch(
+        self,
+        requests: Sequence[ImportRequest],
+        cancelled: Callable[[], bool] | None = None,
+    ) -> ImportResult:
+        if self._mutation_coordinator is not None:
+            with self._mutation_coordinator.mutation("library.import") as lease:
+                result = self._import_batch_locked(requests, cancelled)
+                if result.imported_ids:
+                    lease.commit()
+                return result
+        with self._lock:
+            return self._import_batch_locked(requests, cancelled)
+
+    def _import_batch_locked(
+        self,
+        requests: Sequence[ImportRequest],
+        cancelled: Callable[[], bool] | None = None,
+    ) -> ImportResult:
         created_paths: list[Path] = []
         created_ids: list[int] = []
         imported_ids: list[int] = []
@@ -161,11 +195,16 @@ class ImageImportService:
             manifest_path.read_bytes() if manifest_path.exists() else None
         )
         try:
+            validated_requests = []
             for request in requests:
                 validated = self._validate(request)
                 if validated is None:
                     rejected += 1
                     continue
+                validated_requests.append(validated)
+            if cancelled is not None and cancelled():
+                return ImportResult((), rejected)
+            for validated in validated_requests:
                 existing = self._db.get_by_hash(validated.file_hash)
                 if existing is not None:
                     continue
@@ -175,11 +214,11 @@ class ImageImportService:
                 created = not destination.exists()
                 if not created and destination.read_bytes() != validated.data:
                     raise OSError("content-addressed destination is corrupt")
-                if created:
-                    self._install(destination, validated.data)
-                    created_paths.append(destination)
+                asset = self._files.commit_bytes(validated.data, validated.extension)
+                if asset.created:
+                    created_paths.append(asset.path)
                 meme_id = self._db.add_meme(
-                    filename=destination.name,
+                    filename=asset.filename,
                     file_hash=validated.file_hash,
                     width=validated.width,
                     height=validated.height,
@@ -197,7 +236,9 @@ class ImageImportService:
             self._restore_manifest(manifest_snapshot, cleanup_failures)
             if cleanup_failures:
                 try:
-                    self._write_recovery_marker(cleanup_failures)
+                    self._write_recovery_marker(
+                        created_ids, created_paths, manifest_snapshot, cleanup_failures
+                    )
                 except OSError as marker_error:
                     logger.error(
                         "import recovery marker write failed: %s; failures: %s",
@@ -210,7 +251,7 @@ class ImageImportService:
     def _validate(self, request: ImportRequest) -> _ValidatedImage | None:
         match request:
             case ImportBytes(data=data, original_name=original_name):
-                return self._validate_data(data, original_name)
+                return self._validate_stego(data, original_name)
             case ImportPath(path=path, original_name=original_name):
                 return self._validate_path(path, original_name)
 
@@ -219,34 +260,32 @@ class ImageImportService:
             data = path.read_bytes()
         except OSError:
             return None
-        if len(data) > _IMPORT_MAX_BYTES:
-            return None
-        is_stego = _magic_extension(data) == ".gif" and b"STG3" in data
-        if self._stego_decoder is None or not is_stego:
-            return self._validate_data(data, original_name)
-        try:
-            decoded = self._stego_decoder(path)
-        except (OSError, ValueError, Image.DecompressionBombError):
-            return None
-        if decoded is None:
-            return self._validate_data(data, original_name)
-        try:
-            restored = decoded.read_bytes()
-        finally:
-            try:
-                decoded.unlink()
-            except OSError:
-                pass
-        validated = self._validate_data(restored, original_name)
+        return self._validate_stego(data, original_name)
+
+    def _validate_stego(
+        self, data: bytes, original_name: str
+    ) -> _ValidatedImage | None:
+        validated = self._validate_data(data, original_name)
         if validated is None:
             return None
+        if validated.extension != ".gif" or b"STG3" not in data:
+            return validated
+        try:
+            restored = self._stego_decoder(data)
+        except (OSError, ValueError, Image.DecompressionBombError):
+            return None
+        if restored is None:
+            return None
+        restored_validated = self._validate_data(restored, original_name)
+        if restored_validated is None:
+            return None
         return _ValidatedImage(
-            validated.data,
-            validated.extension,
-            validated.width,
-            validated.height,
-            validated.file_hash,
-            validated.original_name,
+            restored_validated.data,
+            restored_validated.extension,
+            restored_validated.width,
+            restored_validated.height,
+            restored_validated.file_hash,
+            restored_validated.original_name,
             1,
         )
 
@@ -272,22 +311,6 @@ class ImageImportService:
             Path(original_name).stem,
             0,
         )
-
-    def _install(self, destination: Path, data: bytes) -> None:
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary_name = tempfile.mkstemp(
-            prefix=".import-", suffix=".tmp", dir=destination.parent
-        )
-        temporary_path = Path(temporary_name)
-        try:
-            with os.fdopen(descriptor, "wb") as output:
-                output.write(data)
-                output.flush()
-                os.fsync(output.fileno())
-            os.replace(temporary_path, destination)
-        except OSError:
-            temporary_path.unlink(missing_ok=True)
-            raise
 
     def _compensate(
         self, created_ids: Sequence[int], created_paths: Sequence[Path]
@@ -317,9 +340,109 @@ class ImageImportService:
         except OSError as error:
             failures.append(f"manifest_restore:{error}")
 
-    def _write_recovery_marker(self, failures: Sequence[str]) -> Path:
+    def recover(self) -> bool:
+        """在暴露媒体消费者前回滚未完成的导入事务。"""
         marker = self._assets.recovery_marker_path
-        marker.write_text("\n".join(failures), encoding="utf-8")
+        if not marker.exists():
+            return False
+        try:
+            record = json.loads(marker.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            self._build_manifest()
+            marker.unlink()
+            return True
+        except OSError as error:
+            raise RuntimeError("invalid_import_recovery_marker") from error
+        if not isinstance(record, dict) or record.get("version") != 1:
+            raise RuntimeError("invalid_import_recovery_marker")
+        if record.get("data_dir") != str(self._assets.data_dir.resolve()):
+            raise RuntimeError("invalid_import_recovery_marker")
+        if record.get("cache_dir") != str(self._cache_dir.resolve()):
+            raise RuntimeError("invalid_import_recovery_marker")
+        phase = record.get("phase")
+        if phase == "forward":
+            self._build_manifest()
+            marker.unlink()
+            return True
+        if phase != "rollback":
+            raise RuntimeError("invalid_import_recovery_marker")
+        meme_ids = record.get("meme_ids")
+        filenames = record.get("filenames")
+        snapshot = record.get("manifest_snapshot")
+        if (
+            not isinstance(meme_ids, list)
+            or not isinstance(filenames, list)
+            or snapshot is not None
+            and not isinstance(snapshot, str)
+            or any(type(meme_id) is not int or meme_id < 1 for meme_id in meme_ids)
+            or any(
+                not isinstance(filename, str) or not is_safe_filename(filename)
+                for filename in filenames
+            )
+        ):
+            raise RuntimeError("invalid_import_recovery_marker")
+        try:
+            manifest_snapshot = (
+                None if snapshot is None else base64.b64decode(snapshot, validate=True)
+            )
+        except (ValueError, binascii.Error) as error:
+            raise RuntimeError("invalid_import_recovery_marker") from error
+        for meme_id in reversed(meme_ids):
+            self._db.delete_meme(meme_id)
+        for filename in reversed(filenames):
+            path = self._cache_dir / filename
+            if path.is_symlink() or not path.resolve().is_relative_to(
+                self._cache_dir.resolve()
+            ):
+                raise RuntimeError("invalid_import_recovery_marker")
+            path.unlink(missing_ok=True)
+        self._restore_manifest_or_raise(manifest_snapshot)
+        marker.unlink()
+        return True
+
+    def _restore_manifest_or_raise(self, snapshot: bytes | None) -> None:
+        manifest_path = self._assets.manifest_path
+        if snapshot is None:
+            manifest_path.unlink(missing_ok=True)
+            return
+        temporary = manifest_path.with_suffix(".restore.tmp")
+        try:
+            temporary.write_bytes(snapshot)
+            os.replace(temporary, manifest_path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def _write_recovery_marker(
+        self,
+        created_ids: Sequence[int],
+        created_paths: Sequence[Path],
+        manifest_snapshot: bytes | None,
+        failures: Sequence[str],
+    ) -> Path:
+        marker = self._assets.recovery_marker_path
+        record = {
+            "version": 1,
+            "phase": "rollback",
+            "data_dir": str(self._assets.data_dir.resolve()),
+            "cache_dir": str(self._cache_dir.resolve()),
+            "meme_ids": list(created_ids),
+            "filenames": [path.name for path in created_paths],
+            "manifest_snapshot": (
+                None
+                if manifest_snapshot is None
+                else base64.b64encode(manifest_snapshot).decode("ascii")
+            ),
+            "failures": list(failures),
+        }
+        temporary = marker.with_suffix(".tmp")
+        try:
+            with temporary.open("w", encoding="utf-8") as output:
+                json.dump(record, output, ensure_ascii=False, sort_keys=True)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, marker)
+        finally:
+            temporary.unlink(missing_ok=True)
         return marker
 
 

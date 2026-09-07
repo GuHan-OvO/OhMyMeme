@@ -37,6 +37,7 @@ import os
 import struct
 import sys
 import tempfile
+from pathlib import Path
 
 from PIL import Image
 
@@ -238,17 +239,14 @@ def encode(gif_path: str, orig_path: str, out_path: str, quiet: bool = False) ->
         print(f"  输出总大小   : {len(gif_data) + hidden:,} 字节")
 
 
-def _restore(
+def _restore_image(
     w: int,
     h: int,
     delta: bytes,
     alpha,
     gif_data: bytes,
-    out_path: str,
-    mode_name: str,
-    quiet: bool = False,
-) -> None:
-    """GIF 像素 + 残差 (mod 256) 还原图像并保存。"""
+) -> Image.Image:
+    """GIF 像素加残差还原原始图像。"""
     if alpha is None and len(delta) == w * h:  # 灰度
         g = _render_gif(gif_data, "L").tobytes()
         if len(g) != len(delta):
@@ -275,18 +273,30 @@ def _restore(
                 j += 3
             im = Image.frombytes("RGBA", (w, h), bytes(orig))
 
+    return im
+
+
+def _restore(
+    w: int,
+    h: int,
+    delta: bytes,
+    alpha,
+    gif_data: bytes,
+    out_path: str,
+    mode_name: str,
+    quiet: bool = False,
+) -> None:
+    """GIF 像素加残差还原并保存原始图像。"""
+    im = _restore_image(w, h, delta, alpha, gif_data)
     if "." not in out_path.rsplit("/", 1)[-1]:
         out_path += ".png"
-    im.save(out_path)  # 存为无损 PNG，避免二次有损编码
+    im.save(out_path)
     if not quiet:
         print(f"解码完成（{mode_name}）：{out_path}（{w}x{h}，像素与原图完全一致）")
 
 
-def decode(steg_path: str, out_path: str, quiet: bool = False) -> None:
-    """从隐写 GIF 中还原原图。"""
-    with open(steg_path, "rb") as f:
-        data = f.read()
-
+def decode_bytes(data: bytes) -> tuple[bytes, str]:
+    """从隐写 GIF 字节还原原始图片，不创建临时文件。"""
     pos = data.rfind(MAGIC)  # 从尾部找标识，避免 GIF 内部巧合匹配
     if pos == -1:
         raise ValueError("未在该 GIF 中找到隐写数据（或它是旧版本格式）")
@@ -302,12 +312,7 @@ def decode(steg_path: str, out_path: str, quiet: bool = False) -> None:
         ext_len = raw[0]
         ext = raw[1 : 1 + ext_len].decode("utf-8")
         orig_bytes = raw[1 + ext_len :]
-        if "." not in out_path.rsplit("/", 1)[-1]:
-            out_path = f"{out_path}.{ext}"
-        with open(out_path, "wb") as f:
-            f.write(orig_bytes)
-        if not quiet:
-            print(f"解码完成（整图模式）：{out_path}（还原 {len(orig_bytes):,} 字节）")
+        return orig_bytes, "." + ext.lstrip(".")
 
     elif mode in (MODE_DELTA_LZMA, MODE_RGBA_LZMA, MODE_L_LZMA):
         (raw_len,) = struct.unpack(">I", blob[1:5])
@@ -318,20 +323,9 @@ def decode(steg_path: str, out_path: str, quiet: bool = False) -> None:
         body = raw[8:]
         if mode == MODE_RGBA_LZMA:
             n = w * h * 3
-            _restore(
-                w,
-                h,
-                body[:n],
-                body[n:],
-                gif_data,
-                out_path,
-                MODE_NAMES[mode],
-                quiet=quiet,
-            )
+            image = _restore_image(w, h, body[:n], body[n:], gif_data)
         else:
-            _restore(
-                w, h, body, None, gif_data, out_path, MODE_NAMES[mode], quiet=quiet
-            )
+            image = _restore_image(w, h, body, None, gif_data)
 
     elif mode in (MODE_DELTA_WEBP, MODE_RGBA_WEBP, MODE_L_WEBP):
         w, h = struct.unpack(">II", blob[1:9])
@@ -339,15 +333,11 @@ def decode(steg_path: str, out_path: str, quiet: bool = False) -> None:
         if mode == MODE_DELTA_WEBP:
             s = stored.convert("RGB").tobytes()
             delta = bytes((b - 128) & 0xFF for b in s)
-            _restore(
-                w, h, delta, None, gif_data, out_path, MODE_NAMES[mode], quiet=quiet
-            )
+            image = _restore_image(w, h, delta, None, gif_data)
         elif mode == MODE_L_WEBP:
             s = stored.convert("L").tobytes()
             delta = bytes((b - 128) & 0xFF for b in s)
-            _restore(
-                w, h, delta, None, gif_data, out_path, MODE_NAMES[mode], quiet=quiet
-            )
+            image = _restore_image(w, h, delta, None, gif_data)
         else:
             s = stored.convert("RGBA").tobytes()
             delta = bytearray(w * h * 3)
@@ -360,19 +350,26 @@ def decode(steg_path: str, out_path: str, quiet: bool = False) -> None:
                 alpha[k] = s[i + 3]
                 j += 3
                 k += 1
-            _restore(
-                w,
-                h,
-                bytes(delta),
-                bytes(alpha),
-                gif_data,
-                out_path,
-                MODE_NAMES[mode],
-                quiet=quiet,
-            )
+            image = _restore_image(w, h, bytes(delta), bytes(alpha), gif_data)
 
     else:
         raise ValueError(f"未知的隐写模式：{mode}")
+
+    output = io.BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue(), ".png"
+
+
+def decode(steg_path: str, out_path: str, quiet: bool = False) -> None:
+    """从隐写 GIF 中还原原图。"""
+    data = Path(steg_path).read_bytes()
+    decoded, extension = decode_bytes(data)
+    target = Path(out_path)
+    if not target.suffix:
+        target = target.with_suffix(extension)
+    target.write_bytes(decoded)
+    if not quiet:
+        print(f"解码完成：{target}（还原 {len(decoded):,} 字节）")
 
 
 def make_stego_gif(orig_path: str, out_path: str, quiet: bool = False) -> None:

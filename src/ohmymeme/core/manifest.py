@@ -4,6 +4,8 @@ import json
 import logging
 import os
 
+from ohmymeme.app.manifest_service import ManifestService, ManifestValidationError
+
 from .assets import INDEX_FILENAME as _INDEX_FILENAME
 from .assets import AssetPaths
 from .config import get_config
@@ -47,9 +49,13 @@ def _build_collection_tree(db, parent_id=None, empty_ids=None):
 def _write(data):
     path = _index_path()
     tmp = path.with_name(path.name + ".tmp")
+    projection = ManifestService().parse_data(data)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        with tmp.open("w", encoding="utf-8") as output:
+            json.dump(projection.to_data(), output, ensure_ascii=False, indent=2)
+            output.flush()
+            os.fsync(output.fileno())
         os.replace(tmp, path)
     finally:
         if tmp.exists():
@@ -62,7 +68,7 @@ def build():
     rows = db.search(keyword="", tags=None, limit=999999)
     assets = _assets()
     memes = []
-    for row in rows:
+    for sort_order, row in enumerate(rows):
         filename = row["filename"]
         file_path = assets.cache_dir / filename
         mtime = ""
@@ -78,6 +84,7 @@ def build():
                 "sha256": row.get("file_hash", ""),
                 "file_size": row.get("file_size", 0),
                 "mtime": mtime,
+                "sort_order": sort_order,
             }
         )
     empty_ids = []
@@ -102,21 +109,7 @@ def load():
     if not path.exists():
         return {"version": 3, "memes": [], "collections": []}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if data.get("version", 2) < 3:
-            if isinstance(data.get("collections"), list):
-                collections = []
-                for collection in data["collections"]:
-                    if isinstance(collection, dict) and "name" in collection:
-                        collections.append(
-                            {
-                                "name": collection["name"],
-                                "filenames": collection.get("filenames", []),
-                            }
-                        )
-                data["collections"] = collections
-            data["version"] = 3
-        return data
-    except (AttributeError, json.JSONDecodeError, OSError, TypeError) as error:
+        return ManifestService().parse_json(path.read_bytes()).to_data()
+    except (ManifestValidationError, OSError) as error:
         logger.warning("manifest load failed: %s", error)
         return {"version": 3, "memes": [], "collections": []}
