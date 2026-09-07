@@ -1,6 +1,6 @@
 """主窗口表情桥接所有权。"""
 
-from ..window_manager import JsApi
+from .facades import JsApi
 
 
 def create_meme_api(webui, catalog, settings):
