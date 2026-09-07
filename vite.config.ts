@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
@@ -18,5 +18,9 @@ export default defineConfig({
     },
     minify: 'esbuild',
     sourcemap: false,
+  },
+  test: {
+    environment: 'jsdom',
+    include: ['tests/frontend/**/*.test.{js,ts}'],
   },
 })

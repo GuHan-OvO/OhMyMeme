@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "forceConsistentCasingInFileNames": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["vitest/globals", "vitest/jsdom"]
+  },
+  "include": [
+    "src/ohmymeme/presentation/frontend/main/features/memes/**/*.vue",
+    "src/ohmymeme/presentation/frontend/main/shared/**/*.ts",
+    "tests/frontend/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    // pywebview's runtime-injected API has no static declaration yet.
+    "src/ohmymeme/presentation/frontend/main/shared/bridge.ts",
+    // pywebview evaluates these globals directly in the host WebView.
+    "src/ohmymeme/presentation/frontend/main/app/main.ts"
+  ]
+}
