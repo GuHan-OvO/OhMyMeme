@@ -3,7 +3,9 @@ function api(method, ...args) {
   if (typeof pywebview === 'undefined' || !pywebview.api || typeof pywebview.api[method] !== 'function') {
     return null;
   }
-  try { return pywebview.api[method](...args); }
+  try {
+    return decodeBridgeResult(method, pywebview.api[method](...args));
+  }
   catch(e) { console.error('api error', method, e); return null; }
 }
 
@@ -100,4 +102,3 @@ async function closeSettings() {
   }
   try { pywebview.api.close_settings(); } catch(e) {}
 }
-

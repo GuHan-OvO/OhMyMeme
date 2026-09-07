@@ -1,4 +1,5 @@
 export default [
+  "shared/decoder.js",
   "core/runtime.js",
   "features/logs.js",
   "features/lan.js",
