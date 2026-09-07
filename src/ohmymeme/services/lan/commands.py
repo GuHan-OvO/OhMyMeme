@@ -1,12 +1,19 @@
 """LAN v1 command handlers independent from UDP/TCP runtime ownership."""
 
 import base64
+import binascii
 import hashlib
 import hmac
 import os
+import sqlite3
 from pathlib import Path
 
 from ohmymeme import __version__
+from ohmymeme.app.manifest_service import ManifestService, ManifestValidationError
+from ohmymeme.app.remote_mutation_coordinator import (
+    RemoteMutationBusyError,
+    RemoteMutationConflictError,
+)
 from ohmymeme.core.assets import AssetPaths
 from ohmymeme.core.config import _SECRET_KEYS, get_config
 from ohmymeme.core.database import get_db
@@ -28,9 +35,9 @@ def _safe_fname(name) -> bool:
     )
 
 
-def _find_meme_file(filename: str):
+def _find_meme_file(filename: str, config=None):
     """在缓存目录递归查找表情文件。"""
-    cache_dir = get_config().cache_dir
+    cache_dir = (config or get_config()).cache_dir
     direct = cache_dir / filename
     if direct.exists() and direct.is_file():
         return direct
@@ -104,39 +111,71 @@ class CommandHandlers:
         """返回本地清单。"""
         from ohmymeme.core.manifest import load as load_manifest
 
-        build_manifest()
-        return {"ok": True, "manifest": load_manifest()}
+        coordinator = getattr(self._server, "_coordinator", None)
+        try:
+            if coordinator is None:
+                build_manifest()
+                return {"ok": True, "manifest": load_manifest()}
+            with coordinator.mutation("lan.pull_manifest") as lease:
+                self._build_manifest()
+                manifest = (
+                    self._sync_service.load_manifest()
+                    if self._sync_service is not None
+                    else load_manifest()
+                )
+                lease.commit()
+                return {"ok": True, "manifest": manifest}
+        except (RemoteMutationBusyError, RemoteMutationConflictError) as error:
+            return {"ok": False, "error": str(error)}
 
     def _cmd_push_manifest(self, manifest) -> dict:
         """合并远端清单的排序与分组。"""
-        if not isinstance(manifest, dict):
-            return {"ok": False, "error": "manifest 格式错误"}
         try:
-            self._apply_manifest(manifest)
-        except Exception as error:
-            self._server._logger.warning(f"push_manifest apply error: {error}")
-        build_manifest()
-        return {"ok": True, "local_count": get_db().count()}
+            projection = ManifestService().parse_data(manifest, strict_hash=True)
+            coordinator = getattr(self._server, "_coordinator", None)
+            if coordinator is None:
+                self._apply_manifest(projection.to_data())
+                build_manifest()
+            else:
+                with coordinator.mutation("lan.push_manifest") as lease:
+                    lease.assert_generation()
+                    self._apply_manifest(projection.to_data(), lease)
+                    self._build_manifest()
+                    lease.commit()
+        except (
+            ManifestValidationError,
+            OSError,
+            RuntimeError,
+            sqlite3.Error,
+            ValueError,
+        ) as error:
+            self._server._logger.warning("push_manifest apply error: %s", error)
+            if isinstance(
+                error, (RemoteMutationBusyError, RemoteMutationConflictError)
+            ):
+                return {"ok": False, "error": str(error)}
+            return {"ok": False, "error": "manifest 格式错误"}
+        return {"ok": True, "local_count": self._db().count()}
 
-    def _apply_manifest(self, manifest) -> None:
+    def _apply_manifest(self, manifest, lease=None) -> None:
         """通过注入的同步服务应用 LAN 清单。"""
         if self._sync_service is None:
-            from ohmymeme.services.sync.service import (
-                _apply_remote_collections,
-                _apply_remote_order,
-            )
+            from ohmymeme.services.sync.planning import _apply_remote_metadata
 
-            _apply_remote_order(manifest)
-            _apply_remote_collections(manifest)
+            _apply_remote_metadata(manifest, self._db())
             return
-        self._sync_service.apply_remote_order(manifest)
-        self._sync_service.apply_remote_collections(manifest)
+        if lease is None:
+            self._sync_service.apply_remote_order(manifest)
+            self._sync_service.apply_remote_collections(manifest)
+        else:
+            self._sync_service.apply_remote_order(manifest, lease=lease)
+            self._sync_service.apply_remote_collections(manifest, lease=lease)
 
     def _cmd_pull_file(self, filename: str) -> dict:
         """返回指定缓存文件的 base64 内容。"""
         if not _safe_fname(filename):
             return {"ok": False, "error": "非法文件名"}
-        path = _find_meme_file(filename)
+        path = _find_meme_file(filename, self._config())
         if not path:
             return {"ok": False, "error": "文件不存在"}
         try:
@@ -158,8 +197,8 @@ class CommandHandlers:
         if not data_b64:
             return {"ok": False, "error": "缺少文件数据"}
         try:
-            data = base64.b64decode(data_b64)
-        except Exception:
+            data = base64.b64decode(data_b64, validate=True)
+        except (ValueError, binascii.Error):
             return {"ok": False, "error": "文件数据解码失败"}
         if len(data) > MAX_FILE_SIZE:
             return {"ok": False, "error": "文件超过大小限制"}
@@ -168,11 +207,37 @@ class CommandHandlers:
             hashlib.sha256(data).hexdigest(), expected
         ):
             return {"ok": False, "error": "文件哈希不一致"}
-        return _import_bytes(data, filename)
+        coordinator = getattr(self._server, "_coordinator", None)
+        if coordinator is None:
+            return _import_bytes(data, filename)
+        try:
+            with coordinator.mutation("lan.push_file") as lease:
+                result = self._server._import_service().import_bytes(
+                    ImportBytes(data, filename)
+                )
+                if result.rejected:
+                    return {"ok": False, "error": "图片解析失败或超过导入限制"}
+                lease.commit()
+                if not result.imported_ids:
+                    return {"ok": True, "dedup": True}
+                row = self._db().get_by_id(result.imported_ids[0])
+                return {"ok": True, "filename": row["filename"]}
+        except (RemoteMutationBusyError, RemoteMutationConflictError, OSError) as error:
+            return {"ok": False, "error": str(error)}
+
+    def _db(self):
+        return getattr(self._server, "_database", None) or get_db()
+
+    def _build_manifest(self):
+        builder = getattr(self._server, "_build_manifest", None)
+        if builder is None:
+            build_manifest()
+        else:
+            builder()
 
     def _cmd_get_config(self) -> dict:
         """返回按当前密钥策略过滤的配置。"""
-        config = get_config().to_dict()
+        config = self._config().to_dict()
         if not self._server._allow_secret_config():
             for key in _SECRET_KEYS:
                 config.pop(key, None)
@@ -186,7 +251,21 @@ class CommandHandlers:
             config = {
                 key: value for key, value in config.items() if key not in _SECRET_KEYS
             }
-        target = get_config()
-        target.update_from_dict(config)
-        target.save()
-        return {"ok": True}
+        coordinator = getattr(self._server, "_coordinator", None)
+        try:
+            if coordinator is None:
+                target = self._config()
+                target.update_from_dict(config)
+                target.save()
+                return {"ok": True}
+            with coordinator.mutation("lan.send_config") as lease:
+                target = self._config()
+                target.update_from_dict(config)
+                target.save()
+                lease.commit()
+                return {"ok": True}
+        except (RemoteMutationBusyError, RemoteMutationConflictError) as error:
+            return {"ok": False, "error": str(error)}
+
+    def _config(self):
+        return getattr(self._server, "_config", None) or get_config()
