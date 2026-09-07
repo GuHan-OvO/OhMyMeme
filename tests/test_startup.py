@@ -67,10 +67,10 @@ class _FakeMemeDB:
         pass
 
 
-def _fake_webui(hotkey_show_at_mouse, visible=False):
+def _fake_webui(hotkey_show_at_mouse, root, visible=False):
     from ohmymeme.app.container import Container
 
-    container = Container()
+    container = Container(root)
     ui = container.create_webui()
     ui._cfg = _FakeConfig(hotkey_show_at_mouse)
     ui._window = _FakeWindow()
@@ -196,8 +196,8 @@ def test_find_hotkey_window_position_none_when_window_cannot_fit():
     assert _find_hotkey_window_position((0, 0), work_area, 100, 101) is None
 
 
-def test_toggle_hotkey_safe_moves_then_shows_hidden_window(monkeypatch):
-    ui = _fake_webui(True)
+def test_toggle_hotkey_safe_moves_then_shows_hidden_window(monkeypatch, tmp_path):
+    ui = _fake_webui(True, tmp_path)
     monkeypatch.setattr(ui, "_get_hotkey_window_position", lambda: (40, 50))
 
     ui.toggle_hotkey_safe()
@@ -207,8 +207,8 @@ def test_toggle_hotkey_safe_moves_then_shows_hidden_window(monkeypatch):
     assert ui._hotkey_session
 
 
-def test_hide_clears_hotkey_session():
-    ui = _fake_webui(True)
+def test_hide_clears_hotkey_session(tmp_path):
+    ui = _fake_webui(True, tmp_path)
     ui.toggle_hotkey_safe()
 
     ui.hide()
@@ -216,8 +216,8 @@ def test_hide_clears_hotkey_session():
     assert not ui._hotkey_session
 
 
-def test_tray_toggle_show_does_not_mark_hotkey_session():
-    ui = _fake_webui(True)
+def test_tray_toggle_show_does_not_mark_hotkey_session(tmp_path):
+    ui = _fake_webui(True, tmp_path)
 
     ui.toggle_safe()
 
@@ -225,8 +225,8 @@ def test_tray_toggle_show_does_not_mark_hotkey_session():
     assert not ui._hotkey_session
 
 
-def test_ordinary_show_clears_existing_hotkey_session():
-    ui = _fake_webui(True)
+def test_ordinary_show_clears_existing_hotkey_session(tmp_path):
+    ui = _fake_webui(True, tmp_path)
     ui.toggle_hotkey_safe()
 
     ui.show()
@@ -234,21 +234,21 @@ def test_ordinary_show_clears_existing_hotkey_session():
     assert not ui._hotkey_session
 
 
-def test_schedule_hide_only_hides_hotkey_session():
-    ui = _fake_webui(True, visible=True)
+def test_schedule_hide_only_hides_hotkey_session(tmp_path):
+    ui = _fake_webui(True, tmp_path / "visible", visible=True)
     ui.schedule_hide()
     ui._process_pending_hide()
     assert ui._visible is True
 
-    ui = _fake_webui(True)
+    ui = _fake_webui(True, tmp_path / "hidden")
     ui.toggle_hotkey_safe()
     ui.schedule_hide()
     ui._process_pending_hide()
     assert ui._visible is False
 
 
-def test_toggle_hotkey_safe_hides_visible_window_without_placement(monkeypatch):
-    ui = _fake_webui(True, visible=True)
+def test_toggle_hotkey_safe_hides_visible_window_without_placement(monkeypatch, tmp_path):
+    ui = _fake_webui(True, tmp_path, visible=True)
 
     def fail_if_called():
         raise AssertionError("visible hotkey toggle must not calculate placement")
@@ -261,8 +261,8 @@ def test_toggle_hotkey_safe_hides_visible_window_without_placement(monkeypatch):
     assert not ui._visible
 
 
-def test_toggle_hotkey_safe_disabled_shows_without_placement(monkeypatch):
-    ui = _fake_webui(False)
+def test_toggle_hotkey_safe_disabled_shows_without_placement(monkeypatch, tmp_path):
+    ui = _fake_webui(False, tmp_path)
 
     def fail_if_called():
         raise AssertionError("disabled placement must not be calculated")
@@ -275,8 +275,8 @@ def test_toggle_hotkey_safe_disabled_shows_without_placement(monkeypatch):
     assert ui._visible
 
 
-def test_toggle_hotkey_safe_placement_exception_still_shows(monkeypatch):
-    ui = _fake_webui(True)
+def test_toggle_hotkey_safe_placement_exception_still_shows(monkeypatch, tmp_path):
+    ui = _fake_webui(True, tmp_path)
 
     def fail_placement():
         raise RuntimeError("placement unavailable")
@@ -289,11 +289,11 @@ def test_toggle_hotkey_safe_placement_exception_still_shows(monkeypatch):
     assert ui._visible
 
 
-def test_successful_native_drag_requests_hide_only_for_hotkey_session(monkeypatch):
+def test_successful_native_drag_requests_hide_only_for_hotkey_session(monkeypatch, tmp_path):
     import ohmymeme.integrations.platform.native_drag as native_drag
 
-    ui = _fake_webui(True)
-    ui._api._db = _FakeMemeDB()
+    ui = _fake_webui(True, tmp_path)
+    monkeypatch.setattr(ui._api._catalog, "get_meme_filename", lambda _meme_id: "meme.png")
     monkeypatch.setattr(ui._api, "_find_meme_file", lambda filename: filename)
     monkeypatch.setattr(native_drag, "start_native_drag", lambda path: True)
     monkeypatch.setattr(ui, "_run_on_gui", lambda delay, func: func())
@@ -308,11 +308,11 @@ def test_successful_native_drag_requests_hide_only_for_hotkey_session(monkeypatc
     assert ui._visible is False
 
 
-def test_successful_copy_requests_hide_only_for_hotkey_session(monkeypatch):
+def test_successful_copy_requests_hide_only_for_hotkey_session(monkeypatch, tmp_path):
     import ohmymeme.presentation.desktop.window_manager as webui_module
 
-    ui = _fake_webui(True)
-    ui._api._db = _FakeMemeDB()
+    ui = _fake_webui(True, tmp_path)
+    monkeypatch.setattr(ui._api._catalog, "get_meme_filename", lambda _meme_id: "meme.png")
     monkeypatch.setattr(ui._api, "_find_meme_file", lambda filename: filename)
     monkeypatch.setattr(webui_module, "copy_image_to_clipboard", lambda path: True)
     monkeypatch.setattr(ui, "_run_on_gui", lambda delay, func: func())
@@ -329,7 +329,7 @@ def test_successful_copy_requests_hide_only_for_hotkey_session(monkeypatch):
     assert ui._visible is False
 
 
-def _start_fake_webui(monkeypatch, silent_start):
+def _start_fake_webui(monkeypatch, tmp_path, silent_start):
     import types
 
     import ohmymeme.presentation.desktop.window_manager as webui_module
@@ -355,7 +355,7 @@ def _start_fake_webui(monkeypatch, silent_start):
 
     from ohmymeme.app.container import Container
 
-    ui = Container().create_webui(silent_start=silent_start)
+    ui = Container(tmp_path / "app").create_webui(silent_start=silent_start)
     ui._cfg = _FakeConfig(True)
     monkeypatch.setattr(ui, "_setup_bottle", lambda: None)
     monkeypatch.setattr(ui, "_init_lan", lambda: None)
@@ -363,8 +363,8 @@ def _start_fake_webui(monkeypatch, silent_start):
     return ui, created
 
 
-def test_webui_start_normal_visibility_hides_without_placement(monkeypatch):
-    ui, created = _start_fake_webui(monkeypatch, silent_start=False)
+def test_webui_start_normal_visibility_hides_without_placement(monkeypatch, tmp_path):
+    ui, created = _start_fake_webui(monkeypatch, tmp_path, silent_start=False)
     assert created[0][1]["hidden"] is False
     assert ui._visible is True
 
@@ -378,8 +378,8 @@ def test_webui_start_normal_visibility_hides_without_placement(monkeypatch):
     assert ui._visible is False
 
 
-def test_webui_start_silent_visibility_allows_hotkey_placement(monkeypatch):
-    ui, created = _start_fake_webui(monkeypatch, silent_start=True)
+def test_webui_start_silent_visibility_allows_hotkey_placement(monkeypatch, tmp_path):
+    ui, created = _start_fake_webui(monkeypatch, tmp_path, silent_start=True)
     assert created[0][1]["hidden"] is True
     assert ui._visible is False
     monkeypatch.setattr(ui, "_get_hotkey_window_position", lambda: (40, 50))
@@ -456,7 +456,7 @@ def test_bootstrap_preserves_unknown_arguments(monkeypatch):
         def run(self):
             return None
 
-    monkeypatch.setattr("ohmymeme.app.bootstrap.OhMyMemeApp", FakeApp)
+    monkeypatch.setattr("ohmymeme.app.bootstrap.compose_app", lambda args: FakeApp())
     monkeypatch.setattr(sys, "argv", ["ohmymeme", "--unknown-benign-flag"])
 
     bootstrap.main()

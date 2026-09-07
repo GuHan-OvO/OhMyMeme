@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ohmymeme.core.config import Config
 from ohmymeme.core.manifest import INDEX_FILENAME
+from ohmymeme.app.remote_mutation_coordinator import RemoteMutationCoordinator
 from ohmymeme.services.sync import service as sync
 from ohmymeme.services.sync.service import (
     SyncError,
@@ -36,13 +37,14 @@ from ohmymeme.services.sync.service import (
 )
 
 
-def _entry(fname, sha256, size=1):
+def _entry(fname, size=None, sort_order=0):
     return {
         "filename": fname,
         "name": fname,
-        "sha256": sha256,
-        "file_size": size,
+        "sha256": REMOTE_PNG_HASH,
+        "file_size": len(REMOTE_PNG) if type(size) is not int else size,
         "mtime": "",
+        "sort_order": sort_order,
     }
 
 
@@ -176,8 +178,8 @@ class _FakeDb:
                 {
                     "filename": "test.png",
                     "original_name": "test",
-                    "file_hash": "abc",
-                    "file_size": 16,
+                    "file_hash": REMOTE_PNG_HASH,
+                    "file_size": len(REMOTE_PNG),
                 }
             ]
         )
@@ -288,7 +290,7 @@ class TestSyncPush(unittest.TestCase):
         )
 
         # 默认一个本地文件 test.png
-        self._set_local_memes([{"filename": "test.png", "sha256": "abc"}])
+        self._set_local_memes([{"filename": "test.png"}])
 
     def _start_patch(self, patcher):
         patcher.start()
@@ -296,6 +298,14 @@ class TestSyncPush(unittest.TestCase):
 
     def _set_local_memes(self, memes):
         """设置本地 memes（同步本地清单 / cache 文件 / FakeDb）"""
+        normalized = [
+            {
+                "filename": meme["filename"],
+                "sha256": REMOTE_PNG_HASH,
+                "file_size": len(REMOTE_PNG),
+            }
+            for meme in memes
+        ]
         manifest = {
             "version": 3,
             "memes": [
@@ -305,16 +315,17 @@ class TestSyncPush(unittest.TestCase):
                     "sha256": m["sha256"],
                     "file_size": m.get("file_size", 8),
                     "mtime": "",
+                    "sort_order": index,
                 }
-                for m in memes
+                for index, m in enumerate(normalized)
             ],
             "collections": [],
         }
         (self.data_dir / INDEX_FILENAME).write_text(json.dumps(manifest))
-        for m in memes:
+        for m in normalized:
             fp = self.data_dir / "cache" / m["filename"]
             if not fp.exists():
-                fp.write_bytes(b"x" * int(m.get("file_size", 8)))
+                fp.write_bytes(REMOTE_PNG)
         self.fake_db.rows = [
             {
                 "filename": m["filename"],
@@ -322,7 +333,7 @@ class TestSyncPush(unittest.TestCase):
                 "file_hash": m["sha256"],
                 "file_size": m.get("file_size", 8),
             }
-            for m in memes
+            for m in normalized
         ]
 
     def _manifest_filenames(self):
@@ -383,13 +394,17 @@ class TestSyncPush(unittest.TestCase):
             ]
         )
         self.fake_backend.remote_memes = {
-            "a.png": _entry("a.png", "x"),
-            "b.png": _entry("b.png", "abc"),
+            "a.png": _entry("a.png", "x", sort_order=0),
+            "b.png": _entry("b.png", "abc", sort_order=1),
         }
         result = sync.push()
         self.assertEqual(result["uploaded"], 1)  # c.png
         self.assertEqual(result["skipped"], 1)  # b.png
         self.assertEqual(self._manifest_filenames(), {"a.png", "b.png", "c.png"})
+        self.assertEqual(
+            [m["sort_order"] for m in self.fake_backend.manifest_payload["memes"]],
+            [0, 1, 2],
+        )
         # 本地 meme-index.json 未被污染：仍只含本地文件
         local = json.loads((self.data_dir / INDEX_FILENAME).read_text(encoding="utf-8"))
         self.assertEqual({m["filename"] for m in local["memes"]}, {"b.png", "c.png"})
@@ -439,8 +454,8 @@ class TestSyncPush(unittest.TestCase):
     def test_pull_partial_failure_raises(self):
         """pull 部分下载失败 → 抛 SyncError、status=error、本地清单不含失败项"""
         self.fake_backend.remote_memes = {
-            "test.png": _entry("test.png", "abc"),
-            "missing.png": _entry("missing.png", "x"),
+            "test.png": _entry("test.png", "abc", sort_order=0),
+            "missing.png": _entry("missing.png", "x", sort_order=1),
         }
         self.fake_backend.remote_files = {"test.png"}  # missing.png 物理缺失
         with self.assertRaises(SyncError) as ctx:
@@ -463,9 +478,9 @@ class TestSyncPush(unittest.TestCase):
         """pull 按远端 manifest 顺序重排本地 sort_order，保留云端排序"""
         self._set_local_memes([])  # 本地空，pull 全部远端文件
         self.fake_backend.remote_memes = {
-            "b.png": _entry("b.png", "2"),
-            "a.png": _entry("a.png", "1"),
-            "c.png": _entry("c.png", "3"),
+            "b.png": _entry("b.png", "2", sort_order=0),
+            "a.png": _entry("a.png", "1", sort_order=1),
+            "c.png": _entry("c.png", "3", sort_order=2),
         }
         sync.pull()
         # _apply_remote_order 按远端 memes 顺序调用 reorder_memes
@@ -485,16 +500,18 @@ class TestSyncPush(unittest.TestCase):
                 {
                     "filename": "b.png",
                     "name": "b",
-                    "sha256": "2",
-                    "file_size": 8,
+                    "sha256": REMOTE_PNG_HASH,
+                    "file_size": len(REMOTE_PNG),
                     "mtime": "",
+                    "sort_order": 0,
                 },
                 {
                     "filename": "a.png",
                     "name": "a",
-                    "sha256": "1",
-                    "file_size": 8,
+                    "sha256": REMOTE_PNG_HASH,
+                    "file_size": len(REMOTE_PNG),
                     "mtime": "",
+                    "sort_order": 1,
                 },
             ],
             "collections": [],
@@ -569,14 +586,62 @@ class TestSyncPush(unittest.TestCase):
 
         result = sync.pull()
 
-        self.assertEqual(result["skipped"], 1)
+        self.assertEqual(result["errors"], 1)
+        self.assertEqual(result["skipped"], 0)
         self.assertFalse((self.data_dir / "cache" / "bad.png").exists())
         self.assertIsNone(self.fake_db.get_by_filename("bad.png"))
 
+    def test_legacy_pull_worker_rejects_invalid_remote_hash_without_mutation(self):
+        # Given: legacy worker entries with absent, short and mismatched digests
+        original_manifest = (self.data_dir / INDEX_FILENAME).read_bytes()
+        original_rows = list(self.fake_db.rows)
+        entries = [
+            ("missing.png", {"file_size": len(REMOTE_PNG)}),
+            ("short.png", {"sha256": "a" * 63, "file_size": len(REMOTE_PNG)}),
+            ("mismatch.png", {"sha256": "a" * 64, "file_size": len(REMOTE_PNG)}),
+        ]
+        self.fake_backend.remote_files.update(name for name, _entry in entries)
+
+        # When: the callable legacy worker receives untrusted remote entries
+        coordinator = RemoteMutationCoordinator(self.data_dir)
+        try:
+            with coordinator.mutation("test.pull_worker") as lease:
+                with sync._bind_legacy_runtime(coordinator, lease):
+                    result = sync._pull_worker(
+                        entries, "/", self.data_dir / "cache", self.fake_db
+                    )
+                    lease.commit()
+        finally:
+            coordinator.close()
+
+        # Then: none can create cache, database or manifest state
+        assert result["errors"] == 3
+        assert result["downloaded"] == 0
+        assert self.fake_db.rows == original_rows
+        assert (self.data_dir / INDEX_FILENAME).read_bytes() == original_manifest
+        assert not any((self.data_dir / "cache" / name).exists() for name, _ in entries)
+
+    def test_production_pull_cancelled_before_commit_leaves_no_mutation(self):
+        # Given: an otherwise valid remote pull and a cancellation callback
+        self._set_local_memes([])
+        original_manifest = (self.data_dir / INDEX_FILENAME).read_bytes()
+        self.fake_backend.remote_memes = {"remote.png": _entry("remote.png", "ok")}
+
+        # When: production pull reaches the PullCommit pre-commit boundary
+        result = sync.pull(cancelled=lambda: True)
+
+        # Then: cancellation is distinct and leaves no file, row or journal
+        assert result["cancelled"] is True
+        assert result["errors"] == 0
+        assert self.fake_db.rows == []
+        assert not (self.data_dir / "cache" / "remote.png").exists()
+        assert (self.data_dir / INDEX_FILENAME).read_bytes() == original_manifest
+        assert not (self.data_dir / ".ohmymeme-pull-recovery.json").exists()
+
     def test_pull_failure_does_not_apply_metadata_or_rebuild_manifest(self):
         self.fake_backend.remote_memes = {
-            "test.png": _entry("test.png", "abc"),
-            "missing.png": _entry("missing.png", "x"),
+            "test.png": _entry("test.png", "abc", sort_order=0),
+            "missing.png": _entry("missing.png", "x", sort_order=1),
         }
         self.fake_backend.remote_files = {"test.png"}
         original_manifest = (self.data_dir / INDEX_FILENAME).read_bytes()
@@ -602,8 +667,8 @@ class TestSyncPush(unittest.TestCase):
         self._set_local_memes([])
         original_manifest = (self.data_dir / INDEX_FILENAME).read_bytes()
         self.fake_backend.remote_memes = {
-            "new.png": _entry("new.png", "new"),
-            "missing.png": _entry("missing.png", "missing"),
+            "new.png": _entry("new.png", "new", sort_order=0),
+            "missing.png": _entry("missing.png", "missing", sort_order=1),
         }
         self.fake_backend.remote_files = {"new.png"}
 
@@ -621,8 +686,8 @@ class TestSyncPush(unittest.TestCase):
         original_manifest = (self.data_dir / INDEX_FILENAME).read_bytes()
         original_rows = list(self.fake_db.rows)
         self.fake_backend.remote_memes = {
-            "test.png": _entry("test.png", "changed"),
-            "missing.png": _entry("missing.png", "missing"),
+            "test.png": _entry("test.png", "changed", sort_order=0),
+            "missing.png": _entry("missing.png", "missing", sort_order=1),
         }
         self.fake_backend.remote_files = {"test.png"}
 
@@ -788,6 +853,31 @@ class TestSyncPush(unittest.TestCase):
         self.assertEqual(result["removed"], 1)
         self.assertNotIn("orphan.png", self.fake_backend.remote_files)
 
+    def test_delete_all_remote_failure_returns_false_without_counting_deletes(self):
+        # Given: a remote file backend that rejects every delete request
+        self.fake_backend.remote_memes = {"orphan.png": _entry("orphan.png")}
+        self.fake_backend.delete_ok = False
+
+        # When: delete-all is requested through the legacy public export
+        result = sync.delete_all_remote()
+
+        # Then: failure is visible and no deletion is counted as successful
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["deleted"], 0)
+
+    def test_cleanup_remote_orphans_failure_returns_false_and_zero_removed(self):
+        # Given: an orphan and a backend whose DELETE operation fails
+        self.fake_backend.remote_memes = {}
+        self.fake_backend.remote_files = {"orphan.png"}
+        self.fake_backend.delete_ok = False
+
+        # When: cleanup attempts the orphan deletion
+        result = cleanup_remote_orphans(delete=True)
+
+        # Then: the response reports the failed mutation accurately
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["removed"], 0)
+
     def test_cleanup_remote_orphans_degraded(self):
         """后端无 list_files → 降级返回空孤儿，不影响主同步"""
         self.fake_backend.remote_memes = {"a.png": _entry("a.png", "x")}
@@ -937,8 +1027,8 @@ class TestSyncPush(unittest.TestCase):
     def test_pull_failed_items_reported(self):
         """pull 部分下载失败 → _sync_state.failed_items 记录失败文件"""
         self.fake_backend.remote_memes = {
-            "test.png": _entry("test.png", "abc"),
-            "missing.png": _entry("missing.png", "x"),
+            "test.png": _entry("test.png", "abc", sort_order=0),
+            "missing.png": _entry("missing.png", "x", sort_order=1),
         }
         self.fake_backend.remote_files = {"test.png"}
         with self.assertRaises(SyncError):
@@ -947,6 +1037,18 @@ class TestSyncPush(unittest.TestCase):
         self.assertEqual(len(failed), 1)
         self.assertEqual(failed[0]["filename"], "missing.png")
         self.assertEqual(failed[0]["status"], "error")
+
+    def test_heartbeat_renumbers_confirmed_and_remote_entries(self):
+        local = json.loads((self.data_dir / INDEX_FILENAME).read_text(encoding="utf-8"))
+        remote = {"remote.png": _entry("remote.png", "remote", sort_order=0)}
+
+        heartbeat = sync._heartbeat_data(local, remote, ["test.png"])
+
+        assert [meme["filename"] for meme in heartbeat["memes"]] == [
+            "remote.png",
+            "test.png",
+        ]
+        assert [meme["sort_order"] for meme in heartbeat["memes"]] == [0, 1]
 
 
 class TestSafeRemoteFname(unittest.TestCase):
