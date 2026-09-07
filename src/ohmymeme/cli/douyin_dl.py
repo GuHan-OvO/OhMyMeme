@@ -16,10 +16,16 @@ import string
 import sys
 import time
 from pathlib import Path
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urljoin, urlsplit
 
 from curl_cffi import requests
 
+from ohmymeme.core.adapters.fetch_policy import (
+    FetchError,
+    FetchPolicy,
+    FetchRejected,
+    proxy_bypass,
+)
 from ohmymeme.integrations.imports.abogus import ABogus
 
 # ─── 配置 ───
@@ -40,6 +46,36 @@ HEADERS = {
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "zh-CN,zh;q=0.9",
 }
+_FETCH_POLICY = FetchPolicy()
+
+
+def _policy_request(session, method, url, **kwargs):
+    """使用已验证地址请求 CLI 所需的 Douyin 端点。"""
+    current = url
+    original_scheme = urlsplit(url).scheme.lower()
+    for _ in range(6):
+        target, _address = _FETCH_POLICY.prepare(current)
+        request_kwargs = dict(kwargs)
+        request_headers = dict(request_kwargs.get("headers") or {})
+        request_headers["Host"] = target.authority
+        request_kwargs["headers"] = request_headers
+        request_kwargs.update(
+            allow_redirects=False,
+            proxies={},
+            resolve=[_FETCH_POLICY.resolve_for_curl(current)],
+        )
+        with proxy_bypass():
+            response = session.request(method, current, **request_kwargs)
+        if response.status_code not in (301, 302, 303, 307, 308):
+            return response
+        location = response.headers.get("Location")
+        if not location:
+            return response
+        next_url = urljoin(current, location)
+        if original_scheme == "https" and urlsplit(next_url).scheme.lower() != "https":
+            raise FetchRejected("https downgrade redirect rejected")
+        current = next_url
+    raise FetchError("too many redirects")
 
 
 def gen_random_str(length: int = 126) -> str:
@@ -114,7 +150,9 @@ def get_ttwid(session: requests.Session) -> str:
         '"cbUrlProtocol":"https","union":true}'
     )
     try:
-        resp = session.post(
+        resp = _policy_request(
+            session,
+            "POST",
             API_TTWID,
             data=payload,
             headers={**HEADERS, "Content-Type": "application/json"},
@@ -133,7 +171,7 @@ def check_login(session: requests.Session) -> bool:
     params = {"device_platform": "webapp", "aid": "6383"}
     endpoint = sign_url(API_SELF, params)
     try:
-        r = session.get(endpoint, timeout=8)
+        r = _policy_request(session, "GET", endpoint, timeout=8)
         data = r.json()
         return data.get("status_code") == 0
     except Exception:
@@ -175,7 +213,7 @@ def fetch_sticker_list(session: requests.Session, limit: int = 10) -> list:
 
         try:
             endpoint = sign_url(API_STICKER, params)
-            resp = session.get(endpoint, timeout=15)
+            resp = _policy_request(session, "GET", endpoint, timeout=15)
 
             if resp.status_code == 403:
                 print("  403: 签名验证失败或需要登录 Cookie")
@@ -224,6 +262,8 @@ def fetch_sticker_list(session: requests.Session, limit: int = 10) -> list:
 
 def download_stickers(stickers: list, out_dir: Path) -> tuple:
     out_dir.mkdir(parents=True, exist_ok=True)
+    session = requests.Session(impersonate="chrome124")
+    session.headers.update(HEADERS)
     ok = 0
     fail = 0
 
@@ -241,9 +281,9 @@ def download_stickers(stickers: list, out_dir: Path) -> tuple:
         fpath = out_dir / fname
 
         try:
-            resp = requests.get(url, timeout=12, impersonate="chrome124")
+            resp = _policy_request(session, "GET", url, timeout=12)
             resp.raise_for_status()
-            fpath.write_bytes(resp.content)
+            fpath.write_bytes(_FETCH_POLICY.validate_bytes(resp.content, image=True))
             ok += 1
             size_kb = len(resp.content) / 1024
             print(f"  [{i}/{len(stickers)}] {fname} ({size_kb:.1f} KB)")
