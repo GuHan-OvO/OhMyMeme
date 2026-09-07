@@ -1,6 +1,6 @@
 """设置窗口桥接所有权。"""
 
-from ..window_manager import SettingsApi
+from .facades import SettingsApi
 
 
 def create_settings_api(webui, settings):

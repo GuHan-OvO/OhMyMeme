@@ -3,15 +3,15 @@ import VueDragSelect from '@coleqiu/vue-drag-select'
 import App from './App.vue'
 import './style.css'
 import { showLanDeviceConfirm } from '../features/lan/showLanDeviceConfirm'
+import type { JsonObjectModel } from '../shared/generated/bridge'
 
 declare global {
   interface Window {
-    pywebview: any
     focusSearch: () => void
     refreshMemes: () => void
     refreshTags: () => void
     refreshCollections: () => void
-    showLanDeviceConfirm: (device: any) => void
+    showLanDeviceConfirm: (device: JsonObjectModel) => void
   }
 }
 
