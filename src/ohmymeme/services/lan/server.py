@@ -39,7 +39,8 @@ _IDLE_TIMEOUT = 60
 _DEVICE_CONFIRM_TIMEOUT = 60
 _IV_LEN = lan_protocol.IV_LEN
 _TAG_LEN = lan_protocol.TAG_LEN
-_REPLAY_CACHE_LIMIT = 1024
+_REPLAY_CACHE_LIMIT = 4096
+_REPLAY_TTL_SECONDS = 600
 _STATE_MUTATING_COMMANDS = {"push_manifest", "push_file", "send_config"}
 
 _lan_state = {
@@ -64,6 +65,7 @@ __all__ = [
     "_DEVICE_CONFIRM_TIMEOUT",
     "_IDLE_TIMEOUT",
     "_REPLAY_CACHE_LIMIT",
+    "_REPLAY_TTL_SECONDS",
     "_derive_key",
     "_detect_ext",
     "_find_meme_file",
@@ -82,7 +84,15 @@ __all__ = [
 class LanServer:
     """管理 LAN v1 的 UDP、TCP、会话及后台线程。"""
 
-    def __init__(self, sync_service=None):
+    def __init__(
+        self,
+        sync_service=None,
+        coordinator=None,
+        config=None,
+        database=None,
+        build_manifest=None,
+        import_service_factory=None,
+    ):
         self._lock = threading.Lock()
         self._running = False
         self._udp_sock = None
@@ -93,10 +103,17 @@ class LanServer:
         self._clients = {}
         self._udp_pktinfo = False
         self._confirm_lock = threading.Lock()
-        self._replay_lock = threading.Lock()
-        self._replay_cache = set()
-        self._replay_order = []
+        self._replay_cache = lan_protocol.ReplayCache(
+            capacity=_REPLAY_CACHE_LIMIT, ttl_seconds=_REPLAY_TTL_SECONDS
+        )
+        self._pending_confirms = {}
         self._logger = logger
+        self._coordinator = coordinator
+        self._config = config
+        self._database = database
+        self._build_manifest = build_manifest
+        self._import_service_factory = import_service_factory
+        self._confirm_cb = _confirm_cb
         self._commands = CommandHandlers(self, sync_service)
 
     def start(self, port: int, secret: str) -> bool:
@@ -152,6 +169,14 @@ class LanServer:
             if not self._running:
                 return
             self._running = False
+        with self._confirm_lock:
+            pending = tuple(self._pending_confirms.values())
+            self._pending_confirms.clear()
+        for entry in pending:
+            entry["done"].set()
+        with _lan_lock:
+            if _lan_state.get("pending_confirm") in pending:
+                _lan_state.pop("pending_confirm", None)
         self._cleanup_sockets()
         for thread in self._threads:
             thread.join(timeout=1)
@@ -297,11 +322,12 @@ class LanServer:
             self._sync_clients()
             confirmed = threading.Event()
             authorized = threading.Event()
-            if _confirm_cb is None:
+            if self._confirm_cb is None:
                 confirmed.set()
                 authorized.set()
             try:
-                self._session_loop(conn, key, confirmed, authorized)
+                session_id = os.urandom(16).hex()
+                self._session_loop(conn, key, confirmed, authorized, session_id)
             finally:
                 self._clients.pop(addr, None)
                 self._sync_clients()
@@ -341,7 +367,7 @@ class LanServer:
             return lan_protocol.derive_key(self._secret)
         return None
 
-    def _session_loop(self, conn, key, confirmed, authorized):
+    def _session_loop(self, conn, key, confirmed, authorized, session_id=""):
         while self._running:
             msg, frame_id = self._recv_frame_with_identity(conn, key)
             if msg is None:
@@ -350,27 +376,39 @@ class LanServer:
                 continue
             cmd = msg.get("cmd")
             if cmd == "device_info":
-                result = self._cmd_device_info(msg, confirmed, authorized)
+                result = self._cmd_device_info(msg, confirmed, authorized, session_id)
+            elif not isinstance(cmd, str):
+                result = {"ok": False, "error": f"未知命令: {cmd}"}
             elif not confirmed.is_set():
                 if not confirmed.wait(timeout=_DEVICE_CONFIRM_TIMEOUT):
                     result = {"ok": False, "error": "设备未确认"}
                 elif not authorized.is_set():
                     result = {"ok": False, "error": "设备未授权"}
-                elif self._is_replayed_mutation(cmd, frame_id):
+                elif self._is_replayed_mutation(cmd, frame_id, session_id):
                     result = {"ok": False, "error": "重复请求"}
                 else:
                     result = self._dispatch(msg)
             elif not authorized.is_set():
                 result = {"ok": False, "error": "设备未授权"}
-            elif self._is_replayed_mutation(cmd, frame_id):
+            elif self._is_replayed_mutation(cmd, frame_id, session_id):
                 result = {"ok": False, "error": "重复请求"}
             else:
                 result = self._dispatch(msg)
             if isinstance(result, dict):
                 self._send_frame(conn, key, result)
 
-    def _cmd_device_info(self, msg: dict, confirmed, authorized) -> dict:
+    def _cmd_device_info(
+        self, msg: dict, confirmed, authorized, session_id: str = ""
+    ) -> dict:
         """完成设备确认并返回授权结果。"""
+        if confirmed.is_set():
+            if authorized.is_set():
+                return {
+                    "ok": True,
+                    "approved": True,
+                    "allow_secret_config": self._allow_secret_config(),
+                }
+            return {"ok": False, "error": "设备未授权"}
         device = {
             "name": msg.get("name", "未知设备"),
             "model": msg.get("model", ""),
@@ -385,22 +423,28 @@ class LanServer:
                 "approved": False,
                 "done": threading.Event(),
                 "confirm_id": confirm_id,
+                "session_id": session_id,
             }
+            self._pending_confirms[confirm_id] = entry
             with _lan_lock:
-                _lan_state["pending_confirm"] = entry
-            try:
-                callback = _confirm_cb
-                if callback:
-                    try:
-                        callback(callback_device)
-                    except Exception:
-                        logger.warning("device confirm callback error")
-                    entry["done"].wait(timeout=_DEVICE_CONFIRM_TIMEOUT)
-                else:
-                    entry["approved"] = True
-                approved = bool(entry["approved"])
-            finally:
-                with _lan_lock:
+                if "pending_confirm" not in _lan_state:
+                    _lan_state["pending_confirm"] = entry
+        try:
+            callback = self._confirm_cb
+            if callback:
+                try:
+                    callback(callback_device)
+                except Exception:  # noqa: BLE001, BROAD_EXCEPT_OK
+                    logger.warning("device confirm callback error")
+                entry["done"].wait(timeout=_DEVICE_CONFIRM_TIMEOUT)
+            else:
+                entry["approved"] = True
+            approved = bool(entry["approved"])
+        finally:
+            with self._confirm_lock:
+                self._pending_confirms.pop(confirm_id, None)
+            with _lan_lock:
+                if _lan_state.get("pending_confirm") is entry:
                     _lan_state.pop("pending_confirm", None)
         confirmed.set()
         if approved:
@@ -415,17 +459,14 @@ class LanServer:
         with _lan_lock:
             return bool(_lan_state["allow_secret_config"])
 
-    def _is_replayed_mutation(self, cmd, frame_id):
-        if cmd not in _STATE_MUTATING_COMMANDS:
+    def _is_replayed_mutation(
+        self, cmd, frame_id, session_id: str = "", direction: str = "inbound"
+    ):
+        if not isinstance(cmd, str) or cmd not in _STATE_MUTATING_COMMANDS:
             return False
-        with self._replay_lock:
-            if frame_id in self._replay_cache:
-                return True
-            self._replay_cache.add(frame_id)
-            self._replay_order.append(frame_id)
-            if len(self._replay_order) > _REPLAY_CACHE_LIMIT:
-                self._replay_cache.remove(self._replay_order.pop(0))
-        return False
+        return self._replay_cache.check_and_record(
+            session_id or "legacy", direction, frame_id, cmd
+        )
 
     def _dispatch(self, msg: dict) -> dict:
         return self._commands.dispatch(msg)
@@ -441,6 +482,55 @@ class LanServer:
 
     def _cmd_push_file(self, msg: dict) -> dict:
         return self._commands._cmd_push_file(msg)
+
+    def _import_service(self):
+        factory = self._import_service_factory
+        if factory is not None:
+            return factory()
+        from ohmymeme.core.assets import AssetPaths
+        from ohmymeme.core.config import get_config
+        from ohmymeme.core.database import get_db
+        from ohmymeme.core.imports import ImageImportService
+        from ohmymeme.core.manifest import build as build_manifest
+
+        config = self._config or get_config()
+        database = self._database or get_db()
+        builder = self._build_manifest or build_manifest
+        return ImageImportService(
+            database, AssetPaths(config.data_dir, config.cache_dir), builder
+        )
+
+    def set_confirm_callback(self, callback):
+        """设置当前服务器的设备确认回调。"""
+        previous = self._confirm_cb
+        self._confirm_cb = callback
+        return previous
+
+    def confirm_device(self, approved: bool, confirm_id: str = ""):
+        """完成当前服务器的待确认设备请求。"""
+        return self._confirm_device(approved, confirm_id)
+
+    def _confirm_device(self, approved: bool, confirm_id: str = ""):
+        if not confirm_id:
+            return
+        with self._confirm_lock:
+            entry = self._pending_confirms.get(confirm_id)
+            if entry is None:
+                return
+            entry["approved"] = bool(approved)
+            entry["done"].set()
+
+    def get_status(self):
+        """返回当前服务器状态。"""
+        return get_status()
+
+    def set_allow_secret_config(self, enabled: bool):
+        """设置当前运行期的密钥配置传输策略。"""
+        set_allow_secret_config(enabled)
+
+    def get_lan_ip(self):
+        """返回当前 LAN 地址。"""
+        return get_lan_ip()
 
     def _cmd_get_config(self) -> dict:
         return self._commands._cmd_get_config()
@@ -521,20 +611,17 @@ def set_confirm_callback(callback):
     global _confirm_cb
     old = _confirm_cb
     _confirm_cb = callback
+    if _server is not None:
+        _server._confirm_cb = callback
     return old
 
 
 def confirm_device(approved: bool, confirm_id: str = ""):
     """提交当前待确认设备的授权决定。"""
-    entry = _lan_state.get("pending_confirm")
-    if entry:
-        with _lan_lock:
-            if not confirm_id or not hmac.compare_digest(
-                confirm_id, entry.get("confirm_id", "")
-            ):
-                return
-            entry["approved"] = bool(approved)
-            entry["done"].set()
+    with _lan_lock:
+        current = _server
+    if current is not None:
+        current._confirm_device(approved, confirm_id)
 
 
 def get_lan_ip() -> str:
