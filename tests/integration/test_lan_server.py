@@ -111,6 +111,60 @@ def test_replayed_mutation_is_rejected_but_ping_remains_compatible(lan_env):
     sock.close()
 
 
+def test_replay_identity_does_not_cross_sessions(lan_env):
+    first = connect(17990)
+    second = connect(17990)
+    first_key = handshake(first)
+    second_key = handshake(second)
+    payload = frame(first_key, {"cmd": "send_config", "config": {"theme": "light"}})
+    assert first_key == second_key
+    first.sendall(payload)
+    assert recv_frame(first, first_key) == {"ok": True}
+
+    second.sendall(payload)
+    assert recv_frame(second, second_key) == {"ok": True}
+    first.close()
+    second.close()
+
+
+def test_device_confirmation_isolated_per_connection(lan_env):
+    pending = {}
+    both_pending = threading.Event()
+    lock = threading.Lock()
+
+    def defer(device):
+        with lock:
+            pending[device["name"]] = device["_confirm_id"]
+            if len(pending) == 2:
+                both_pending.set()
+
+    old = lan.set_confirm_callback(defer)
+    first = second = None
+    try:
+        first = connect(17990)
+        second = connect(17990)
+        first_key = handshake(first)
+        second_key = handshake(second)
+        first.sendall(frame(first_key, {"cmd": "device_info", "name": "first"}))
+        second.sendall(frame(second_key, {"cmd": "device_info", "name": "second"}))
+        assert both_pending.wait(1)
+        lan.confirm_device(True, pending["first"])
+        lan.confirm_device(False, pending["second"])
+
+        assert recv_frame(first, first_key)["approved"] is True
+        assert recv_frame(second, second_key)["approved"] is False
+        first.sendall(frame(first_key, {"cmd": "ping"}))
+        second.sendall(frame(second_key, {"cmd": "ping"}))
+        assert recv_frame(first, first_key)["ok"] is True
+        assert recv_frame(second, second_key) == {"ok": False, "error": "设备未授权"}
+    finally:
+        lan.set_confirm_callback(old)
+        if first:
+            first.close()
+        if second:
+            second.close()
+
+
 def test_replay_cache_is_bounded(lan_env):
     server = lan.LanServer()
     for index in range(lan._REPLAY_CACHE_LIMIT + 1):
