@@ -11,13 +11,11 @@
 """
 
 import hashlib
-import ipaddress
 import json
 import logging
 import os
 import platform
 import shutil
-import socket
 import sqlite3
 import struct
 import subprocess
@@ -25,13 +23,17 @@ import sys
 import tempfile
 import threading
 import time
-import urllib.request
 from pathlib import Path
-from urllib.parse import urlparse
 
+from ohmymeme.core.adapters.fetch_policy import (
+    FetchError,
+    FetchPolicy,
+    validate_image_bytes,
+)
 from ohmymeme.core.assets import ResourceLocator
 
 logger = logging.getLogger(__name__)
+_FETCH_POLICY = FetchPolicy()
 
 # 二进制完整性校验（发布时更新）
 _WECHAT_KEYFINDER_SHA256 = {
@@ -199,10 +201,11 @@ def _download_task():
         wechat_dir.mkdir(parents=True, exist_ok=True)
         dest = wechat_dir / _binary_name()
         tmp = wechat_dir / (dest.name + f".tmp{os.getpid()}")
-        req = urllib.request.Request(url, headers={"User-Agent": "OhMyMeme"})
-        with urllib.request.urlopen(req, timeout=60) as src:
-            with open(tmp, "wb") as f:
-                shutil.copyfileobj(src, f)
+        _FETCH_POLICY.download_to(
+            url,
+            tmp,
+            headers={"User-Agent": "OhMyMeme"},
+        )
         if verify_binary_integrity(str(tmp)):
             tmp.replace(dest)
             logger.info("wechat_keyfinder downloaded to %s", dest)
@@ -537,13 +540,8 @@ _WECHAT_CDN_HOSTS = {"vweixinf.tc.qq.com", "wxapp.tc.qq.com"}
 def _url_allowed(url):
     """校验 URL：仅允许显式批准的微信 CDN 主机（http/https）"""
     try:
-        parts = urlparse(url)
-    except ValueError:
-        return False
-    if parts.scheme not in ("http", "https"):
-        return False
-    host = (parts.hostname or "").lower()
-    if host not in _WECHAT_CDN_HOSTS:
+        _FETCH_POLICY.prepare(url, _WECHAT_CDN_HOSTS)
+    except FetchError:
         return False
     return True
 
@@ -551,50 +549,21 @@ def _url_allowed(url):
 def _resolve_safe(host):
     """解析主机，拒绝回环/私网/链路本地/保留/未指定地址（防 DNS 投毒 SSRF）"""
     try:
-        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
-    except socket.gaierror:
+        _FETCH_POLICY.prepare("https://" + host + "/", _WECHAT_CDN_HOSTS)
+    except FetchError:
         return False
-    for info in infos:
-        try:
-            ip = ipaddress.ip_address(info[4][0])
-        except ValueError:
-            return False
-        if (
-            ip.is_loopback
-            or ip.is_private
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_unspecified
-        ):
-            return False
     return True
 
 
-class _WechatRedirect(urllib.request.HTTPRedirectHandler):
-    """重定向时逐目标重新校验主机"""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        if not _url_allowed(newurl):
-            return None
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-
-def _download_sticker(url, aes_key=None):
+def _download_sticker(url, aes_key=None, expected_md5=None):
     """下载单个表情，返回图片字节或 None（校验 CDN 主机防 SSRF）"""
-    if not _url_allowed(url):
-        logger.debug("download rejected: url not allowed")
-        return None
-    host = urlparse(url).hostname or ""
-    if not _resolve_safe(host):
-        logger.debug("download rejected: unsafe host %s", host)
-        return None
     try:
-        opener = urllib.request.build_opener(_WechatRedirect)
-        req = urllib.request.Request(url, headers={"User-Agent": "OhMyMeme"})
-        with opener.open(req, timeout=15) as resp:
-            data = resp.read(_MAX_DOWNLOAD + 1)
-        if len(data) > _MAX_DOWNLOAD:
-            return None
+        data = _FETCH_POLICY.fetch_bytes(
+            url,
+            headers={"User-Agent": "OhMyMeme"},
+            trusted_hosts=_WECHAT_CDN_HOSTS,
+            max_bytes=_MAX_DOWNLOAD,
+        )
         if aes_key:
             from cryptography.hazmat.backends import default_backend
             from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -605,10 +574,11 @@ def _download_sticker(url, aes_key=None):
                     algorithms.AES(key), modes.CBC(key), backend=default_backend()
                 )
                 data = cipher.decryptor().update(data)
-        if _detect_image_ext(data):
-            return data
-        return None
-    except Exception as e:
+        if expected_md5 and hashlib.md5(data).hexdigest() != expected_md5:
+            return None
+        validate_image_bytes(data)
+        return data
+    except (FetchError, ValueError, TypeError, OSError) as e:
         logger.debug("download failed: %s", e)
         return None
 
@@ -931,7 +901,11 @@ def _wechat_worker(import_callback, user_root, download, account_path):
             if _check_cancel():
                 _update_wechat(status="cancelled", message="已取消")
                 return
-            data = _download_sticker(item["url"], item.get("aes_key") or None)
+            data = _download_sticker(
+                item["url"],
+                item.get("aes_key") or None,
+                item.get("md5") or None,
+            )
             if data:
                 ext = _detect_image_ext(data) or ".png"
                 path = os.path.join(temp_dir, f"{item['md5']}{ext}")

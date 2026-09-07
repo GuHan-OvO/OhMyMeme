@@ -13,7 +13,10 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from ohmymeme.core.adapters.fetch_policy import FetchError, FetchPolicy
+
 logger = logging.getLogger(__name__)
+_FETCH_POLICY = FetchPolicy()
 
 _TG_STATE = {
     "status": "idle",
@@ -606,10 +609,18 @@ def _tg_worker(import_callback, tdata_path, passcode, convert_webm):
                 ext = detect_extension(data)
                 if ext not in (".webp", ".webm"):
                     continue
+                if ext == ".webp":
+                    _FETCH_POLICY.validate_bytes(data, image=True)
+                else:
+                    _FETCH_POLICY.validate_bytes(
+                        data, expected_magic=b"\x1a\x45\xdf\xa3"
+                    )
                 out_path = os.path.join(temp_dir, f"tg_{i}{ext}")
                 with open(out_path, "wb") as f:
                     f.write(data)
                 decrypted_paths.append(out_path)
+            except FetchError as e:
+                logger.debug(f"skip {fpath}: {e}")
             except RuntimeError as e:
                 if "缺少依赖" in str(e):
                     raise
