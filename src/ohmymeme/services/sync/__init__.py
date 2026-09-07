@@ -1,9 +1,13 @@
 """同步服务公共入口。"""
 
+from ohmymeme.app.remote_mutation_errors import RemoteMutationWorkerError
+
+from .ports import RemoteBackendPort
 from .service import (
     REMOTE_INDEX,
     REMOTE_MEME_DIR,
     SyncError,
+    SyncService,
     _apply_remote_collections,
     _apply_remote_metadata,
     _apply_remote_order,
@@ -29,6 +33,8 @@ __all__ = [
     "REMOTE_INDEX",
     "REMOTE_MEME_DIR",
     "SyncError",
+    "SyncService",
+    "RemoteBackendPort",
     "_apply_remote_collections",
     "_apply_remote_metadata",
     "_apply_remote_order",
@@ -48,4 +54,5 @@ __all__ = [
     "push",
     "sync_test",
     "upload_index",
+    "RemoteMutationWorkerError",
 ]

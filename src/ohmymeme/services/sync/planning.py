@@ -1,11 +1,11 @@
 """同步差异、安全文件名和远端路径规划。"""
 
-import json
 import logging
 import os
 import tempfile
 from pathlib import Path
 
+from ohmymeme.app.manifest_service import ManifestService, ManifestValidationError
 from ohmymeme.core.assets import is_safe_filename
 from ohmymeme.core.config import get_config
 from ohmymeme.core.database import get_db
@@ -30,7 +30,7 @@ def _chunk_list(lst, n):
 def _remote_root(cfg) -> str:
     """返回远端根路径：FTP→ftp_path，WebDAV→webdav_path，对象存储→空"""
     st = cfg.get("sync_type", "")
-    if st == "ftp":
+    if st in ("ftp", "ftps"):
         return cfg.get("ftp_path", "/")
     if st == "webdav":
         return cfg.get("webdav_path", "")
@@ -57,7 +57,7 @@ def _fetch_remote_memes(bk, remote_root, config=None):
         if not bk.download_file(remote_path, tmp):
             raise SyncError("远端 manifest 下载失败")
         raw_bytes = tmp.read_bytes()
-        rdata = json.loads(raw_bytes.decode("utf-8"))
+        rdata = ManifestService().parse_json(raw_bytes, strict_hash=True).to_data()
         return {
             m["filename"]: m
             for m in rdata.get("memes", [])
@@ -65,7 +65,7 @@ def _fetch_remote_memes(bk, remote_root, config=None):
         }
     except SyncError:
         raise
-    except Exception as e:
+    except (ManifestValidationError, OSError, UnicodeDecodeError) as e:
         raise SyncError("远端 manifest 解析失败: %s" % e)
     finally:
         if tmp.exists():
@@ -103,7 +103,13 @@ def _apply_remote_order(remote_data: dict, db=None):
 
 
 def _apply_remote_metadata(remote_data: dict, db=None):
-    (db or get_db()).apply_remote_metadata(remote_data)
+    projection = ManifestService().parse_data(remote_data, strict_hash=True)
+    (db or get_db()).apply_remote_metadata(projection.to_data())
+
+
+def _apply_remote_pull_metadata(remote_data: dict, db=None):
+    projection = ManifestService().parse_data(remote_data, strict_hash=True)
+    (db or get_db()).apply_remote_pull_metadata(projection.to_data())
 
 
 def list_remote_orphans(bk, remote_root, config=None) -> list:

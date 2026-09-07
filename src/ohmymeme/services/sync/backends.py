@@ -3,9 +3,10 @@
 import logging
 import os
 import shutil
+import ssl
 import urllib.error
 import urllib.request
-from ftplib import FTP, error_perm
+from ftplib import FTP, FTP_TLS, error_perm
 from pathlib import Path
 from urllib.parse import quote, unquote, urlparse
 
@@ -66,13 +67,24 @@ class _FtpBackend(_SyncBackend):
             raise SyncError("FTP host not configured")
 
         try:
-            ftp = FTP()
+            use_tls = (
+                bool(self.cfg.get("ftp_tls", False))
+                or self.cfg.get("sync_type", "") == "ftps"
+            )
+            if use_tls:
+                ca_file = self.cfg.get("ftp_tls_ca", "")
+                context = ssl.create_default_context(cafile=ca_file or None)
+                ftp = FTP_TLS(context=context)
+            else:
+                ftp = FTP()
             ftp.connect(host, int(port), timeout=15)
             if user:
                 ftp.login(user, password)
             else:
                 ftp.login()
             ftp.encoding = "utf-8"
+            if use_tls and self.cfg.get("ftp_tls_protect_data", True):
+                ftp.prot_p()
             self.ftp = ftp
         except Exception as e:
             raise SyncError("FTP connect failed: %s" % e)
@@ -157,6 +169,8 @@ class _S3Backend(_SyncBackend):
         self.client = None
         self.bucket = ""
         self.prefix = ""
+        self.multipart_threshold = 8 * 1024 * 1024
+        self.multipart_part_size = 5 * 1024 * 1024
 
     def connect(self):
         """连接 S3 后端，创建 boto3 客户端"""
@@ -194,6 +208,14 @@ class _S3Backend(_SyncBackend):
             self.bucket = bucket
             prefix = self.cfg.get("s3_path", "").strip("/")
             self.prefix = (prefix + "/") if prefix else ""
+            self.multipart_threshold = max(
+                5 * 1024 * 1024,
+                int(self.cfg.get("s3_multipart_threshold", 8 * 1024 * 1024)),
+            )
+            self.multipart_part_size = max(
+                5 * 1024 * 1024,
+                int(self.cfg.get("s3_multipart_part_size", 5 * 1024 * 1024)),
+            )
         except Exception as e:
             raise SyncError("S3 connect failed: %s" % e)
 
@@ -207,14 +229,47 @@ class _S3Backend(_SyncBackend):
         # V2 签名下 boto3 put_object 不走 chunked 编码，直接用 SDK 上传
         # （presigned URL + urllib 会因多出的 Content-Type 与签名不匹配，OSS 拒绝）
         try:
-            with open(local_path, "rb") as f:
-                data = f.read()
-            self.client.put_object(
-                Bucket=self.bucket,
-                Key=self._key(remote_path),
-                Body=data,
-                ContentType="application/octet-stream",
+            key = self._key(remote_path)
+            if local_path.stat().st_size < self.multipart_threshold:
+                with open(local_path, "rb") as f:
+                    self.client.put_object(
+                        Bucket=self.bucket,
+                        Key=key,
+                        Body=f.read(),
+                        ContentType="application/octet-stream",
+                    )
+                return True
+            upload = self.client.create_multipart_upload(
+                Bucket=self.bucket, Key=key, ContentType="application/octet-stream"
             )
+            upload_id = upload["UploadId"]
+            parts = []
+            try:
+                with open(local_path, "rb") as f:
+                    part_number = 1
+                    while data := f.read(self.multipart_part_size):
+                        response = self.client.upload_part(
+                            Bucket=self.bucket,
+                            Key=key,
+                            PartNumber=part_number,
+                            UploadId=upload_id,
+                            Body=data,
+                        )
+                        parts.append(
+                            {"ETag": response["ETag"], "PartNumber": part_number}
+                        )
+                        part_number += 1
+                self.client.complete_multipart_upload(
+                    Bucket=self.bucket,
+                    Key=key,
+                    UploadId=upload_id,
+                    MultipartUpload={"Parts": parts},
+                )
+            except Exception:
+                self.client.abort_multipart_upload(
+                    Bucket=self.bucket, Key=key, UploadId=upload_id
+                )
+                raise
             return True
         except Exception as e:
             logger.warning("upload failed %s: %s", remote_path, e)
@@ -280,12 +335,7 @@ class _S3Backend(_SyncBackend):
 # ─── R2 后端 ───
 
 
-class _R2Backend(_SyncBackend):
-    def __init__(self, cfg):
-        self.cfg = cfg
-        self.client = None
-        self.bucket = ""
-        self.prefix = ""
+class _R2Backend(_S3Backend):
 
     def connect(self):
         account_id = self.cfg.get("r2_account_id", "")
@@ -303,81 +353,38 @@ class _R2Backend(_SyncBackend):
         endpoint = "https://%s.r2.cloudflarestorage.com" % account_id
 
         try:
+            from botocore.config import Config as BotoConfig
+
+            addressing = self.cfg.get("r2_addressing_style", "virtual")
+            if addressing not in ("virtual", "path"):
+                addressing = "virtual"
             self.client = boto3.client(
                 "s3",
-                endpoint_url=endpoint,
+                endpoint_url=self.cfg.get("r2_endpoint", endpoint),
+                region_name=self.cfg.get("r2_region", "auto"),
                 aws_access_key_id=access_key,
                 aws_secret_access_key=secret_key,
+                config=BotoConfig(
+                    signature_version="s3v4",
+                    s3={
+                        "payload_signing_enabled": False,
+                        "addressing_style": addressing,
+                    },
+                ),
             )
             self.bucket = bucket
             prefix = self.cfg.get("r2_path", "").strip("/")
             self.prefix = (prefix + "/") if prefix else ""
+            self.multipart_threshold = max(
+                5 * 1024 * 1024,
+                int(self.cfg.get("r2_multipart_threshold", 8 * 1024 * 1024)),
+            )
+            self.multipart_part_size = max(
+                5 * 1024 * 1024,
+                int(self.cfg.get("r2_multipart_part_size", 5 * 1024 * 1024)),
+            )
         except Exception as e:
             raise SyncError("R2 connect failed: %s" % e)
-
-    def _key(self, remote_path):
-        return self.prefix + remote_path.lstrip("/")
-
-    def ensure_remote_dir(self, path):
-        pass
-
-    def upload_file(self, local_path, remote_path):
-        try:
-            self.client.upload_file(
-                str(local_path), self.bucket, self._key(remote_path)
-            )
-            return True
-        except Exception as e:
-            logger.warning("upload failed %s: %s", remote_path, e)
-            return False
-
-    def download_file(self, remote_path, local_path):
-        try:
-            local_path.parent.mkdir(parents=True, exist_ok=True)
-            self.client.download_file(
-                self.bucket, self._key(remote_path), str(local_path)
-            )
-            return True
-        except Exception as e:
-            logger.warning("download failed %s: %s", remote_path, e)
-            return False
-
-    def file_exists(self, path):
-        try:
-            self.client.head_object(Bucket=self.bucket, Key=self._key(path))
-            return True
-        except Exception:
-            return False
-
-    def delete_file(self, path):
-        try:
-            self.client.delete_object(Bucket=self.bucket, Key=self._key(path))
-            return True
-        except Exception as e:
-            logger.warning("delete failed %s: %s", path, e)
-            return False
-
-    def list_files(self, path):
-        prefix = self._key(path)
-        if prefix and not prefix.endswith("/"):
-            prefix += "/"
-        keys = []
-        kwargs = {"Bucket": self.bucket, "Prefix": prefix}
-        while True:
-            resp = self.client.list_objects_v2(**kwargs)
-            for obj in resp.get("Contents", []):
-                key = obj["Key"]
-                if key.endswith("/"):
-                    continue
-                keys.append(key[len(prefix) :])
-            if resp.get("IsTruncated"):
-                kwargs["ContinuationToken"] = resp.get("NextContinuationToken")
-            else:
-                break
-        return keys
-
-    def close(self):
-        self.client = None
 
 
 # ─── WebDAV 后端 ───
@@ -394,6 +401,7 @@ class _WebDAVBackend(_SyncBackend):
         self.base_url = ""
         self.auth_header = ""
         self.timeout = 30
+        self.ssl_context = None
 
     def connect(self):
         url = self.cfg.get("webdav_url", "")
@@ -413,6 +421,10 @@ class _WebDAVBackend(_SyncBackend):
             parsed.netloc,
             enc_path.rstrip("/"),
         )
+        if parsed.scheme == "https" and self.cfg.get("webdav_ca_file"):
+            self.ssl_context = ssl.create_default_context(
+                cafile=self.cfg.get("webdav_ca_file")
+            )
         try:
             self.timeout = int(self.cfg.get("webdav_timeout", 30))
         except (TypeError, ValueError):
@@ -439,7 +451,11 @@ class _WebDAVBackend(_SyncBackend):
         if headers:
             for k, v in headers.items():
                 req.add_header(k, v)
-        return urllib.request.urlopen(req, timeout=self.timeout)
+        if self.ssl_context is None:
+            return urllib.request.urlopen(req, timeout=self.timeout)
+        return urllib.request.urlopen(
+            req, timeout=self.timeout, context=self.ssl_context
+        )
 
     def ensure_remote_dir(self, path):
         rel = ""
@@ -552,8 +568,8 @@ class _WebDAVBackend(_SyncBackend):
             with self._request("DELETE", self._url(path)) as resp:
                 return resp.status in (200, 204)
         except urllib.error.HTTPError as e:
-            if e.code == 404:  # 404说明目标不存在，视为删除成功
-                return True
+            if e.code == 404:
+                return False
             logger.warning("delete failed %s -> HTTP %d", path, e.code)
             return False
         except Exception as e:
@@ -575,7 +591,7 @@ class _WebDAVBackend(_SyncBackend):
             raise SyncError("WebDAV list_files failed: HTTP %d" % e.code) from e
         except Exception as e:
             raise SyncError("WebDAV list_files failed: %s" % e) from e
-        base = url.rstrip("/") + "/"
+        requested_path = urlparse(url).path.rstrip("/") or "/"
         files = []
         try:
             root = ET.fromstring(raw)
@@ -588,12 +604,15 @@ class _WebDAVBackend(_SyncBackend):
             href = href_el.text.strip()
             if href.endswith("/"):
                 continue  # 目录条目跳过（仅顶层）
-            if href.rstrip("/") == url.rstrip("/"):
+            href_path = urlparse(href).path if "://" in href else href
+            href_path = href_path.rstrip("/") or "/"
+            if href_path == requested_path:
                 continue
-            if href.startswith(base):
-                name = href[len(base) :]
+            child_prefix = requested_path.rstrip("/") + "/"
+            if href_path.startswith(child_prefix):
+                name = href_path[len(child_prefix) :]
             else:
-                name = href.split("/")[-1]
+                name = href_path.split("/")[-1]
             name = unquote(name)
             if name:
                 files.append(name)
@@ -605,7 +624,7 @@ class _WebDAVBackend(_SyncBackend):
 
 def get_backend(cfg):
     sync_type = cfg.get("sync_type", "")
-    if sync_type == "ftp":
+    if sync_type in ("ftp", "ftps"):
         return _FtpBackend(cfg)
     elif sync_type == "s3":
         return _S3Backend(cfg)
