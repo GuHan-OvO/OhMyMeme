@@ -3,6 +3,15 @@
 from dataclasses import dataclass, replace
 
 PHASES = ("build", "install", "launch", "upgrade", "rollback", "uninstall")
+TOOL_LOCKFILE = "mise.lock"
+INPUT_DIGESTS = {
+    "build": "source-tree-sha256",
+    "install": "candidate-artifact-sha256",
+    "launch": "installed-application-sha256",
+    "upgrade": "previous-artifact-sha256+candidate-artifact-sha256",
+    "rollback": "previous-artifact-sha256",
+    "uninstall": "installed-application-sha256",
+}
 MACOS_INSTALL = (
     "hdiutil attach {artifact} -nobrowse && "
     "ditto {mounted_app} /Applications/OhMyMeme.app"
@@ -27,6 +36,8 @@ class LifecycleProbe:
     command: str
     observable: str
     cleanup: str
+    tool_lockfile: str = ""
+    input_digest: str = ""
 
     def with_field(self, field, value):
         return replace(self, **{field: value})
@@ -34,11 +45,11 @@ class LifecycleProbe:
 
 def probes_for(target):
     runners = {
-        "windows-x64": "windows-latest",
-        "linux-appimage-x64": "ubuntu-latest",
-        "linux-deb-amd64": "ubuntu-latest",
-        "linux-rpm-x64": "ubuntu-latest",
-        "macos-arm64": "macos-latest",
+        "windows-x64": "windows-2022",
+        "linux-appimage-x64": "ubuntu-24.04",
+        "linux-deb-amd64": "ubuntu-24.04",
+        "linux-rpm-x64": "ubuntu-24.04",
+        "macos-arm64": "macos-14",
         "macos-x86_64": "macos-15-intel",
     }
     package_tools = {
@@ -101,7 +112,7 @@ def probes_for(target):
             "rm -rf /Applications/OhMyMeme.app",
         ),
     }[target]
-    return (
+    probes = (
         LifecycleProbe(
             "build",
             runner,
@@ -163,6 +174,14 @@ def probes_for(target):
             "remove lifecycle workspace",
         ),
     )
+    return tuple(
+        replace(
+            probe,
+            tool_lockfile=TOOL_LOCKFILE,
+            input_digest=INPUT_DIGESTS[probe.phase],
+        )
+        for probe in probes
+    )
 
 
 def validate_probes(probes):
@@ -171,7 +190,16 @@ def validate_probes(probes):
     for probe in probes:
         if not probe.required:
             raise LifecycleViolation("lifecycle probe must be required")
-        for field in ("runner", "tool", "input", "command", "observable", "cleanup"):
+        for field in (
+            "runner",
+            "tool",
+            "input",
+            "command",
+            "observable",
+            "cleanup",
+            "tool_lockfile",
+            "input_digest",
+        ):
             value = getattr(probe, field)
             if not isinstance(value, str) or not value.strip():
                 raise LifecycleViolation(
