@@ -8,7 +8,7 @@ on:
 jobs:
   nightly-windows:
     if: ${{ github.repository == 'OhMyMeme/OhMyMeme' }}
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,7 +47,7 @@ jobs:
       matrix:
         include:
           - arch: x86_64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - arch: aarch64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
@@ -89,7 +89,7 @@ jobs:
       matrix:
         include:
           - arch: arm64
-            runner: macos-latest
+            runner: macos-14
           - arch: x86_64
             runner: macos-15-intel
     runs-on: ${{ matrix.runner }}
@@ -122,7 +122,7 @@ jobs:
   publish-nightly:
     if: ${{ github.repository == 'OhMyMeme/OhMyMeme' }}
     needs: [nightly-windows, nightly-linux, nightly-macos]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
