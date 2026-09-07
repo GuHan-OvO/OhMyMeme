@@ -63,6 +63,7 @@ OhMyMeme/
 │   │   │   ├── config.py                           JSON 配置、默认值和密钥字段
 │   │   │   ├── crypto.py                           Fernet 及降级加密
 │   │   │   ├── database.py                         SQLite 表、查询、标签、分组和排序
+│   │   │   ├── domain/                             严格类型领域值、纯规则和稳定错误
 │   │   │   ├── gif_stego.py                        GIF 隐写编码、解码和原图恢复
 │   │   │   ├── imports.py                          图片校验、去重、导入事务
 │   │   │   └── manifest.py                         meme-index.json 生成、恢复和投影

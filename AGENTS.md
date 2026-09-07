@@ -43,8 +43,8 @@ JsApi / SettingsApi → SQLite (WAL) + 本地缓存 + 远端同步
 ## 格式 & Lint
 - `black src/` (line-length 88,  black 26.5.1)
 - `ruff check src/` (select F, E, W, I)
-- 新增依赖同时更新 `requirements.txt` 和 `environment.yml`
-- **PR 贡献必须确保 `black --check src/` 和 `ruff check src/` 全部通过**，CI 会检查这两项
+- 新增依赖同时更新 `requirements.txt` 和 `environment.yml`；开发质量依赖更新 `requirements-dev.txt`
+- **PR 贡献必须确保 `mise run lint && mise run typecheck-python && mise run test-python && mise run typecheck-frontend && mise run test-frontend && mise run test-contracts && mise run build-frontend && mise run e2e && mise run package-smoke` 全部通过**，CI 会检查这些门禁
 
 ## 关键目录
 
@@ -54,7 +54,7 @@ JsApi / SettingsApi → SQLite (WAL) + 本地缓存 + 远端同步
 src/              # 源码根与固定运行时静态资产
   ohmymeme/       # 唯一 Python 业务包
     app/          # CLI 入口、Container、Catalog 与 Settings
-    core/         # Config、Crypto、SQLite、资产、导入和 Manifest
+    core/         # 纯领域值/规则、Config、Crypto、SQLite、资产、导入和 Manifest
     services/     # 更新、同步与局域网服务
     integrations/ # 平台能力与外部导入适配器
     presentation/ # pywebview、Bottle 与前端源码
@@ -384,16 +384,14 @@ tests/
 
 ## 构建 & 测试
 ```bash
-pip install -r requirements.txt
-npm install                 # Vue 前端依赖（开发时）
-npx vite build              # 构建 Vue 前端 → webui/dist/ohmymeme.js
-python -m ohmymeme     # 开发运行
-python -m pytest tests/ -v  # 运行测试
-ruff check src/   # lint 检查
-black src/        # 格式化
+mise install python node npm --locked
+mise run setup
+mise run run
+mise run check
 python scripts/build.py  # PyInstaller + InnoSetup 完整构建
 python scripts/build.py --lang en  # 指定语言构建
 ```
+- `mise run package-smoke -- --contract-only` 只校验 Windows x64、AppImage、deb、rpm、macOS arm64/x86_64 的构建/安装/启动/升级/回滚/卸载定义；`package-smoke-evidence` 使用工作树外的 Todo 2 `release-catalog.json` 生成 canonical `task-6.json`，冻结候选和回滚输入 SHA-256，不执行产物生命周期。
 - **构建自动编译 Vue 前端**: `build.py` 的 `ensure_vue_frontend()` 在打包前检查 `src/webui/dist/ohmymeme.js`（被 gitignore，CI 全新检出缺失），缺失时自动 `npm ci`（有 lockfile，否则 `npm install`）→ `npx vite build`，失败则中止构建；构建机需 node/npm（GitHub Actions runner 预装），dist 已存在时直接跳过
 - **Linux 打包（GTK）**: `--linux` 时 `build.py` 自动传 `--additional-hooks-dir scripts/hooks`（收集 WebKit2/Soup typelib）并 `--collect-all gi`，把 PyGObject/GTK 打进产物，脱离系统 python3-gi 运行；构建机需装 `python3-gi gir1.2-webkit2-4.1 libgirepository1.0-dev libgirepository-2.0-dev gobject-introspection` 并 `pip install PyGObject`（对应 `build.yml`/`nightly.yml` build-linux job）；**PyGObject ≥3.52 硬依赖 girepository-2.0**（Ubuntu 24.04 对应 `libgirepository-2.0-dev`），只装 1.0-dev 会在 meson 元数据阶段报 `Dependency 'girepository-2.0' is required but not found`；deb `Depends: python3-gi, gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0`
 
@@ -402,7 +400,7 @@ python scripts/build.py --lang en  # 指定语言构建
 `make` 命令仅供参考（`make run`/`make test`/`make lint`/`make format`/`make build`），macOS/Linux 下可能不可用，优先使用原生 Python 命令。
 
 ## CI (GitHub Actions) — 三个独立 workflow
-- **check.yml**: Ubuntu, lint + test, push 和 PR 到任意分支均触发
+- **check.yml**: Ubuntu，统一运行 lint、类型、单元/契约/浏览器测试、前端构建和发布契约 smoke，push 和 PR 到任意分支均触发
 - **build.yml**: Windows + Linux + macOS 三平台，仅在 `check` 通过 main 分支后自动触发，也支持 `workflow_dispatch` 手动触发
   - `build-windows`: InnoSetup 安装包 `dist/OhMyMeme-*-setup.exe`
   - `build-linux`: AppImage/deb/rpm（`--linux`）
