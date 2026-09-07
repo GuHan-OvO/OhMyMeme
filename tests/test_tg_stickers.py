@@ -118,6 +118,19 @@ class TestConvertProcessLifecycle(unittest.TestCase):
         with tg._TG_LOCK:
             self.assertNotIn(proc, tg._TG_ACTIVE_PROC)
 
+    @mock.patch("ohmymeme.integrations.imports.telegram.subprocess.Popen")
+    def test_webm_conversion_preserves_alpha_decoder_and_quality_contract(self, popen):
+        proc = DummyProc(ret=0)
+        popen.return_value = proc
+
+        self.assertTrue(
+            tg.convert_webm_to_webp("/tmp/x.webm", "/tmp/x.webp", timeout=30)
+        )
+        command = popen.call_args.args[0]
+        self.assertEqual(command[command.index("-c:v") + 1], "libvpx-vp9")
+        self.assertEqual(command[command.index("-lossless") + 1], "0")
+        self.assertEqual(command[command.index("-quality") + 1], "80")
+
     def test_cancel_terminates_active_proc(self):
         proc = DummyProc()
         with tg._TG_LOCK:

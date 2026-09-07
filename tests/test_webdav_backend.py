@@ -258,6 +258,36 @@ class TestSyncTestWebDAV(unittest.TestCase):
 
 class TestWebDAVList(unittest.TestCase):
     @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    def test_relative_root_href_is_not_returned_as_a_child(self, urlopen):
+        # Given: a Depth-1 response containing the requested collection itself
+        body = (
+            b'<?xml version="1.0"?><D:multistatus xmlns:D="DAV:">'
+            b"<D:response><D:href>/dav/memes</D:href></D:response>"
+            b"<D:response><D:href>/dav/memes/orphan.png</D:href></D:response>"
+            b"</D:multistatus>"
+        )
+        urlopen.return_value = _FakeResp(207, body)
+        backend = _make_backend(url="https://host/dav")
+
+        # When: the backend lists the requested collection
+        names = backend.list_files("memes")
+
+        # Then: only its actual child file is returned
+        self.assertEqual(names, ["orphan.png"])
+
+    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    def test_delete_404_is_not_counted_as_a_remote_removal(self, urlopen):
+        # Given: a remote delete whose target disappeared before DELETE completed
+        urlopen.side_effect = urllib.error.HTTPError("u", 404, "gone", {}, None)
+        backend = _make_backend()
+
+        # When: the backend attempts the delete
+        removed = backend.delete_file("memes/orphan.png")
+
+        # Then: the caller can distinguish a missing target from a confirmed delete
+        self.assertFalse(removed)
+
+    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
     def test_unquotes_href(self, urlopen):
         body = (
             b'<?xml version="1.0"?><D:multistatus xmlns:D="DAV:">'
