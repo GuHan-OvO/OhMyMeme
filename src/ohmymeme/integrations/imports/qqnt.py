@@ -20,7 +20,9 @@ import json
 import os
 import shutil
 import time
-import urllib.request
+from pathlib import Path
+
+from ohmymeme.core.adapters.fetch_policy import FetchPolicy
 
 # QQNT 用户数据配置文件（默认路径）
 DEFAULT_INI_PATH = r"C:\Users\Public\Documents\Tencent\QQ\UserDataInfo.ini"
@@ -51,6 +53,7 @@ _PRIORITY_ENCODINGS = [
     "latin-1",
     "ascii",
 ]
+_FETCH_POLICY = FetchPolicy()
 
 
 def is_content_valid(content, min_chinese=1):
@@ -218,8 +221,13 @@ def get_user_nickname(qq_number, cache_path=None):
         return entry.get("name", "")
     try:
         url = "https://uapis.cn/api/v1/social/qq/userinfo?qq=" + str(qq_number)
-        with urllib.request.urlopen(url, timeout=5) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        data = json.loads(
+            _FETCH_POLICY.fetch_bytes(
+                url,
+                headers={"User-Agent": "OhMyMeme"},
+                max_bytes=64 * 1024,
+            ).decode("utf-8")
+        )
         name = data.get("nickname") or ""
     except Exception:
         return ""
@@ -249,6 +257,15 @@ def get_default_output_dir(save_path, qq_number, fetch_nickname=True, cache_path
     """生成默认输出目录（以昵称+QQ号命名）"""
     display = get_display_name(qq_number, fetch_nickname, cache_path)
     return os.path.join(save_path, sanitize_filename(display) + "_提取的表情")
+
+
+def targets_library_output(output_dir, cache_dir):
+    """判断输出目录是否与应用缓存重叠。"""
+    output = Path(output_dir).expanduser().resolve(strict=False)
+    cache = Path(cache_dir).expanduser().resolve(strict=False)
+    return (
+        output == cache or output.is_relative_to(cache) or cache.is_relative_to(output)
+    )
 
 
 def copy_directory_with_progress(

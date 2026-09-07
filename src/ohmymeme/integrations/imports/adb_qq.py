@@ -1,5 +1,6 @@
 """ADB 自动检测与下载管理 + QQ 表情包导入"""
 
+import hashlib
 import logging
 import os
 import platform
@@ -9,13 +10,14 @@ import sys
 import tempfile
 import threading
 import time
-import urllib.request
 import zipfile
 from pathlib import Path
 
+from ohmymeme.core.adapters.fetch_policy import FetchPolicy
 from ohmymeme.core.assets import ResourceLocator
 
 logger = logging.getLogger(__name__)
+_FETCH_POLICY = FetchPolicy()
 
 _ADB_URLS = {
     "Windows": "https://googledownloads.cn/android/repository/platform-tools-latest-windows.zip",
@@ -58,6 +60,42 @@ _QQ_FILE_TYPES = {
     b"RIFF": ".webp",
     b"BM": ".bmp",
 }
+_ADB_SHA256 = {"Windows": "", "Darwin": "", "Linux": ""}
+_ADB_BINARY_SHA256 = {"Windows": "", "Darwin": "", "Linux": ""}
+
+
+def _extract_zip_safely(zip_path, destination):
+    """解压 ADB 包并拒绝路径穿越和符号链接条目。"""
+    root = Path(destination).resolve()
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        for info in archive.infolist():
+            target = (root / info.filename).resolve()
+            if target != root and root not in target.parents:
+                raise ValueError("ADB 压缩包包含非法路径")
+            if (info.external_attr >> 16) & 0o170000 == 0o120000:
+                raise ValueError("ADB 压缩包包含符号链接")
+            archive.extract(info, root)
+
+
+def _verify_file_hash(path, expected):
+    """校验下载归档或 adb 二进制的 SHA-256。"""
+    if not isinstance(expected, str) or len(expected) != 64:
+        return False
+    if any(char not in "0123456789abcdef" for char in expected):
+        return False
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as source:
+            for chunk in iter(lambda: source.read(65536), b""):
+                digest.update(chunk)
+    except OSError:
+        return False
+    return digest.hexdigest() == expected
+
+
+def _integrity_configured():
+    system = platform.system()
+    return _ADB_SHA256.get(system, ""), _ADB_BINARY_SHA256.get(system, "")
 
 
 def _detect_ext(data: bytes) -> str:
@@ -125,13 +163,18 @@ def detect_adb() -> str:
     adb_dir = _get_adb_dir()
     candidate = adb_dir / "platform-tools" / binary
     if candidate.exists():
-        return str(candidate)
+        _archive_hash, binary_hash = _integrity_configured()
+        if _verify_file_hash(candidate, binary_hash):
+            return str(candidate)
+        return ""
     try:
         kw = {"capture_output": True, "timeout": 5, "shell": False}
         if os.name == "nt" and getattr(sys, "frozen", False):
             kw["creationflags"] = subprocess.CREATE_NO_WINDOW
         r = subprocess.run(["adb", "--version"], **kw)
-        if r.returncode == 0:
+        path = shutil.which("adb")
+        _archive_hash, binary_hash = _integrity_configured()
+        if r.returncode == 0 and path and _verify_file_hash(path, binary_hash):
             return "adb"
     except Exception:
         pass
@@ -174,25 +217,37 @@ def _download_task():
         return
     adb_dir = _get_adb_dir()
     zip_path = adb_dir / "platform-tools.zip"
+    archive_hash, binary_hash = _integrity_configured()
+    if not archive_hash or not binary_hash:
+        _ADB_STATE["error"] = "ADB integrity hash unavailable"
+        _ADB_STATE["done"] = True
+        return
     try:
         adb_dir.mkdir(parents=True, exist_ok=True)
         logger.info("downloading ADB from %s", url)
-        req = urllib.request.Request(url, headers={"User-Agent": "OhMyMeme"})
-        CHUNK = 8192
-        with urllib.request.urlopen(req, timeout=30) as src:
-            with open(zip_path, "wb") as f:
-                while True:
-                    chunk = src.read(CHUNK)
-                    if not chunk:
-                        break
-                    f.write(chunk)
+        _FETCH_POLICY.download_to(
+            url,
+            zip_path,
+            headers={"User-Agent": "OhMyMeme"},
+            expected_magic=(b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"),
+            expected_sha256=archive_hash,
+        )
+        if not _verify_file_hash(zip_path, archive_hash):
+            zip_path.unlink(missing_ok=True)
+            _ADB_STATE["error"] = "ADB archive integrity check failed"
+            _ADB_STATE["done"] = True
+            return
         logger.info("ADB download complete, extracting...")
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(adb_dir)
+        _extract_zip_safely(zip_path, adb_dir)
         zip_path.unlink()
         binary = _adb_binary_name()
         exe_path = adb_dir / "platform-tools" / binary
         if exe_path.exists():
+            if not _verify_file_hash(exe_path, binary_hash):
+                exe_path.unlink(missing_ok=True)
+                _ADB_STATE["error"] = "ADB binary integrity check failed"
+                _ADB_STATE["done"] = True
+                return
             if platform.system() != "Windows":
                 exe_path.chmod(0o755)
             _ADB_STATE["ready"] = True
@@ -258,31 +313,35 @@ def _download_with_progress():
         return False
     adb_dir = _get_adb_dir()
     zip_path = adb_dir / "platform-tools.zip"
+    archive_hash, binary_hash = _integrity_configured()
+    if not archive_hash or not binary_hash:
+        _update_qq(status="error", error="ADB integrity hash unavailable")
+        return False
     try:
         adb_dir.mkdir(parents=True, exist_ok=True)
         _update_qq(message="正在下载 ADB...")
-        req = urllib.request.Request(url, headers={"User-Agent": "OhMyMeme"})
-        CHUNK = 8192
-        with urllib.request.urlopen(req, timeout=30) as src:
-            total = int(src.headers.get("Content-Length", 0))
-            with open(zip_path, "wb") as f:
-                written = 0
-                while True:
-                    chunk = src.read(CHUNK)
-                    if not chunk:
-                        break
-                    f.write(chunk)
-                    written += len(chunk)
-                    if total > 0:
-                        pct = int(written * 100 / total)
-                        _update_qq(dl_progress=pct)
+        _FETCH_POLICY.download_to(
+            url,
+            zip_path,
+            headers={"User-Agent": "OhMyMeme"},
+            expected_magic=(b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"),
+            progress=lambda _done, _total: _update_qq(dl_progress=100),
+            expected_sha256=archive_hash,
+        )
+        if not _verify_file_hash(zip_path, archive_hash):
+            zip_path.unlink(missing_ok=True)
+            _update_qq(status="error", error="ADB archive integrity check failed")
+            return False
         _update_qq(message="正在解压 ADB...")
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(adb_dir)
+        _extract_zip_safely(zip_path, adb_dir)
         zip_path.unlink()
         binary = _adb_binary_name()
         exe_path = adb_dir / "platform-tools" / binary
         if exe_path.exists():
+            if not _verify_file_hash(exe_path, binary_hash):
+                exe_path.unlink(missing_ok=True)
+                _update_qq(status="error", error="ADB binary integrity check failed")
+                return False
             if platform.system() != "Windows":
                 exe_path.chmod(0o755)
             _ADB_STATE["ready"] = True
