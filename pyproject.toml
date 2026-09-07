@@ -1,2 +1,49 @@
+[tool.basedpyright]
+typeCheckingMode = "all"
+pythonVersion = "3.12"
+pythonPlatform = "All"
+include = [
+  "src/ohmymeme/__init__.py",
+  "src/ohmymeme/__main__.py",
+  "src/ohmymeme/presentation/desktop/api/__init__.py",
+  "src/ohmymeme/presentation/desktop/routes/contributors.py",
+  "src/ohmymeme/presentation/desktop/routes/media.py",
+  "src/ohmymeme/presentation/desktop/routes/pages.py",
+  "src/ohmymeme/app/ports.py",
+  "src/ohmymeme/app/operations.py",
+  "src/ohmymeme/app/operation_coordinator.py",
+  "src/ohmymeme/app/operation_runtime.py",
+  "src/ohmymeme/app/operation_shutdown.py",
+  "src/ohmymeme/services/ports.py",
+  "src/ohmymeme/services/lifecycle.py",
+  "tests/architecture/test_package_boundaries.py",
+  "tests/architecture/test_import_boundaries.py",
+  "tests/architecture/test_quality_gates.py",
+]
+strict = [
+  "src/ohmymeme/core/domain",
+  "src/ohmymeme/core/application",
+  "src/ohmymeme/core/ports",
+  "src/ohmymeme/core/adapters",
+  "src/ohmymeme/core/schemas",
+]
+exclude = [
+  # Windows native clipboard APIs via ctypes.
+  "src/ohmymeme/integrations/platform/clipboard.py",
+  # OS hook backends selected dynamically at runtime.
+  "src/ohmymeme/integrations/platform/hotkey.py",
+  # pythonnet/WinForms runtime bindings.
+  "src/ohmymeme/integrations/platform/native_drag.py",
+  # Windows DLL and COM bindings through ctypes.
+  "src/ohmymeme/integrations/platform/system.py",
+  # pystray imports chosen only when the desktop supports a tray.
+  "src/ohmymeme/integrations/platform/tray.py",
+  # pywebview native, GTK, and Win32 bindings.
+  "src/ohmymeme/presentation/desktop/window_manager.py",
+]
+
 [tool.ruff.lint]
 select = ["F", "E", "W", "I"]
+
+[tool.ruff]
+target-version = "py312"
