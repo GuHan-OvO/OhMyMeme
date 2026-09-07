@@ -1,5 +1,6 @@
 """版本更新检查与自动升级"""
 
+import hashlib
 import json
 import logging
 import os
@@ -8,14 +9,17 @@ import subprocess
 import tempfile
 import threading
 import time
-import urllib.error
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Optional
 
 from ohmymeme import __version__
+from ohmymeme.core.adapters.fetch_policy import FetchPolicy
 
 logger = logging.getLogger(__name__)
+_FETCH_POLICY = FetchPolicy()
+_ASSET_HASHES = {}
+_DOWNLOAD_EXPECTED_HASH = None
 
 _GITHUB_LATEST = "https://api.github.com/repos/OhMyMeme/OhMyMeme/releases/latest"
 _GITHUB_LIST = "https://api.github.com/repos/OhMyMeme/OhMyMeme/releases?per_page=5"
@@ -46,18 +50,58 @@ def _pick_asset_url(assets: list) -> str:
         for a in assets:
             name = a.get("name", "")
             if name.endswith("-setup.exe") or name.endswith(".exe"):
-                return a.get("browser_download_url", "")
+                url = a.get("browser_download_url", "")
+                digest = a.get("digest") or a.get("sha256") or ""
+                normalized = _normalize_sha256(digest)
+                if isinstance(url, str) and url:
+                    if normalized:
+                        _ASSET_HASHES[url] = normalized
+                    return url
     elif platform.system() == "Linux":
         for a in assets:
             name = a.get("name", "")
             if name.endswith(".AppImage"):
-                return a.get("browser_download_url", "")
+                url = a.get("browser_download_url", "")
+                digest = a.get("digest") or a.get("sha256") or ""
+                normalized = _normalize_sha256(digest)
+                if isinstance(url, str) and url:
+                    if normalized:
+                        _ASSET_HASHES[url] = normalized
+                    return url
     elif platform.system() == "Darwin":
         for a in assets:
             name = a.get("name", "")
             if name.endswith(".dmg") and ("-" + _macos_arch() + ".dmg") in name:
-                return a.get("browser_download_url", "")
+                url = a.get("browser_download_url", "")
+                digest = a.get("digest") or a.get("sha256") or ""
+                normalized = _normalize_sha256(digest)
+                if isinstance(url, str) and url:
+                    if normalized:
+                        _ASSET_HASHES[url] = normalized
+                    return url
     return ""
+
+
+def _normalize_sha256(value):
+    """解析 GitHub digest 或十六进制 SHA-256 值。"""
+    if not isinstance(value, str):
+        return ""
+    digest = value.removeprefix("sha256:")
+    if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+        return ""
+    return digest
+
+
+def _verify_asset_hash(path, expected_sha256):
+    """校验下载资产的 SHA-256。"""
+    expected = _normalize_sha256(expected_sha256)
+    if not expected or not os.path.isfile(path):
+        return False
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        for chunk in iter(lambda: source.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest() == expected
 
 
 # 下载进度状态
@@ -90,8 +134,10 @@ def get_download_progress() -> dict:
 
 def start_download(url: str) -> bool:
     """在后台线程启动下载，立即返回"""
-    if not url:
+    if not url or not _normalize_sha256(_ASSET_HASHES.get(url, "")):
         return False
+    global _DOWNLOAD_EXPECTED_HASH
+    _DOWNLOAD_EXPECTED_HASH = _ASSET_HASHES[url]
     with _download_lock:
         if _download_state["status"] == "downloading":
             return False
@@ -105,7 +151,16 @@ def start_download(url: str) -> bool:
             tmp = tempfile.gettempdir()
             fname = url.rstrip("/").split("/")[-1] or _default_asset_name()
             dest = os.path.join(tmp, fname)
-            _urlretrieve_mirror(url, dest, _download_progress)
+            _urlretrieve_mirror(
+                url,
+                dest,
+                _download_progress,
+                expected_sha256=_DOWNLOAD_EXPECTED_HASH,
+            )
+            if not _verify_asset_hash(dest, _DOWNLOAD_EXPECTED_HASH):
+                if os.path.exists(dest):
+                    os.remove(dest)
+                raise RuntimeError("downloaded asset hash mismatch")
             with _download_lock:
                 _download_state["path"] = dest
                 _download_state["progress"] = 100
@@ -127,13 +182,13 @@ def run_downloaded_installer() -> bool:
             return False
         path = _download_state["path"]
         _download_state["status"] = "idle"
-    return run_installer(path)
+    expected = _DOWNLOAD_EXPECTED_HASH
+    return run_installer(path, expected)
 
 
 def _try_fetch(url: str, timeout: int) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "OhMyMeme"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read()
+    del timeout
+    return _FETCH_POLICY.fetch_bytes(url, headers={"User-Agent": "OhMyMeme"})
 
 
 def _urlopen_mirror(url: str, timeout: int = 10):
@@ -328,26 +383,27 @@ def _default_asset_name() -> str:
     return "OhMyMeme-setup.exe"
 
 
-def _try_download(url: str, dest: str, reporthook) -> str:
+def _try_download(url: str, dest: str, reporthook, expected_sha256=None) -> str:
     """下载单个 URL 到临时文件 dest，成功返回 dest"""
-    req = urllib.request.Request(url, headers={"User-Agent": "OhMyMeme"})
-    CHUNK = 8192
-    with urllib.request.urlopen(req, timeout=30) as src:
-        total = int(src.headers.get("Content-Length", 0))
-        with open(dest, "wb") as f:
-            written = 0
-            while True:
-                chunk = src.read(CHUNK)
-                if not chunk:
-                    break
-                f.write(chunk)
-                written += len(chunk)
-                if reporthook:
-                    reporthook(written // CHUNK, CHUNK, total)
+    progress = None
+    if reporthook:
+
+        def _report_progress(done, total):
+            reporthook(done // 8192, 8192, total)
+
+        progress = _report_progress
+
+    _FETCH_POLICY.download_to(
+        url,
+        Path(dest),
+        headers={"User-Agent": "OhMyMeme"},
+        progress=progress,
+        expected_sha256=expected_sha256,
+    )
     return dest
 
 
-def _urlretrieve_mirror(url: str, dest: str, reporthook=None):
+def _urlretrieve_mirror(url: str, dest: str, reporthook=None, expected_sha256=None):
     """并发尝试所有镜像+直连，第一个成功者写入最终 dest"""
     targets = [(m + url, f"mirror {i + 1}") for i, m in enumerate(_GH_MIRRORS)] + [
         (url, "direct")
@@ -359,7 +415,7 @@ def _urlretrieve_mirror(url: str, dest: str, reporthook=None):
     fut_info = {}
     for i, (u, label) in enumerate(targets):
         tmp_dest = os.path.join(base_dir, f".{base_name}.part{i}")
-        fut = pool.submit(_try_download, u, tmp_dest, reporthook)
+        fut = pool.submit(_try_download, u, tmp_dest, reporthook, expected_sha256)
         fut_info[fut] = (label, tmp_dest)
 
     last_err = None
@@ -398,16 +454,24 @@ def download_release(url: str) -> Optional[str]:
         tmp = tempfile.gettempdir()
         fname = url.rstrip("/").split("/")[-1] or _default_asset_name()
         dest = os.path.join(tmp, fname)
-        _urlretrieve_mirror(url, dest)
+        expected = _ASSET_HASHES.get(url, "")
+        if not _normalize_sha256(expected):
+            return None
+        _urlretrieve_mirror(url, dest, expected_sha256=expected)
+        if not _verify_asset_hash(dest, expected):
+            if os.path.exists(dest):
+                os.remove(dest)
+            return None
+        _ASSET_HASHES[dest] = expected
         return dest
     except Exception as e:
         logger.error("download failed: %s", e)
         return None
 
 
-def run_installer(path: str) -> bool:
+def run_installer(path: str, expected_sha256: str | None = None) -> bool:
     """启动安装程序（有 UI，非静默）"""
-    if not path or not os.path.isfile(path):
+    if not path or not _verify_asset_hash(path, expected_sha256):
         return False
     try:
         if platform.system() == "Windows":
