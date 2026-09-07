@@ -1,0 +1,7 @@
+-r requirements.txt
+
+# 开发质量门禁
+basedpyright==1.39.10
+black==26.5.1
+pytest==9.1.1
+ruff==0.16.3

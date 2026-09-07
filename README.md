@@ -28,7 +28,7 @@
 - **本地缓存** — 缩略图+原图双层缓存，离线可用
 - **缓存扫描** — 启动时自动扫描缓存目录，已有文件无需重复导入
 - **导入限制** — 拒绝接收超过 2K 分辨率（最长边 2560px）或超过 20MB 的表情，跳过并提示
-- **自定义存储位置** — 设置页可更换表情包图片存放目录，切换时可选自动迁移现有文件
+- **自定义存储位置** — 设置页可更换表情包图片存放目录，切换时可选自动迁移现有文件；跨卷迁移会校验副本哈希，并在启动时恢复未完成的变更
 - **同步进度条** — 上传/下载实时显示进度、速度、当前文件，支持后台运行
 - **本地备份与恢复** — 设置页一键导出全量备份 ZIP（原图 + 数据库，标签/收藏/分组/排序随库保留，不压缩省时间），可选备份目录与备份列表管理；新设备空库一键恢复，仅 PC 间迁移
 - **远程同步** — FTP / S3 / R2 / WebDAV 多端同步
@@ -59,7 +59,9 @@ mise run setup
 mise run run
 ```
 
-可用任务通过 `mise tasks ls` 查看；`mise run check` 会依次执行 lint、测试和 Vue 前端构建。
+可用任务通过 `mise tasks ls` 查看；`mise run check` 会依次执行 lint、Python 严格类型与测试、Vue 严格类型与 Vitest、契约测试、前端构建、Playwright 浏览器测试和发布契约 smoke。各门禁也可独立运行：`lint`、`typecheck-python`、`test-python`、`typecheck-frontend`、`test-frontend`、`test-contracts`、`build-frontend`、`e2e`、`package-smoke`。
+
+发布产物 smoke 只验证六个目标的离线契约，不构建或安装制品。需要记录 Todo 6 的外部证据时，使用已冻结的 Todo 2 catalog：`mise run package-smoke-evidence -- --release-catalog <外部 release-catalog.json> --evidence-root <工作树外目录>`；该任务会创建 canonical `task-6.json`，绑定候选与回滚输入的 SHA-256，但不会执行安装、升级、回滚或卸载。
 
 **Linux 额外依赖**:
 ```bash
@@ -104,7 +106,7 @@ npx vite build     # 构建 Vue 前端 → src/webui/dist/ohmymeme.js
 src/
   ohmymeme/                 唯一 Python 包，可通过 python -m ohmymeme 启动
     app/                    启动、容器、目录与设置
-    core/                   配置、数据库、资产、导入与 manifest
+    core/                   纯领域值/规则、配置、数据库、资产、导入与 manifest
     services/               同步、局域网与更新服务
     integrations/           平台能力与外部导入适配器
     presentation/           pywebview、Bottle 与前端源码
@@ -294,12 +296,18 @@ python scripts/build.py --linux --installer-only --package appimage
 欢迎提交 Pull Request。提交前请确保通过以下检查：
 
 ```bash
-ruff check src/   # lint 检查
-black --check src/  # 格式检查（black 26.5.1, line-length 88）
-python -m pytest tests/ -v  # 测试
+mise run lint
+mise run typecheck-python
+mise run test-python
+mise run typecheck-frontend
+mise run test-frontend
+mise run test-contracts
+mise run build-frontend
+mise run e2e
+mise run package-smoke
 ```
 
-CI 会自动运行 lint+test。
+CI 会自动运行上述统一质量门禁。
 
 网格拖拽槽位回归探针位于 `tests/fixtures/grid_slot_probe.cjs`。
 
