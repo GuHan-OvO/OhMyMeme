@@ -143,10 +143,10 @@ def test_import_transaction_faults_compensate_files_and_rows(
     )
     if fault == "file":
 
-        def fail_install(*_):
-            raise OSError
+            def fail_install(*_):
+                raise OSError
 
-        monkeypatch.setattr(service, "_install", fail_install)
+            monkeypatch.setattr(service._files, "commit_bytes", fail_install)
 
     # When: the service attempts one atomic batch
     with pytest.raises(OSError):
@@ -160,9 +160,10 @@ def test_import_transaction_faults_compensate_files_and_rows(
 def test_import_path_restores_stg3_payload_without_storing_carrier(tmp_path):
     # Given: a GIF carrier and an injected decoder outputting a PNG payload
     carrier = tmp_path / "carrier.gif"
-    carrier.write_bytes(b"GIF89aSTG3carrier")
-    restored = tmp_path / "restored.png"
-    restored.write_bytes(_png_bytes())
+    carrier_data = io.BytesIO()
+    Image.new("RGBA", (1, 1), (255, 0, 0, 255)).save(carrier_data, "GIF")
+    carrier.write_bytes(carrier_data.getvalue() + b"STG3")
+    restored = _png_bytes()
     db = FakeDb()
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
@@ -177,8 +178,145 @@ def test_import_path_restores_stg3_payload_without_storing_carrier(tmp_path):
     row = next(iter(db.rows.values()))
     assert result.imported_ids == (1,)
     assert row["from_stego"] == 1
-    assert not restored.exists()
     assert list(cache_dir.iterdir())[0].suffix == ".png"
+
+
+def test_import_bytes_restores_stg3_payload_without_storing_carrier(tmp_path):
+    # Given: a valid GIF carrier with STG3 data and an in-memory decoder outputting PNG bytes
+    carrier = io.BytesIO()
+    Image.new("RGBA", (1, 1), (255, 0, 0, 255)).save(carrier, "GIF")
+    restored = _png_bytes()
+    db = FakeDb()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    service = ImageImportService(
+        db,
+        AssetPaths(tmp_path, cache_dir),
+        lambda: None,
+        lambda _data: restored,
+    )
+
+    # When: a byte-oriented receiver imports the STG3 carrier
+    result = service.import_bytes(ImportBytes(carrier.getvalue() + b"STG3", "carrier.gif"))
+
+    # Then: it follows the same restore path and never persists the carrier
+    row = next(iter(db.rows.values()))
+    assert result.imported_ids == (1,)
+    assert row["from_stego"] == 1
+    assert list(cache_dir.iterdir())[0].suffix == ".png"
+
+
+def test_import_bytes_uses_default_stg3_decoder(tmp_path):
+    # Given: a real STG3 GIF generated from a source PNG
+    from ohmymeme.core.gif_stego import make_stego_gif
+
+    original = tmp_path / "original.png"
+    original.write_bytes(_png_bytes())
+    carrier = tmp_path / "carrier.gif"
+    make_stego_gif(str(original), str(carrier), quiet=True)
+    db = FakeDb()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    service = ImageImportService(db, AssetPaths(tmp_path, cache_dir), lambda: None)
+
+    # When: a receiver without presentation-specific wiring imports its bytes
+    result = service.import_bytes(ImportBytes(carrier.read_bytes(), "carrier.gif"))
+
+    # Then: the canonical default decoder persists only the restored image
+    row = next(iter(db.rows.values()))
+    assert result.imported_ids == (1,)
+    assert row["from_stego"] == 1
+    assert list(cache_dir.iterdir())[0].suffix == ".png"
+
+
+def test_import_bytes_rejects_malformed_stg3_without_persisting_carrier(tmp_path):
+    # Given: a valid GIF with a malformed STG3 payload
+    carrier = io.BytesIO()
+    Image.new("RGBA", (1, 1), (255, 0, 0, 255)).save(carrier, "GIF")
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    observed = []
+
+    def reject_stego(data):
+        observed.append((data, tuple(cache_dir.iterdir())))
+        return None
+
+    service = ImageImportService(
+        FakeDb(), AssetPaths(tmp_path, cache_dir), lambda: None, reject_stego
+    )
+
+    # When: an untrusted byte receiver submits the malformed carrier
+    result = service.import_bytes(ImportBytes(carrier.getvalue() + b"STG3", "bad.gif"))
+
+    # Then: the carrier never falls through as an ordinary GIF asset
+    assert result.imported_ids == ()
+    assert result.rejected == 1
+    assert observed == [(carrier.getvalue() + b"STG3", ())]
+    assert not list(cache_dir.iterdir())
+
+
+def test_cancel_before_import_commit_leaves_no_file_row_or_manifest(tmp_path):
+    # Given: a valid request and a cancellation at the shared pre-commit boundary
+    db = FakeDb()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    manifest = tmp_path / "meme-index.json"
+    manifest.write_text("before", encoding="utf-8")
+    service = ImageImportService(db, AssetPaths(tmp_path, cache_dir), lambda: None)
+
+    # When: the batch observes cancellation after validating its input
+    result = service.import_batch(
+        (ImportBytes(_png_bytes(), "cancelled.png"),), cancelled=lambda: True
+    )
+
+    # Then: the safe boundary leaves every durable import state unchanged
+    assert result.imported_ids == ()
+    assert result.rejected == 0
+    assert db.rows == {}
+    assert not list(cache_dir.iterdir())
+    assert manifest.read_text(encoding="utf-8") == "before"
+
+
+def test_register_existing_path_uses_the_same_manifest_transaction(tmp_path):
+    # Given: a cache-resident valid image and a manifest callback
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    source = cache_dir / "existing.png"
+    source.write_bytes(_png_bytes())
+    calls = []
+    service = ImageImportService(FakeDb(), AssetPaths(tmp_path, cache_dir), lambda: calls.append(True))
+
+    # When: cache scanning uses its legacy registration entrypoint
+    result = service.register_existing_path(ImportPath(source, "existing.png"))
+
+    # Then: metadata and manifest commit through the normal path transaction
+    assert result.imported_ids == (1,)
+    assert calls == [True]
+
+
+def test_isolated_path_bytes_and_batch_import_scenario(tmp_path):
+    # Given: isolated path and byte sources with a shared import service
+    source = tmp_path / "path-source.png"
+    source.write_bytes(_png_bytes(2, 1))
+    service, cache_dir = _service(tmp_path)
+
+    # When: bytes, path, and a mixed batch enter the same boundary
+    byte_result = service.import_bytes(ImportBytes(_png_bytes(), "bytes.png"))
+    path_result = service.import_path(ImportPath(source, "path.png"))
+    batch_result = service.import_batch(
+        (
+            ImportBytes(_png_bytes(3, 1), "batch-bytes.png"),
+            ImportPath(source, "batch-duplicate.png"),
+        )
+    )
+
+    # Then: each unique image is atomically represented once and the source remains
+    assert byte_result.imported_ids == (1,)
+    assert path_result.imported_ids == (2,)
+    assert batch_result.imported_ids == (3,)
+    assert batch_result.rejected == 0
+    assert source.exists()
+    assert len(list(cache_dir.iterdir())) == 3
 
 
 def test_manifest_failure_restores_previous_snapshot(tmp_path):
@@ -342,6 +480,96 @@ def test_external_cache_keeps_manifest_marker_and_cleanup_in_data_dir(
     assert assets.manifest_path.parent == data_dir
     assert assets.recovery_marker_path.parent == data_dir
     assert assets.recovery_marker_path.exists()
+
+
+def test_container_recovers_import_rollback_marker_before_exposing_catalog(tmp_path):
+    # Given: a real import whose unfinished rollback is durably marked
+    from ohmymeme.app.container import Container
+
+    root = tmp_path / "app"
+    container = Container(root)
+    service = ImageImportService(
+        container.db, container.assets, container.build_manifest
+    )
+    result = service.import_bytes(ImportBytes(_png_bytes(), "rollback.png"))
+    meme_id = result.imported_ids[0]
+    row = container.db.get_by_id(meme_id)
+    asset = container.assets.cache_dir / row["filename"]
+    service._write_recovery_marker([meme_id], [asset], b'{"before":true}', ["fault"])
+    container.close()
+
+    # When: the canonical Container startup path consumes the rollback marker
+    recovered = Container(root)
+    try:
+        # Then: file, DB row, manifest and marker return to their pre-import state
+        assert recovered.db.get_by_id(meme_id) is None
+        assert not asset.exists()
+        assert recovered.assets.manifest_path.read_bytes() == b'{"before":true}'
+        assert not recovered.assets.recovery_marker_path.exists()
+    finally:
+        recovered.close()
+
+
+def test_container_consumes_legacy_import_marker_by_rebuilding_manifest(tmp_path):
+    # Given: a legacy text marker from the pre-transactional recovery format
+    from ohmymeme.app.container import Container
+
+    root = tmp_path / "app"
+    container = Container(root)
+    container.assets.recovery_marker_path.write_text("manifest_restore: old", encoding="utf-8")
+    container.close()
+
+    # When: startup consumes the legacy recovery record
+    recovered = Container(root)
+    try:
+        # Then: the marker is consumed only after a manifest rebuild
+        assert recovered.assets.manifest_path.exists()
+        assert not recovered.assets.recovery_marker_path.exists()
+    finally:
+        recovered.close()
+
+
+def test_container_completes_import_forward_marker_before_exposing_catalog(tmp_path):
+    # Given: real committed file/DB state and a durable forward manifest marker
+    from ohmymeme.app.container import Container
+    import json
+
+    root = tmp_path / "app"
+    container = Container(root)
+    service = ImageImportService(
+        container.db, container.assets, container.build_manifest
+    )
+    result = service.import_bytes(ImportBytes(_png_bytes(), "forward.png"))
+    meme_id = result.imported_ids[0]
+    row = container.db.get_by_id(meme_id)
+    container.assets.manifest_path.write_text("stale", encoding="utf-8")
+    container.assets.recovery_marker_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "phase": "forward",
+                "data_dir": str(container.assets.data_dir.resolve()),
+                "cache_dir": str(container.assets.cache_dir.resolve()),
+                "meme_ids": [meme_id],
+                "filenames": [row["filename"]],
+                "manifest_snapshot": None,
+                "failures": ["manifest"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    container.close()
+
+    # When: the canonical Container startup path consumes the forward marker
+    recovered = Container(root)
+    try:
+        # Then: committed DB/file state is retained and the manifest is rebuilt
+        assert recovered.db.get_by_id(meme_id) is not None
+        assert (recovered.assets.cache_dir / row["filename"]).exists()
+        assert row["filename"].encode("utf-8") in recovered.assets.manifest_path.read_bytes()
+        assert not recovered.assets.recovery_marker_path.exists()
+    finally:
+        recovered.close()
 
 
 def test_bounded_upload_body_rejects_missing_and_lying_content_length():

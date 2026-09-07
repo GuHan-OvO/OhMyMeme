@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from ohmymeme.app.container import Container
 
 
@@ -13,7 +15,7 @@ def test_containers_isolate_config_database_and_manifest(tmp_path):
         assert first.db._db_path != second.db._db_path
         first.config.set("hotkey", "Ctrl+Shift+X")
         first.config.save()
-        first.db.add_meme("first.png", file_hash="first")
+        first.db.add_meme("first.png", file_hash="a" * 64)
         first.build_manifest()
         assert first.assets.manifest_path.exists()
         assert not second.assets.manifest_path.exists()
@@ -54,7 +56,8 @@ def test_close_is_idempotent_and_continues_after_component_failure(tmp_path):
 
     container.db.close = close_db
     object.__setattr__(container.config, "save", save_config)
-    container.close(BrokenHotkey(), Tray(), lambda: events.append("lan"), WebUI())
+    with pytest.raises(ExceptionGroup):
+        container.close(BrokenHotkey(), Tray(), lambda: events.append("lan"), WebUI())
     container.close(BrokenHotkey(), Tray(), lambda: events.append("lan"), WebUI())
 
     assert events == ["hotkey", "tray", "lan", "webui", "db", "config"]
@@ -85,11 +88,13 @@ def test_presentation_uses_the_supplied_container_without_global_factories(
         second_ui = second.create_webui()
 
         assert first_ui._cfg is first.config
-        assert first_ui._db is first.db
+        assert first_ui._library is first.catalog
+        assert not hasattr(first_ui, "_db")
         assert first_ui._api._catalog is first.catalog
         assert first_ui._settings_api._settings is first.settings
         assert second_ui._cfg is second.config
-        assert second_ui._db is second.db
+        assert second_ui._library is second.catalog
+        assert not hasattr(second_ui, "_db")
         assert second_ui._api._catalog is second.catalog
         assert second_ui._settings_api._settings is second.settings
     finally:
