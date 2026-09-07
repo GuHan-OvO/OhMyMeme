@@ -4,6 +4,7 @@ import json
 import os
 import platform
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 from ohmymeme.core.crypto import decrypt_data, encrypt_data
@@ -29,6 +30,52 @@ _SECRET_KEYS = {
 # ~~~ 导入限制 ~~~（超过限制的图片拒绝入库）
 _IMPORT_MAX_PX = 2560  # 最长边像素上限（超过 2K）
 _IMPORT_MAX_BYTES = 20 * 1024 * 1024  # 文件大小上限（20 MiB）
+
+_REMOVED_KEYS = {"auto_paste_meme", "window_width", "window_height"}
+_CONFIG_LOCKS = {}
+_CONFIG_LOCKS_GUARD = threading.Lock()
+
+
+class ConfigCorrupt(RuntimeError):
+    """配置文件不是可安全读取的 JSON 对象。"""
+
+
+@contextmanager
+def _config_lock(path):
+    resolved = path.resolve()
+    with _CONFIG_LOCKS_GUARD:
+        lock = _CONFIG_LOCKS.setdefault(resolved, threading.Lock())
+    with lock:
+        lock_path = path.with_name(path.name + ".lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(lock_path, "a+b") as handle:
+            handle.seek(0)
+            handle.write(b"0")
+            handle.flush()
+            locked = False
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                locked = True
+                yield
+            finally:
+                if locked:
+                    if os.name == "nt":
+                        import msvcrt
+
+                        handle.seek(0)
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        import fcntl
+
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _get_config_dir() -> Path:
@@ -134,7 +181,7 @@ class Config:
         self._data_dir = data_dir
         self._data = dict(self.DEFAULTS)
         self._dirty = False
-        self._lock = threading.Lock()
+        self._changes = set()
         self._load()
 
     # --- 公开属性访问 ---
@@ -150,6 +197,7 @@ class Config:
         if key in _SECRET_KEYS and value:
             value = encrypt_data(str(value))
         self._data[key] = value
+        self._changes.add(key)
         self._dirty = True
 
     def __getattr__(self, key):
@@ -185,6 +233,7 @@ class Config:
     def reset(self):
         """恢复出厂默认值"""
         self._data = dict(self.DEFAULTS)
+        self._changes.update(self.DEFAULTS)
         self._dirty = True
 
     # --- 持久化 ---
@@ -192,15 +241,11 @@ class Config:
     def _load(self):
         self._path.parent.mkdir(parents=True, exist_ok=True)
         if self._path.exists():
-            try:
-                with open(self._path, "r", encoding="utf-8") as f:
-                    raw = json.load(f)
-                for k in self.DEFAULTS:
-                    if k in raw:
-                        self._data[k] = raw[k]
-                self._migrate(raw)
-            except (json.JSONDecodeError, OSError):
-                pass
+            raw = self._read_raw()
+            for k in self.DEFAULTS:
+                if k in raw:
+                    self._data[k] = raw[k]
+            self._migrate(raw)
 
     def _migrate(self, raw):
         """配置文件版本迁移"""
@@ -219,16 +264,39 @@ class Config:
             elif raw.get("copy_resize_enabled") is False:
                 self._data["copy_resize_mode"] = 0
         self._data["version"] = _CONFIG_VERSION
+        self._changes.add("version")
         self._dirty = True
+
+    def _read_raw(self):
+        try:
+            with open(self._path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+        except (json.JSONDecodeError, UnicodeDecodeError) as error:
+            raise ConfigCorrupt("invalid configuration JSON") from error
+        except OSError as error:
+            raise ConfigCorrupt("configuration file unavailable") from error
+        if not isinstance(raw, dict):
+            raise ConfigCorrupt("invalid configuration JSON")
+        return raw
+
+    def _snapshot(self, current):
+        saved = {k: v for k, v in current.items() if k not in _REMOVED_KEYS}
+        for key, value in self.DEFAULTS.items():
+            if key not in saved or key in self._changes:
+                saved[key] = self._data[key]
+        for key in self._changes - self.DEFAULTS.keys():
+            saved[key] = self._data[key]
+        return saved
 
     def save(self):
         """持久化到磁盘（加锁，防止 pywebview 多线程并发写坏文件）"""
-        with self._lock:
+        with _config_lock(self._path):
             self._path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._path.with_name(self._path.name + ".tmp")
             try:
+                current = self._read_raw() if self._path.exists() else {}
                 with open(tmp, "w", encoding="utf-8") as f:
-                    json.dump(self._data, f, ensure_ascii=False, indent=2)
+                    json.dump(self._snapshot(current), f, ensure_ascii=False, indent=2)
                     f.flush()
                     os.fsync(f.fileno())
                 os.replace(tmp, self._path)
@@ -236,6 +304,7 @@ class Config:
                 if tmp.exists():
                     tmp.unlink()
             self._dirty = False
+            self._changes.clear()
 
     @property
     def config_dir(self) -> Path:
