@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from .adapters.sqlite.repository import SqliteMemeQuery, SqliteMemeRepository
 from .config import get_config
 
 _lazy_pinyin = None
@@ -95,116 +96,17 @@ class MemeDB:
         self._db_path = db_path
         self._local = threading.local()
         self._lock = threading.Lock()
+        self._adapter = SqliteMemeRepository(self._db_path, sqlite3.connect)
         self._init_db()
 
     def _get_conn(self) -> sqlite3.Connection:
-        if not hasattr(self._local, "conn") or self._local.conn is None:
-            self._local.conn = sqlite3.connect(
-                str(self._db_path), timeout=5.0, check_same_thread=False
-            )
-            self._local.conn.row_factory = sqlite3.Row
-            self._local.conn.execute("PRAGMA journal_mode=WAL")
-            self._local.conn.execute("PRAGMA foreign_keys=ON")
-        return self._local.conn
+        return self._adapter.connection()
 
     def _init_db(self):
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = self._get_conn()
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS memes (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                filename    TEXT    NOT NULL,
-                file_hash   TEXT    NOT NULL DEFAULT '',
-                original_name TEXT  NOT NULL DEFAULT '',
-                width       INTEGER DEFAULT 0,
-                height      INTEGER DEFAULT 0,
-                file_size   INTEGER DEFAULT 0,
-                mime_type   TEXT    DEFAULT 'image/png',
-                sort_order  INTEGER DEFAULT 0,
-                stego_of_hash TEXT DEFAULT NULL,
-                from_stego  INTEGER DEFAULT 0,
-                perceptual_hash TEXT DEFAULT NULL,
-                created_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
-                updated_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
-            );
-
-            CREATE TABLE IF NOT EXISTS tags (
-                id   INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT    NOT NULL UNIQUE COLLATE NOCASE
-            );
-
-            CREATE TABLE IF NOT EXISTS meme_tags (
-                meme_id INTEGER NOT NULL REFERENCES memes(id) ON DELETE CASCADE,
-                tag_id  INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-                PRIMARY KEY (meme_id, tag_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS collections (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                name        TEXT    NOT NULL COLLATE NOCASE,
-                parent_id   INTEGER DEFAULT NULL
-                              REFERENCES collections(id) ON DELETE CASCADE,
-                sort_order  INTEGER DEFAULT 0
-            );
-
-            CREATE TABLE IF NOT EXISTS meme_collections (
-                meme_id       INTEGER NOT NULL REFERENCES memes(id) ON DELETE CASCADE,
-                collection_id INTEGER NOT NULL
-                              REFERENCES collections(id) ON DELETE CASCADE,
-                sort_order    INTEGER DEFAULT 0,
-                PRIMARY KEY (meme_id, collection_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS favorites (
-                meme_id   INTEGER PRIMARY KEY REFERENCES memes(id) ON DELETE CASCADE,
-                added_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-            );
-
-            CREATE TABLE IF NOT EXISTS recent_uses (
-                meme_id   INTEGER NOT NULL REFERENCES memes(id) ON DELETE CASCADE,
-                used_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-                PRIMARY KEY (meme_id)
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_memes_hash ON memes(file_hash);
-            CREATE INDEX IF NOT EXISTS idx_memes_name ON memes(filename);
-            CREATE INDEX IF NOT EXISTS idx_recent_uses_at ON recent_uses(used_at);
-        """)
-        self._migrate(conn)
-
-    def _migrate(self, conn):
-        """迁移旧表：添加可能缺失的列并补建依赖新列的索引（幂等，可重复执行）"""
-        migrates = [
-            ("memes", "sort_order", "INTEGER DEFAULT 0"),
-            ("memes", "stego_of_hash", "TEXT DEFAULT NULL"),
-            ("memes", "from_stego", "INTEGER DEFAULT 0"),
-            ("memes", "perceptual_hash", "TEXT DEFAULT NULL"),
-            (
-                "collections",
-                "parent_id",
-                "INTEGER DEFAULT NULL REFERENCES collections(id) ON DELETE CASCADE",
-            ),
-            ("collections", "sort_order", "INTEGER DEFAULT 0"),
-            ("meme_collections", "sort_order", "INTEGER DEFAULT 0"),
-        ]
-        for tbl, col, col_def in migrates:
-            try:
-                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_def}")
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    conn.rollback()
-                    raise
-        # 该索引依赖迁移新增的 stego_of_hash 列，必须放在迁移之后建，
-        # 否则旧库缺列时 CREATE INDEX 会抛 OperationalError 中断启动
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_memes_stego ON memes(stego_of_hash)"
-        )
-        conn.commit()
+        self._adapter.open()
 
     def close(self):
-        if hasattr(self._local, "conn") and self._local.conn:
-            self._local.conn.close()
-            self._local.conn = None
+        self._adapter.close()
 
     def backup_to(self, path: str):
         """WAL 一致快照：经 sqlite backup API 把当前库导出到目标文件"""
@@ -780,74 +682,21 @@ class MemeDB:
         offset: int = 0,
         limit: int = 100,
     ) -> List[dict]:
-        conn = self._get_conn()
-        where = ["(m.stego_of_hash IS NULL OR m.stego_of_hash = '')"]
-        params = []
-
-        if keyword:
-            kw = f"%{keyword}%"
-            where.append(
-                "(m.filename LIKE ? OR m.original_name LIKE ? OR m.id IN ("
-                "SELECT mt.meme_id FROM meme_tags mt "
-                "JOIN tags t ON t.id = mt.tag_id WHERE t.name LIKE ?))"
-            )
-            params.extend([kw, kw, kw])
-
-        if tags:
-            placeholders = ",".join("?" for _ in tags)
-            where.append(f"""m.id IN (
-                SELECT mt.meme_id FROM meme_tags mt
-                JOIN tags t ON t.id = mt.tag_id
-                WHERE t.name IN ({placeholders})
-                GROUP BY mt.meme_id HAVING COUNT(DISTINCT t.id) = ?
-            )""")
-            params.extend(tags)
-            params.append(len(tags))
-
-        if collection_id is not None:
-            if isinstance(collection_id, list):
-                placeholders = ",".join("?" for _ in collection_id)
-                where.append(f"""m.id IN (
-                    SELECT mc.meme_id FROM meme_collections mc
-                    WHERE mc.collection_id IN ({placeholders})
-                )""")
-                params.extend(collection_id)
-            else:
-                where.append(
-                    "m.id IN ("
-                    "SELECT mc.meme_id FROM meme_collections mc "
-                    "WHERE mc.collection_id = ?)"
-                )
-                params.append(collection_id)
-
-        if favorite_only:
-            where.append("m.id IN (SELECT meme_id FROM favorites)")
-
-        if uncategorized_only:
-            where.append("""NOT EXISTS (
-                SELECT 1 FROM meme_collections mc WHERE mc.meme_id = m.id
-            )""")
-
-        sql = "SELECT m.* FROM memes m"
-        if where:
-            sql += " WHERE " + " AND ".join(where)
-
-        if collection_id is not None:
-            # 按主分组的 meme_collections.sort_order 排序（拖拽排序结果）
-            primary_cid = (
-                collection_id[0] if isinstance(collection_id, list) else collection_id
-            )
-            sql += """ ORDER BY (
-                SELECT mc.sort_order FROM meme_collections mc
-                WHERE mc.meme_id = m.id AND mc.collection_id = ?
-            ), m.id LIMIT ? OFFSET ?"""
-            params.extend([primary_cid, limit, offset])
-        else:
-            sql += " ORDER BY m.sort_order ASC, m.updated_at DESC LIMIT ? OFFSET ?"
-            params.extend([limit, offset])
-
-        rows = conn.execute(sql, params).fetchall()
-        return [dict(r) for r in rows]
+        collection_ids = (
+            tuple(collection_id)
+            if isinstance(collection_id, list)
+            else (() if collection_id is None else (collection_id,))
+        )
+        query = SqliteMemeQuery(
+            keyword=keyword,
+            tags=tuple(tags or ()),
+            collection_ids=collection_ids,
+            favorite_only=favorite_only,
+            uncategorized_only=uncategorized_only,
+            offset=offset,
+            limit=limit,
+        )
+        return [record.legacy_row() for record in self._adapter.search(query)]
 
     def count(
         self,
@@ -857,47 +706,20 @@ class MemeDB:
         favorite_only: bool = False,
         uncategorized_only: bool = False,
     ) -> int:
-        conn = self._get_conn()
-        where = ["(stego_of_hash IS NULL OR stego_of_hash = '')"]
-        params = []
-        if keyword:
-            where.append("(filename LIKE ? OR original_name LIKE ?)")
-            kw = f"%{keyword}%"
-            params.extend([kw, kw])
-        if tags:
-            placeholders = ",".join("?" for _ in tags)
-            where.append(f"""id IN (
-                SELECT mt.meme_id FROM meme_tags mt
-                JOIN tags t ON t.id = mt.tag_id
-                WHERE t.name IN ({placeholders})
-                GROUP BY mt.meme_id HAVING COUNT(DISTINCT t.id) = ?
-            )""")
-            params.extend(tags)
-            params.append(len(tags))
-        if collection_id is not None:
-            if isinstance(collection_id, list):
-                placeholders = ",".join("?" for _ in collection_id)
-                where.append(f"""id IN (
-                    SELECT meme_id FROM meme_collections
-                    WHERE collection_id IN ({placeholders})
-                )""")
-                params.extend(collection_id)
-            else:
-                where.append("""id IN (
-                    SELECT meme_id FROM meme_collections WHERE collection_id = ?
-                )""")
-                params.append(collection_id)
-        if favorite_only:
-            where.append("id IN (SELECT meme_id FROM favorites)")
-        if uncategorized_only:
-            where.append("""NOT EXISTS (
-                SELECT 1 FROM meme_collections WHERE meme_id = memes.id
-            )""")
-        sql = "SELECT COUNT(*) FROM memes"
-        if where:
-            sql += " WHERE " + " AND ".join(where)
-        row = conn.execute(sql, params).fetchone()
-        return row[0] if row else 0
+        collection_ids = (
+            tuple(collection_id)
+            if isinstance(collection_id, list)
+            else (() if collection_id is None else (collection_id,))
+        )
+        return self._adapter.count(
+            SqliteMemeQuery(
+                keyword=keyword,
+                tags=tuple(tags or ()),
+                collection_ids=collection_ids,
+                favorite_only=favorite_only,
+                uncategorized_only=uncategorized_only,
+            )
+        )
 
     def get_by_hash(self, file_hash: str) -> Optional[dict]:
         conn = self._get_conn()
@@ -986,32 +808,81 @@ class MemeDB:
                 )
             conn.commit()
 
-    def apply_remote_metadata(self, remote_data: dict):
+    def apply_remote_metadata(self, remote_data: dict, register_memes: bool = False):
         """原子应用远端分组与全局排序"""
         with self._lock:
             conn = self._get_conn()
             try:
-                for collection in remote_data.get("collections", []):
+                if register_memes:
+                    for meme in remote_data.get("memes", []):
+                        existing = conn.execute(
+                            "SELECT id FROM memes WHERE filename=?",
+                            (meme["filename"],),
+                        ).fetchone()
+                        values = (
+                            meme["sha256"],
+                            meme["name"],
+                            meme["file_size"],
+                            meme["filename"],
+                        )
+                        if existing is None:
+                            conn.execute(
+                                "INSERT INTO memes (filename, file_hash, "
+                                "original_name, file_size) VALUES (?, ?, ?, ?)",
+                                (
+                                    meme["filename"],
+                                    meme["sha256"],
+                                    meme["name"],
+                                    meme["file_size"],
+                                ),
+                            )
+                        else:
+                            conn.execute(
+                                "UPDATE memes SET file_hash=?, original_name=?, "
+                                "file_size=?, updated_at=datetime('now','localtime') "
+                                "WHERE filename=?",
+                                values,
+                            )
+
+                def apply_collection(collection, parent_id, sort_order):
                     name = collection["name"]
-                    conn.execute(
-                        "INSERT OR IGNORE INTO collections (name) VALUES (?)",
-                        (name,),
-                    )
                     row = conn.execute(
-                        "SELECT id FROM collections WHERE name=?", (name,)
+                        "SELECT id FROM collections WHERE name=? COLLATE NOCASE "
+                        "AND parent_id IS ?",
+                        (name, parent_id),
                     ).fetchone()
                     if row is None:
-                        continue
-                    for filename in collection.get("filenames", []):
+                        cursor = conn.execute(
+                            "INSERT INTO collections (name, parent_id, sort_order) "
+                            "VALUES (?, ?, ?)",
+                            (name, parent_id, sort_order),
+                        )
+                        collection_id = cursor.lastrowid
+                    else:
+                        collection_id = row[0]
+                        conn.execute(
+                            "UPDATE collections SET sort_order=? WHERE id=?",
+                            (sort_order, collection_id),
+                        )
+                    for member_order, filename in enumerate(collection["filenames"]):
                         meme = conn.execute(
                             "SELECT id FROM memes WHERE filename=?", (filename,)
                         ).fetchone()
                         if meme is not None:
                             conn.execute(
-                                "INSERT OR IGNORE INTO meme_collections "
-                                "(meme_id, collection_id) VALUES (?, ?)",
-                                (meme[0], row[0]),
+                                "INSERT INTO meme_collections "
+                                "(meme_id, collection_id, sort_order) VALUES (?, ?, ?) "
+                                "ON CONFLICT(meme_id, collection_id) DO UPDATE SET "
+                                "sort_order=excluded.sort_order",
+                                (meme[0], collection_id, member_order),
                             )
+                    for child_order, child in enumerate(collection.get("children", [])):
+                        apply_collection(child, collection_id, child_order)
+
+                for collection_order, collection in enumerate(
+                    remote_data.get("collections", [])
+                ):
+                    apply_collection(collection, None, collection_order)
                 for index, meme in enumerate(remote_data.get("memes", [])):
                     filename = meme.get("filename", "")
                     if filename:
@@ -1023,6 +894,9 @@ class MemeDB:
             except Exception:
                 conn.rollback()
                 raise
+
+    def apply_remote_pull_metadata(self, remote_data: dict):
+        self.apply_remote_metadata(remote_data, register_memes=True)
 
     def record_use(self, meme_id: int):
         with self._lock:

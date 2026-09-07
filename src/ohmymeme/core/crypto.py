@@ -1,11 +1,12 @@
 """密钥加密/解密工具 - Fernet (AES-128-CBC + HMAC)"""
 
 import base64
+import binascii
 import hashlib
 import os
 
 try:
-    from cryptography.fernet import Fernet
+    from cryptography.fernet import Fernet, InvalidToken
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
@@ -82,7 +83,7 @@ def decrypt_data(ciphertext_b64: str, machine_id: str = None) -> str:
         machine_id = get_machine_id()
     try:
         raw = base64.b64decode(ciphertext_b64)
-    except Exception:
+    except (binascii.Error, ValueError):
         return ""
     salt, token = raw[:16], raw[16:]
     key = _derive_key(machine_id, salt)
@@ -90,10 +91,11 @@ def decrypt_data(ciphertext_b64: str, machine_id: str = None) -> str:
         try:
             f = Fernet(key)
             return f.decrypt(token).decode()
-        except Exception:
-            return ""
+        except (InvalidToken, UnicodeDecodeError):
+            if token.startswith(b"gAAAA"):
+                return ""
     try:
         plain = bytes([b ^ key[i % len(key)] for i, b in enumerate(token)])
         return plain.decode()
-    except Exception:
+    except UnicodeDecodeError:
         return ""

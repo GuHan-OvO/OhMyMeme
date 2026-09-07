@@ -32,6 +32,7 @@ FINAL_COLUMNS = {
             "sort_order",
             "stego_of_hash",
             "from_stego",
+            "perceptual_hash",
             "created_at",
             "updated_at",
         }
@@ -52,6 +53,7 @@ SCHEMA = (
         width INTEGER DEFAULT 0, height INTEGER DEFAULT 0, file_size INTEGER DEFAULT 0,
         mime_type TEXT DEFAULT 'image/png', sort_order INTEGER DEFAULT 0,
         stego_of_hash TEXT DEFAULT NULL, from_stego INTEGER DEFAULT 0,
+        perceptual_hash TEXT DEFAULT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
     )""",
@@ -88,6 +90,7 @@ MIGRATIONS = (
     ("memes", "sort_order", "INTEGER DEFAULT 0"),
     ("memes", "stego_of_hash", "TEXT DEFAULT NULL"),
     ("memes", "from_stego", "INTEGER DEFAULT 0"),
+    ("memes", "perceptual_hash", "TEXT DEFAULT NULL"),
     (
         "collections",
         "parent_id",

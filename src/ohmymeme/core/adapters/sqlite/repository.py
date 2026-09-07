@@ -44,6 +44,7 @@ class MemeRecord:
     sort_order: int
     stego_of_hash: str | None
     from_stego: int
+    perceptual_hash: str | None
     created_at: str
     updated_at: str
 
@@ -60,6 +61,7 @@ class MemeRecord:
             "sort_order": self.sort_order,
             "stego_of_hash": self.stego_of_hash,
             "from_stego": self.from_stego,
+            "perceptual_hash": self.perceptual_hash,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -213,6 +215,7 @@ class SqliteMemeRepository:
             int(row["sort_order"]),
             row["stego_of_hash"],
             int(row["from_stego"]),
+            row["perceptual_hash"],
             str(row["created_at"]),
             str(row["updated_at"]),
         )
@@ -223,9 +226,13 @@ class SqliteMemeRepository:
         where = [f"({prefix}stego_of_hash IS NULL OR {prefix}stego_of_hash = '')"]
         parameters: list[int | str] = []
         if query.keyword:
-            where.append(f"({prefix}filename LIKE ? OR {prefix}original_name LIKE ?)")
+            where.append(
+                f"({prefix}filename LIKE ? OR {prefix}original_name LIKE ? OR "
+                f"{prefix}id IN (SELECT mt.meme_id FROM meme_tags mt "
+                "JOIN tags t ON t.id = mt.tag_id WHERE t.name LIKE ?))"
+            )
             keyword = f"%{query.keyword}%"
-            parameters.extend((keyword, keyword))
+            parameters.extend((keyword, keyword, keyword))
         if query.tags:
             placeholders = ",".join("?" for _ in query.tags)
             where.append(
