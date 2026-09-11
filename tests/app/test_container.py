@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from ohmymeme.app.container import Container
+from ohmymeme.core.domain import TaskKind
 
 
 def test_containers_isolate_config_database_and_manifest(tmp_path):
@@ -24,6 +25,28 @@ def test_containers_isolate_config_database_and_manifest(tmp_path):
     finally:
         first.close()
         second.close()
+
+
+def test_container_routes_lan_through_its_operation_coordinator(tmp_path):
+    container = Container(tmp_path / "app")
+    try:
+        assert container.lan._coordinator is container.operations
+    finally:
+        container.close()
+
+
+def test_container_shutdown_reports_a_running_lan_service(tmp_path):
+    container = Container(tmp_path / "app")
+    assert container.lan.start(0, "")
+
+    report = container.close()
+
+    assert any(
+        task_id.value.startswith(TaskKind.LAN_SERVICE.value)
+        for task_id in report.cancelled
+    )
+    assert report.inventory.threads == ()
+    assert report.inventory.sockets == ()
 
 
 def test_close_is_idempotent_and_continues_after_component_failure(tmp_path):

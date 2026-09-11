@@ -35,8 +35,8 @@ class _Socket:
         self.closed += 1
 
 
-def test_task_kinds_are_the_complete_operation_contract():
-    assert {kind.value for kind in TaskKind} == {
+def test_task_kinds_preserve_legacy_contract_and_add_lan_service():
+    legacy = {
         "sync.push",
         "sync.pull",
         "sync.cleanup",
@@ -51,6 +51,8 @@ def test_task_kinds_are_the_complete_operation_contract():
         "import.wechat",
         "cache.rescan",
     }
+    assert legacy <= {kind.value for kind in TaskKind}
+    assert TaskKind.LAN_SERVICE.value == "lan.service"
 
 
 def test_start_is_idempotent_and_mutex_groups_reject_conflicting_work():
