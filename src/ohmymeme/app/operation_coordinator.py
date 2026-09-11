@@ -60,6 +60,7 @@ _MUTEX_GROUPS: Final = MappingProxyType(
         TaskKind.IMPORT_DOUYIN: "library",
         TaskKind.IMPORT_WECHAT: "library",
         TaskKind.CACHE_RESCAN: "library",
+        TaskKind.LAN_SERVICE: "lan",
     }
 )
 
@@ -116,6 +117,10 @@ class OperationCoordinator:
                 return None
             record.cancel.set()
             return self._snapshot(record)
+
+    def shutdown_deadline(self) -> float | None:
+        with self._lock:
+            return self._shutdown_deadline
 
     def wait(self, task_kind: TaskKind | str, timeout: float) -> OperationSnapshot:
         kind = parse_task_kind(task_kind)

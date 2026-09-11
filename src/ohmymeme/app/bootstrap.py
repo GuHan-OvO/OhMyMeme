@@ -140,10 +140,12 @@ class OhMyMemeApp:
         closer = getattr(self._container, "close", None)
         if closer is None:
             return self._lifecycle_service().close()
+        lan_service = getattr(self._container, "lan", None)
+        lan_stop = lan_service.stop if lan_service is not None else lan.stop
         return closer(
             self._hotkey,
             self._tray,
-            lan.stop,
+            lan_stop,
             self._webui,
             self._lifecycle_service(),
         )

@@ -39,6 +39,8 @@ class OperationRecord:
 
 
 class OperationCoordinatorPort(Protocol):
+    def shutdown_deadline(self) -> float | None: ...
+
     def update_progress(self, record: OperationRecord, progress: float) -> None: ...
 
     def acquire_lease(
@@ -86,6 +88,13 @@ class OperationContext:
     @property
     def cancel_requested(self) -> bool:
         return self._record.cancel.is_set()
+
+    @property
+    def shutdown_deadline(self) -> float | None:
+        return self._coordinator.shutdown_deadline()
+
+    def wait_cancelled(self) -> bool:
+        return self._record.cancel.wait()
 
     def update_progress(self, progress: float) -> None:
         self._coordinator.update_progress(self._record, progress)

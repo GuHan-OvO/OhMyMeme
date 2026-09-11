@@ -74,21 +74,21 @@ class Container:
             self._write_manifest_data,
             self.remote_mutations,
         )
-        self.lan = LanServer(
-            sync_service=self.sync,
-            coordinator=self.remote_mutations,
-            config=self.config,
-            database=self.db,
-            build_manifest=self.build_manifest,
-            import_service_factory=self.create_raw_import_service,
-        )
-        self.recovery.finish_manifest(self.build_manifest)
         self._closed = False
         self._closing = False
         self._close_resources = None
         self._last_shutdown = None
         self._close_lock = threading.Lock()
         self.operations = OperationCoordinator(self._retry_shutdown)
+        self.lan = LanServer(
+            sync_service=self.sync,
+            coordinator=self.operations,
+            config=self.config,
+            database=self.db,
+            build_manifest=self.build_manifest,
+            import_service_factory=self.create_raw_import_service,
+        )
+        self.recovery.finish_manifest(self.build_manifest)
 
     def build_manifest(self) -> None:
         from ohmymeme.core import manifest

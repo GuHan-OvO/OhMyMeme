@@ -26,6 +26,7 @@ class TaskKind(StrEnum):
     IMPORT_DOUYIN = "import.douyin"
     IMPORT_WECHAT = "import.wechat"
     CACHE_RESCAN = "cache.rescan"
+    LAN_SERVICE = "lan.service"
 
 
 class TaskState(StrEnum):

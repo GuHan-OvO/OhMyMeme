@@ -20,6 +20,7 @@ except ImportError:
     HAS_AESGCM = False
 
 from ohmymeme import __version__
+from ohmymeme.core.domain import TaskKind
 from ohmymeme.services.lan import protocol as lan_protocol
 from ohmymeme.services.lan.commands import (
     MAX_FILE_SIZE,
@@ -41,6 +42,8 @@ _IV_LEN = lan_protocol.IV_LEN
 _TAG_LEN = lan_protocol.TAG_LEN
 _REPLAY_CACHE_LIMIT = 4096
 _REPLAY_TTL_SECONDS = 600
+_LAN_START_TIMEOUT = 2
+_LAN_STOP_TIMEOUT = 15
 _STATE_MUTATING_COMMANDS = {"push_manifest", "push_file", "send_config"}
 
 _lan_state = {
@@ -95,9 +98,11 @@ class LanServer:
     ):
         self._lock = threading.Lock()
         self._running = False
+        self._starting = False
         self._udp_sock = None
         self._tcp_sock = None
         self._threads = []
+        self._session_sockets = set()
         self._port = 0
         self._secret = ""
         self._clients = {}
@@ -114,6 +119,10 @@ class LanServer:
         self._build_manifest = build_manifest
         self._import_service_factory = import_service_factory
         self._confirm_cb = _confirm_cb
+        self._operation_context = None
+        self._start_ready = threading.Event()
+        self._start_ok = False
+        self._stop_deadline = None
         self._commands = CommandHandlers(self, sync_service)
 
     def start(self, port: int, secret: str) -> bool:
@@ -124,9 +133,35 @@ class LanServer:
                 _lan_state["last_error"] = "缺少 cryptography 依赖"
             return False
         with self._lock:
-            if self._running:
+            if self._running or self._starting:
                 return False
-            self._running = True
+            self._starting = True
+            self._start_ok = False
+            self._start_ready.clear()
+        if self._coordinator is not None:
+            self._coordinator.start(
+                TaskKind.LAN_SERVICE,
+                lambda context: self._run_coordinated(context, port, secret),
+            )
+            if not self._start_ready.wait(timeout=_LAN_START_TIMEOUT):
+                self._coordinator.cancel(TaskKind.LAN_SERVICE)
+                return False
+            return self._start_ok
+        return self._start_service(port, secret)
+
+    def _run_coordinated(self, context, port, secret):
+        if not self._start_service(port, secret, context):
+            return
+        try:
+            _ = context.wait_cancelled()
+        finally:
+            deadline = context.shutdown_deadline
+            self._stop_resources(
+                deadline or self._stop_deadline or time.monotonic() + _LAN_STOP_TIMEOUT
+            )
+            self._operation_context = None
+
+    def _start_service(self, port, secret, context=None):
         self._port = int(port)
         self._secret = secret or ""
         try:
@@ -145,6 +180,7 @@ class LanServer:
             self._tcp_sock.bind(("0.0.0.0", self._port))
             self._tcp_sock.listen(8)
             self._tcp_sock.settimeout(0.5)
+            self._port = self._tcp_sock.getsockname()[1]
         except OSError as error:
             self._cleanup_sockets()
             with _lan_lock:
@@ -152,7 +188,14 @@ class LanServer:
                 _lan_state["last_error"] = f"端口 {self._port} 无法监听: {error}"
             with self._lock:
                 self._running = False
+            self._complete_start(False)
             return False
+        with self._lock:
+            self._running = True
+            self._operation_context = context
+        if context is not None:
+            context.register_socket(self._udp_sock)
+            context.register_socket(self._tcp_sock)
         self._spawn_thread(self._udp_loop)
         self._spawn_thread(self._tcp_loop)
         with _lan_lock:
@@ -161,14 +204,45 @@ class LanServer:
             _lan_state["start_time"] = int(time.time())
             _lan_state["last_error"] = ""
         logger.info(f"LAN 服务已启动，端口 {self._port}")
+        self._complete_start(True)
         return True
+
+    @property
+    def port(self):
+        return self._port
+
+    def _complete_start(self, result):
+        with self._lock:
+            self._starting = False
+            self._start_ok = result
+        self._start_ready.set()
 
     def stop(self):
         """停止 listener 并等待现有服务线程。"""
         with self._lock:
-            if not self._running:
+            context = self._operation_context
+            if not self._running and not self._starting:
+                return
+            deadline = time.monotonic() + _LAN_STOP_TIMEOUT
+            self._stop_deadline = deadline
+        if context is not None and self._coordinator is not None:
+            self._coordinator.cancel(TaskKind.LAN_SERVICE)
+            self._coordinator.wait(
+                TaskKind.LAN_SERVICE, max(0.0, deadline - time.monotonic())
+            )
+            return
+        self._stop_resources(deadline)
+
+    def _stop_resources(self, deadline):
+        with self._lock:
+            if not self._running and not self._starting:
                 return
             self._running = False
+            self._starting = False
+            sessions = tuple(self._session_sockets)
+            self._session_sockets.clear()
+            threads = tuple(self._threads)
+            self._threads.clear()
         with self._confirm_lock:
             pending = tuple(self._pending_confirms.values())
             self._pending_confirms.clear()
@@ -177,10 +251,16 @@ class LanServer:
         with _lan_lock:
             if _lan_state.get("pending_confirm") in pending:
                 _lan_state.pop("pending_confirm", None)
+        for connection in sessions:
+            try:
+                connection.close()
+            except OSError:
+                pass
         self._cleanup_sockets()
-        for thread in self._threads:
-            thread.join(timeout=1)
-        self._threads.clear()
+        current = threading.current_thread()
+        for thread in threads:
+            if thread is not current:
+                thread.join(timeout=max(0.0, deadline - time.monotonic()))
         with _lan_lock:
             _lan_state["status"] = "stopped"
             _lan_state["port"] = 0
@@ -199,9 +279,14 @@ class LanServer:
         self._tcp_sock = None
 
     def _spawn_thread(self, target):
-        thread = threading.Thread(target=target, daemon=True)
-        thread.start()
-        self._threads.append(thread)
+        with self._lock:
+            if not self._running:
+                return
+            thread = threading.Thread(
+                target=target, daemon=self._operation_context is None
+            )
+            thread.start()
+            self._threads.append(thread)
 
     def _udp_loop(self):
         while self._running:
@@ -305,6 +390,8 @@ class LanServer:
                 continue
             except OSError:
                 break
+            if not self._register_session_socket(conn):
+                continue
             self._spawn_thread(
                 lambda connection=conn, address=addr: self._handle_conn(
                     connection, address
@@ -334,10 +421,23 @@ class LanServer:
         except (InvalidTag, OSError, ValueError, json.JSONDecodeError) as error:
             logger.debug(f"LAN conn {addr}: {error}")
         finally:
+            with self._lock:
+                self._session_sockets.discard(conn)
             try:
                 conn.close()
             except OSError:
                 pass
+
+    def _register_session_socket(self, conn):
+        with self._lock:
+            if not self._running:
+                conn.close()
+                return False
+            self._session_sockets.add(conn)
+            context = self._operation_context
+        if context is not None:
+            context.register_socket(conn)
+        return True
 
     def _sync_clients(self):
         now = time.time()
@@ -429,6 +529,9 @@ class LanServer:
             with _lan_lock:
                 if "pending_confirm" not in _lan_state:
                     _lan_state["pending_confirm"] = entry
+        context = self._operation_context
+        if context is not None:
+            context.register_temp(entry["done"].set)
         try:
             callback = self._confirm_cb
             if callback:
