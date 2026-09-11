@@ -180,6 +180,7 @@ class Config:
         self._path = path or (_get_config_dir() / "config.json")
         self._data_dir = data_dir
         self._data = dict(self.DEFAULTS)
+        self._defined_keys = set()
         self._dirty = False
         self._changes = set()
         self._load()
@@ -197,6 +198,7 @@ class Config:
         if key in _SECRET_KEYS and value:
             value = encrypt_data(str(value))
         self._data[key] = value
+        self._defined_keys.add(key)
         self._changes.add(key)
         self._dirty = True
 
@@ -218,10 +220,51 @@ class Config:
         """导出纯文本字典（密钥已解密），用于界面展示"""
         result = {}
         for k, v in self._data.items():
+            if k == "plugins":
+                continue
             if v is not None and k in _SECRET_KEYS:
                 result[k] = decrypt_data(v) or ""
             else:
                 result[k] = v
+        return result
+
+    def get_plugin_value(
+        self, provider_id, key, legacy_key, default=None, secret=False
+    ):
+        """读取插件私有配置，历史扁平键优先。"""
+        if legacy_key in self._defined_keys:
+            return self.get(legacy_key, default)
+        plugins = self._data.get("plugins", {})
+        if not isinstance(plugins, dict):
+            raise ConfigCorrupt("invalid plugin configuration")
+        provider = plugins.get(provider_id, {})
+        if not isinstance(provider, dict):
+            raise ConfigCorrupt("invalid plugin configuration")
+        value = provider.get(key, default)
+        if secret and value:
+            return decrypt_data(value) or value
+        return value
+
+    def set_plugin_value(self, provider_id, key, value, secret=False):
+        """写入插件私有配置，不改写历史扁平键。"""
+        plugins = self._data.get("plugins", {})
+        if not isinstance(plugins, dict):
+            raise ConfigCorrupt("invalid plugin configuration")
+        provider = plugins.get(provider_id, {})
+        if not isinstance(provider, dict):
+            raise ConfigCorrupt("invalid plugin configuration")
+        if secret and value:
+            value = encrypt_data(str(value))
+        self._data["plugins"] = plugins | {provider_id: provider | {key: value}}
+        self._changes.add("plugins")
+        self._dirty = True
+
+    def export_for_lan(self, include_secrets=False):
+        """导出保持旧 LAN 形状的扁平配置。"""
+        result = self.to_dict()
+        if not include_secrets:
+            for key in _SECRET_KEYS:
+                result.pop(key, None)
         return result
 
     def update_from_dict(self, d: dict):
@@ -242,9 +285,12 @@ class Config:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         if self._path.exists():
             raw = self._read_raw()
+            self._defined_keys = set(raw)
             for k in self.DEFAULTS:
                 if k in raw:
                     self._data[k] = raw[k]
+            if "plugins" in raw:
+                self._data["plugins"] = raw["plugins"]
             self._migrate(raw)
 
     def _migrate(self, raw):

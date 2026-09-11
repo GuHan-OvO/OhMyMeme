@@ -7,6 +7,12 @@ from typing import Protocol
 class PluginCapabilities(namedtuple("PluginCapabilitiesBase", "names")):
     __slots__ = ()
 
+    def __new__(cls, names):
+        return super().__new__(cls, tuple(names))
+
+    def _replace(self, /, **kwargs):
+        return type(self)(kwargs.get("names", self.names))
+
     def allows(self, capability):
         return capability in self.names
 
