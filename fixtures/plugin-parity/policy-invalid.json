@@ -1,0 +1,29 @@
+{
+  "operations": [
+    {
+      "config": {"key": "host", "provider": "sync.ftp"},
+      "provider": "source.qqnt"
+    },
+    {
+      "provider": "source.telegram",
+      "temporary_path": "../host-data"
+    },
+    {
+      "capability": "network.https",
+      "provider": "source.qqnt"
+    },
+    {
+      "capability": "process.helper",
+      "provider": "source.douyin"
+    },
+    {
+      "output": {"secret_key": "password", "value": "fixture-secret"},
+      "provider": "sync.ftp"
+    },
+    {
+      "lan_export": ["lan_port", "lan_secret"],
+      "provider": "transport.lan"
+    }
+  ],
+  "schema_version": 1
+}
