@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ohmymeme.local/schemas/plugin-parity/baseline.schema.json",
+  "title": "OhMyMeme nine-provider parity baseline",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "baseline_id", "providers", "excluded_plugins", "source_references", "allowed_variance", "ui_baseline"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "baseline_id": {"const": "plugin-provider-parity-v1"},
+    "providers": {"type": "array", "minItems": 9, "maxItems": 9, "items": {"$ref": "#/$defs/provider"}},
+    "excluded_plugins": {"type": "array", "items": {"type": "string"}, "allOf": [{"contains": {"const": "adb.qq"}}, {"contains": {"const": "qq.mobile"}}]},
+    "source_references": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+    "allowed_variance": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+    "ui_baseline": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "category", "distribution", "entry_point", "current_identifier", "flow", "state", "paths", "protocols", "abi", "package_root", "license_provenance", "allowed_variance"],
+      "properties": {
+        "id": {"type": "string", "enum": ["source.qqnt", "source.telegram", "source.douyin", "source.wechat", "sync.ftp", "sync.s3", "sync.r2", "sync.webdav", "transport.lan"]},
+        "category": {"type": "string", "enum": ["source", "sync", "transport"]},
+        "distribution": {"type": "string", "minLength": 1},
+        "entry_point": {"type": "string", "pattern": "^ohmymeme\\.plugins\\.v1:"},
+        "current_identifier": {"type": "string", "minLength": 1},
+        "flow": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+        "state": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+        "paths": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+        "protocols": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+        "abi": {"type": "object", "additionalProperties": false, "required": ["aliases", "actions"], "properties": {"aliases": {"type": "array", "items": {"type": "string"}, "minItems": 1}, "actions": {"type": "array", "items": {"type": "string"}, "minItems": 1}}},
+        "package_root": {"type": "string", "pattern": "^ohmymeme_plugin_[a-z0-9_]+$"},
+        "license_provenance": {"type": "string", "minLength": 1},
+        "allowed_variance": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+      }
+    }
+  }
+}
