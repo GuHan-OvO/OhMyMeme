@@ -237,10 +237,7 @@ class CommandHandlers:
 
     def _cmd_get_config(self) -> dict:
         """返回按当前密钥策略过滤的配置。"""
-        config = self._config().to_dict()
-        if not self._server._allow_secret_config():
-            for key in _SECRET_KEYS:
-                config.pop(key, None)
+        config = self._config().export_for_lan(self._server._allow_secret_config())
         return {"ok": True, "config": config}
 
     def _cmd_send_config(self, config) -> dict:
