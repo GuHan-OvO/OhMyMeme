@@ -1,0 +1,1 @@
+{"schema_version":1,"viewport":"960x640","theme":"dark","surface":"main-window-and-settings-window-fixed-shell","fixed_runtime":"chromium","selectors":["#titlebar","#search-wrap","#tagbar","#meme-grid","#toast","#settings-nav","#settings-content"],"allowed_variance":["ids","timestamps","temporary paths","thread ordering"]}
