@@ -553,7 +553,7 @@ def _build_specs(settings_surface: bool = False) -> dict[str, MethodSpec]:
         "lan_set_allow_secret_config": (boolean,),
         "start_tg_import": (string_or_none, string, boolean),
         "start_douyin_import": (string,),
-        "pick_wechat_root": (string_or_none,),
+        "pick_wechat_root": (),
         "inspect_wechat_environment": (string_or_none,),
         "list_wechat_stickers": (string, string_or_none),
         "start_wechat_import": (string_or_none, boolean, string_or_none),

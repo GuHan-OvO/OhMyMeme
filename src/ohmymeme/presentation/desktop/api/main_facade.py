@@ -8,6 +8,8 @@ from .facade_base import FacadeBase
 class MainBridgeFacade(FacadeBase):
     """Preserve the historical main-window JsApi ABI."""
 
+    _surface = "main"
+
     def __init__(self, webui, catalog, settings) -> None:
         from ..window_manager import _LegacyJsApi
 

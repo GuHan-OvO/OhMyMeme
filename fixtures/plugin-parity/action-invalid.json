@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "actions": [
+    {"surface": "settings", "action": "execute", "providers": ["source.telegram"], "arguments": [], "sample_args": [], "label": "开始导入", "screen": "imports", "owner": "host-import-adapter", "progress_fields": []},
+    {"surface": "settings", "action": "start_tg_import", "providers": ["source.telegram"], "arguments": [], "sample_args": [null, "", "false"], "label": "开始导入", "screen": "imports", "owner": "host-import-adapter", "progress_fields": []},
+    {"surface": "settings", "action": "start_tg_import", "providers": ["source.telegram"], "arguments": [], "sample_args": [null, "", true], "label": "开始导入", "screen": "imports", "owner": "host-import-adapter", "progress_fields": [], "html": "<img src=x onerror=external_text()>", "script": "external_text()"},
+    {"surface": "settings", "action": "start_tg_import", "providers": ["source.telegram"], "arguments": [], "sample_args": [null, "", true], "label": "<script>external_text()</script>", "screen": "imports", "owner": "host-import-adapter", "progress_fields": []}
+  ],
+  "sync_providers": {"ftp": "sync.ftp", "s3": "sync.s3", "r2": "sync.r2", "webdav": "sync.webdav"},
+  "excluded_plugins": ["adb.qq", "qq.mobile"],
+  "expected": {"status": "PASS", "provider_calls": ["executed"]}
+}

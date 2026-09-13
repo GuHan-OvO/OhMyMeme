@@ -96,6 +96,9 @@ tests/
 - JS 辅助函数: `async function api(method, ...args) { return await pywebview.api[method](...args); }`
 - 返回类型: `str` / `int` / `bool` / `dict` / `list`，错误返回 `None` 或 `{"ok": false, "error": "..."}`
 - 图片传输: 缩略图通过 `/api/thumb/{id}` HTTP 路径渲染，不通过 JS API JSON
+- 固定插件动作边界位于 `presentation/desktop/api/plugin_dispatch.py`：四个导入 provider 通过宿主 `HostActionAdapter` 和 registry 调度，sync/LAN 仍由宿主固定映射处理；ADB/手机版 QQ 不进入该边界。公开方法/默认值/返回对象/取消/进度/固定 UI 必须保持兼容。`pick_wechat_root` 是零参数方法。
+- `HostActionAdapter` 是宿主兼容层，不是传给插件的 SDK/context；后续宿主 factory 可将已限定的 provider/context 调用绑定到其固定 action 集合。禁止把完整 Config、WebUI、DB 或宿主持久路径传给插件，禁止任意 execute、动态 Bridge 注册或 HTML/脚本/UI DSL。官方插件为 trusted in-process，不构造内省防御 IPC。
+- ABI/action 矩阵由 `scripts/plugin_abi_matrix.py --write` 从固定动作、Bridge/facade 和实际调用方生成至 `docs/plugin-{abi,action}-matrix.json`，`--check` 校验 `schemas/plugin/abi-matrix.schema.json` 并执行离线 facade/dispatcher 探针；未知 action、错参数、无效结果及 provider 缺失/禁用/不兼容必须拒绝或返回原哨兵，不得调用其他 provider。
 
 ## 关键实现细节
 

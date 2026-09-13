@@ -100,6 +100,12 @@ npx vite build     # 构建 Vue 前端 → src/webui/dist/ohmymeme.js
 
 设置窗口仍为 vanilla 前端（`src/webui/settings.*`，独立 webview，无需构建）。`src/webui` 与 `src/resources` 是源码运行时静态资源，不是 Python 包。冻结构建会将它们分别放入 `ohmymeme/webui` 与 `ohmymeme/resources`，并将 `config/offsets.json` 放入 `ohmymeme/config/offsets.json`。
 
+### 固定插件兼容边界
+
+桌面 Bridge 的四个导入入口（QQNT、Telegram、抖音、微信）经宿主 `HostDispatcher`、`PluginRegistry` 与 `HostActionAdapter` 调度，保留原方法、参数默认值、成功/取消对象及进度字段。当前内置适配器继续调用已有实现；显式缺失、禁用或不兼容的 provider 仅返回该方法的旧失败哨兵，不改用其他 provider。同步与 LAN 保持宿主固定动作映射，手机版 QQ/ADB 不参与插件分派。
+
+`docs/plugin-abi-matrix.json` 与 `docs/plugin-action-matrix.json` 固定现有契约及调用方，可用 `mise exec -- python scripts/plugin_abi_matrix.py --check --abi docs/plugin-abi-matrix.json --actions docs/plugin-action-matrix.json --report <报告路径>` 离线核对。适配器属于宿主，不作为插件上下文传递；官方插件为可信进程内代码，只接收对应操作参数和窄端口，不接收完整 Config、WebUI、数据库或宿主持久目录。此边界不支持任意命令、动态 Bridge 方法、HTML/脚本贡献、市场、热重载或沙箱。
+
 ### 源码目录与依赖方向
 
 ```text

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ohmymeme.local/schemas/plugin/abi-matrix.schema.json",
+  "$ref": "#/$defs/abi",
+  "$defs": {
+    "argument": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "schema", "required"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "schema": {"type": "object"},
+        "required": {"type": "boolean"},
+        "default": {}
+      }
+    },
+    "caller": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "arities"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "arities": {"type": "array", "items": {"type": "integer", "minimum": 0}}
+      }
+    },
+    "method": {
+      "type": "object", "additionalProperties": false,
+      "required": ["surface", "method", "signature", "arguments", "result_type", "failure", "callers"],
+      "properties": {
+        "surface": {"enum": ["main", "settings"]},
+        "method": {"type": "string", "pattern": "^[a-z][a-z_]*$"},
+        "signature": {"type": "string"},
+        "arguments": {"type": "array", "items": {"$ref": "#/$defs/argument"}},
+        "result_type": {"enum": ["object", "string", "boolean", "null", "json"]},
+        "failure": {},
+        "callers": {"type": "array", "items": {"$ref": "#/$defs/caller"}}
+      }
+    },
+    "action": {
+      "type": "object", "additionalProperties": false,
+      "required": ["surface", "action", "providers", "arguments", "sample_args", "label", "screen", "owner", "progress_fields"],
+      "properties": {
+        "surface": {"enum": ["main", "settings"]},
+        "action": {"type": "string", "pattern": "^[a-z][a-z_]*$"},
+        "providers": {"type": "array", "minItems": 1, "items": {"enum": ["source.qqnt", "source.telegram", "source.douyin", "source.wechat", "sync.ftp", "sync.s3", "sync.r2", "sync.webdav", "transport.lan"]}},
+        "arguments": {"type": "array", "items": {"$ref": "#/$defs/argument"}},
+        "sample_args": {"type": "array"},
+        "label": {"type": "string", "minLength": 1, "pattern": "^[^<>]*$"},
+        "screen": {"enum": ["imports", "sync", "lan"]},
+        "owner": {"enum": ["host-import-adapter", "host-service"]},
+        "progress_fields": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "abi": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "methods", "excluded_plugins"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "methods": {"type": "array", "minItems": 40, "maxItems": 40, "items": {"$ref": "#/$defs/method"}},
+        "excluded_plugins": {"const": ["adb.qq", "qq.mobile"]}
+      }
+    },
+    "actions": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "actions", "sync_providers", "excluded_plugins"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "actions": {"type": "array", "minItems": 40, "maxItems": 40, "items": {"$ref": "#/$defs/action"}},
+        "sync_providers": {"const": {"ftp": "sync.ftp", "s3": "sync.s3", "r2": "sync.r2", "webdav": "sync.webdav"}},
+        "excluded_plugins": {"const": ["adb.qq", "qq.mobile"]}
+      }
+    }
+  }
+}

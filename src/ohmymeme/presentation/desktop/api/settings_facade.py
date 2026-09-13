@@ -8,6 +8,8 @@ from .facade_base import FacadeBase
 class SettingsBridgeFacade(FacadeBase):
     """Preserve the historical settings-window SettingsApi ABI."""
 
+    _surface = "settings"
+
     def __init__(self, webui, settings) -> None:
         from ..window_manager import _LegacySettingsApi
 

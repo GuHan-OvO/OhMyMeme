@@ -1,0 +1,6 @@
+{
+  "schema_version": true,
+  "methods": [{"surface": "settings", "method": "start_tg_import", "signature": "(self, execute)", "arguments": [], "result_type": "boolean", "failure": true, "callers": []}],
+  "excluded_plugins": ["adb.qq", "qq.mobile"],
+  "expected": "PASS"
+}

@@ -9,6 +9,8 @@ from ohmymeme.core.schemas.bridge import (
     SettingsPatch,
 )
 
+from .plugin_dispatch import ACTIONS, compatibility_dispatcher
+
 
 class FacadeBase:
     """Validate a JSON-safe call and project failures to legacy sentinels."""
@@ -28,7 +30,18 @@ class FacadeBase:
                 )
                 for value in checked
             )
-            result = getattr(self._legacy, method)(*legacy_args)
+            if method in ACTIONS[self._surface]:
+                if not hasattr(self, "_plugin_dispatcher"):
+                    webui = getattr(self, "_webui", None)
+                    self._plugin_dispatcher = compatibility_dispatcher(
+                        self._legacy,
+                        self._surface,
+                        getattr(webui, "_plugin_action_registry", None),
+                        getattr(webui, "_enabled_import_plugins", None),
+                    )
+                result = self._plugin_dispatcher.dispatch(method, legacy_args)
+            else:
+                result = getattr(self._legacy, method)(*legacy_args)
             return contract.validate_output(method, result)
         except RuntimeError as error:
             self._last_bridge_error = BridgeError(
