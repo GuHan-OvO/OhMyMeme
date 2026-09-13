@@ -1,3 +1,5 @@
+# pyright: basic
+
 """图片导入应用服务。"""
 
 import base64
@@ -186,67 +188,107 @@ class ImageImportService:
         requests: Sequence[ImportRequest],
         cancelled: Callable[[], bool] | None = None,
     ) -> ImportResult:
-        created_paths: list[Path] = []
-        created_ids: list[int] = []
-        imported_ids: list[int] = []
         rejected = 0
         manifest_path = self._assets.manifest_path
         manifest_snapshot = (
             manifest_path.read_bytes() if manifest_path.exists() else None
         )
-        try:
-            validated_requests = []
-            for request in requests:
-                validated = self._validate(request)
-                if validated is None:
-                    rejected += 1
-                    continue
+        validated_requests = []
+        seen_hashes = set()
+        for request in requests:
+            validated = self._validate(request)
+            if validated is None:
+                rejected += 1
+                continue
+            if (
+                validated.file_hash not in seen_hashes
+                and self._db.get_by_hash(validated.file_hash) is None
+            ):
                 validated_requests.append(validated)
-            if cancelled is not None and cancelled():
-                return ImportResult((), rejected)
-            for validated in validated_requests:
-                existing = self._db.get_by_hash(validated.file_hash)
-                if existing is not None:
-                    continue
-                destination = self._cache_dir / (
-                    f"{validated.file_hash[:16]}{validated.extension}"
-                )
-                created = not destination.exists()
-                if not created and destination.read_bytes() != validated.data:
-                    raise OSError("content-addressed destination is corrupt")
+                seen_hashes.add(validated.file_hash)
+        if cancelled is not None and cancelled():
+            return ImportResult((), rejected)
+        if not validated_requests:
+            return ImportResult((), rejected)
+        record = self._new_journal(validated_requests, manifest_snapshot)
+        self._write_import_journal(record)
+        record["phase"] = "staged"
+        self._write_import_journal(record)
+        imported_ids = []
+        try:
+            record["phase"] = "files_committing"
+            self._write_import_journal(record)
+            for entry, validated in zip(record["entries"], validated_requests):
                 asset = self._files.commit_bytes(validated.data, validated.extension)
-                if asset.created:
-                    created_paths.append(asset.path)
+                entry["created"] = asset.created
+                entry["state"] = "replaced" if asset.created else "preserved"
+                self._write_import_journal(record)
+            record["phase"] = "files_committed"
+            self._write_import_journal(record)
+            record["phase"] = "metadata_committing"
+            self._write_import_journal(record)
+            for entry, validated in zip(record["entries"], validated_requests):
                 meme_id = self._db.add_meme(
-                    filename=asset.filename,
+                    filename=entry["filename"],
                     file_hash=validated.file_hash,
                     width=validated.width,
                     height=validated.height,
                     file_size=len(validated.data),
                     mime_type=f"image/{validated.extension[1:]}",
                     original_name=validated.original_name,
-                    **({"from_stego": 1} if validated.from_stego else {}),
+                    from_stego=validated.from_stego,
                 )
-                created_ids.append(meme_id)
+                entry["meme_id"] = meme_id
                 imported_ids.append(meme_id)
-            if imported_ids:
-                self._build_manifest()
+                self._write_import_journal(record)
+            record["phase"] = "db_committed"
+            self._write_import_journal(record)
+            record["phase"] = "manifest_committing"
+            self._write_import_journal(record)
+            self._build_manifest()
+            record["phase"] = "manifest_committed"
+            self._write_import_journal(record)
+            self._clear_import_journal()
         except (OSError, RuntimeError, sqlite3.Error):
-            cleanup_failures = self._compensate(created_ids, created_paths)
+            record["phase"] = "rollback"
+            self._write_import_journal(record)
+            cleanup_failures = self._rollback_record(record)
             self._restore_manifest(manifest_snapshot, cleanup_failures)
-            if cleanup_failures:
-                try:
-                    self._write_recovery_marker(
-                        created_ids, created_paths, manifest_snapshot, cleanup_failures
-                    )
-                except OSError as marker_error:
-                    logger.error(
-                        "import recovery marker write failed: %s; failures: %s",
-                        marker_error,
-                        cleanup_failures,
-                    )
+            if not cleanup_failures:
+                self._clear_import_journal()
             raise
         return ImportResult(tuple(imported_ids), rejected)
+
+    def _new_journal(
+        self,
+        validated_requests: Sequence[_ValidatedImage],
+        manifest_snapshot: bytes | None,
+    ) -> dict:
+        entries = []
+        for validated in validated_requests:
+            filename = f"{validated.file_hash[:16]}{validated.extension}"
+            entries.append(
+                {
+                    "created": False,
+                    "file_hash": validated.file_hash,
+                    "filename": filename,
+                    "had_target": (self._cache_dir / filename).exists(),
+                    "meme_id": None,
+                    "state": "pending",
+                }
+            )
+        return {
+            "cache_dir": str(self._cache_dir.resolve()),
+            "data_dir": str(self._assets.data_dir.resolve()),
+            "entries": entries,
+            "manifest_snapshot": (
+                None
+                if manifest_snapshot is None
+                else base64.b64encode(manifest_snapshot).decode("ascii")
+            ),
+            "phase": "staging",
+            "version": 2,
+        }
 
     def _validate(self, request: ImportRequest) -> _ValidatedImage | None:
         match request:
@@ -346,13 +388,22 @@ class ImageImportService:
         if not marker.exists():
             return False
         try:
-            record = json.loads(marker.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+            marker_text = marker.read_text(encoding="utf-8")
+        except OSError as error:
+            raise RuntimeError("invalid_import_recovery_marker") from error
+        try:
+            record = json.loads(marker_text)
+        except json.JSONDecodeError as error:
+            if (
+                not marker_text.startswith("manifest_restore:")
+                or not marker_text[len("manifest_restore:") :].strip()
+            ):
+                raise RuntimeError("invalid_import_recovery_marker") from error
             self._build_manifest()
             marker.unlink()
             return True
-        except OSError as error:
-            raise RuntimeError("invalid_import_recovery_marker") from error
+        if isinstance(record, dict) and record.get("version") == 2:
+            return self._recover_journal(record)
         if not isinstance(record, dict) or record.get("version") != 1:
             raise RuntimeError("invalid_import_recovery_marker")
         if record.get("data_dir") != str(self._assets.data_dir.resolve()):
@@ -400,6 +451,131 @@ class ImageImportService:
         marker.unlink()
         return True
 
+    def _recover_journal(self, record: dict) -> bool:
+        manifest_snapshot = self._validate_journal(record)
+        phase = record["phase"]
+        if phase in {
+            "db_committed",
+            "manifest_committing",
+            "manifest_committed",
+            "cleanup_pending",
+        }:
+            self._build_manifest()
+            self._clear_import_journal()
+            return True
+        failures = self._rollback_record(record)
+        self._restore_manifest_or_raise(manifest_snapshot)
+        if failures:
+            raise RuntimeError("import_recovery_failed")
+        self._clear_import_journal()
+        return True
+
+    def _validate_journal(self, record: dict) -> bytes | None:
+        if set(record) != {
+            "cache_dir",
+            "data_dir",
+            "entries",
+            "manifest_snapshot",
+            "phase",
+            "version",
+        }:
+            raise RuntimeError("invalid_import_recovery_marker")
+        if type(record["version"]) is not int or record["version"] != 2:
+            raise RuntimeError("invalid_import_recovery_marker")
+        if record["data_dir"] != str(self._assets.data_dir.resolve()):
+            raise RuntimeError("invalid_import_recovery_marker")
+        if record["cache_dir"] != str(self._cache_dir.resolve()):
+            raise RuntimeError("invalid_import_recovery_marker")
+        if not isinstance(record["phase"], str) or record["phase"] not in {
+            "staging",
+            "staged",
+            "files_committing",
+            "files_committed",
+            "metadata_committing",
+            "db_committed",
+            "manifest_committing",
+            "manifest_committed",
+            "rollback",
+            "cleanup_pending",
+        }:
+            raise RuntimeError("invalid_import_recovery_marker")
+        if not isinstance(record["entries"], list) or not record["entries"]:
+            raise RuntimeError("invalid_import_recovery_marker")
+        snapshot = record["manifest_snapshot"]
+        if snapshot is not None and not isinstance(snapshot, str):
+            raise RuntimeError("invalid_import_recovery_marker")
+        for entry in record["entries"]:
+            if not isinstance(entry, dict) or set(entry) != {
+                "created",
+                "file_hash",
+                "filename",
+                "had_target",
+                "meme_id",
+                "state",
+            }:
+                raise RuntimeError("invalid_import_recovery_marker")
+            file_hash = entry["file_hash"]
+            if (
+                not isinstance(file_hash, str)
+                or len(file_hash) != 64
+                or any(character not in "0123456789abcdef" for character in file_hash)
+            ):
+                raise RuntimeError("invalid_import_recovery_marker")
+            filename = entry["filename"]
+            if (
+                not isinstance(filename, str)
+                or not is_safe_filename(filename)
+                or not filename.startswith(file_hash[:16])
+            ):
+                raise RuntimeError("invalid_import_recovery_marker")
+            if (
+                type(entry["created"]) is not bool
+                or type(entry["had_target"]) is not bool
+            ):
+                raise RuntimeError("invalid_import_recovery_marker")
+            if not isinstance(entry["state"], str) or entry["state"] not in {
+                "pending",
+                "preserved",
+                "replaced",
+            }:
+                raise RuntimeError("invalid_import_recovery_marker")
+            meme_id = entry["meme_id"]
+            if meme_id is not None and (type(meme_id) is not int or meme_id < 1):
+                raise RuntimeError("invalid_import_recovery_marker")
+        if snapshot is None:
+            return None
+        try:
+            return base64.b64decode(snapshot, validate=True)
+        except (ValueError, binascii.Error) as error:
+            raise RuntimeError("invalid_import_recovery_marker") from error
+
+    def _rollback_record(self, record: dict) -> list[str]:
+        failures = []
+        for entry in reversed(record["entries"]):
+            try:
+                row = self._db.get_by_hash(entry["file_hash"])
+                if row is not None:
+                    self._db.delete_meme(row["id"])
+            except (KeyError, OSError, RuntimeError, sqlite3.Error) as error:
+                failures.append(f"delete_meme:{entry['filename']}:{error}")
+            if entry["had_target"]:
+                continue
+            try:
+                path = self._cache_dir / entry["filename"]
+                if path.is_symlink() or not path.resolve().is_relative_to(
+                    self._cache_dir.resolve()
+                ):
+                    raise RuntimeError("invalid_import_recovery_marker")
+                path.unlink(missing_ok=True)
+            except (OSError, RuntimeError) as error:
+                failures.append(f"unlink:{entry['filename']}:{error}")
+        for temporary in self._cache_dir.glob(".atomic-*.tmp"):
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError as error:
+                failures.append(f"unlink:{temporary.name}:{error}")
+        return failures
+
     def _restore_manifest_or_raise(self, snapshot: bytes | None) -> None:
         manifest_path = self._assets.manifest_path
         if snapshot is None:
@@ -444,6 +620,46 @@ class ImageImportService:
         finally:
             temporary.unlink(missing_ok=True)
         return marker
+
+    def _write_import_journal(self, record: dict) -> None:
+        marker = self._assets.recovery_marker_path
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        temporary = marker.with_suffix(".tmp")
+        try:
+            with temporary.open("w", encoding="utf-8") as output:
+                json.dump(record, output, ensure_ascii=False, sort_keys=True)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, marker)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def _clear_import_journal(self) -> None:
+        self._assets.recovery_marker_path.unlink(missing_ok=True)
+
+
+class HostImportSink:
+    """向来源提供者暴露的宿主图片导入端口。"""
+
+    def __init__(self, service: ImageImportService) -> None:
+        self._service = service
+
+    def import_path(
+        self, request: ImportPath, cancelled: Callable[[], bool] | None = None
+    ) -> ImportResult:
+        return self._service.import_batch((request,), cancelled)
+
+    def import_bytes(
+        self, request: ImportBytes, cancelled: Callable[[], bool] | None = None
+    ) -> ImportResult:
+        return self._service.import_batch((request,), cancelled)
+
+    def import_batch(
+        self,
+        requests: Sequence[ImportRequest],
+        cancelled: Callable[[], bool] | None = None,
+    ) -> ImportResult:
+        return self._service.import_batch(requests, cancelled)
 
 
 _IMPORT_LOCK = threading.RLock()

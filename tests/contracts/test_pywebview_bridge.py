@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from ohmymeme.core.schemas.bridge import BRIDGE_CONTRACT, BridgeContractError
+from ohmymeme.core.schemas.bridge import (
+    BRIDGE_CONTRACT,
+    MAIN_BRIDGE_CONTRACT,
+    BridgeContractError,
+)
 from ohmymeme.presentation.desktop.window_manager import JsApi, SettingsApi
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -248,6 +252,25 @@ def test_bridge_runtime_rejects_malformed_payload_without_calling_inner_service(
 
     facade._legacy = TagInner()
     assert facade.get_meme_tags(True) == []
+
+
+def test_main_import_memes_projects_the_historical_result_object():
+    # Given: the main facade and an established successful import payload
+    from ohmymeme.presentation.desktop.api.facades import MainBridgeFacade
+
+    class Inner:
+        def import_memes(self):
+            return {"ok": True, "imported": 1, "rejected": 0}
+
+    facade = MainBridgeFacade.__new__(MainBridgeFacade)
+    facade._legacy = Inner()
+    facade._contract = MAIN_BRIDGE_CONTRACT
+
+    # When: the main bridge dispatches the import action
+    result = facade.import_memes()
+
+    # Then: callers receive the legacy result object rather than a boolean sentinel
+    assert result == {"ok": True, "imported": 1, "rejected": 0}
 
 
 def test_bridge_not_ready_and_missing_method_fail_closed():

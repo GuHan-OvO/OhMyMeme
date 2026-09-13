@@ -1,3 +1,5 @@
+# pyright: basic
+
 """应用对象图和生命周期。"""
 
 import threading
@@ -7,7 +9,7 @@ from ohmymeme.core.adapters.sqlite.library import MemeDbLibraryPort
 from ohmymeme.core.assets import AssetPaths, ResourceLocator
 from ohmymeme.core.config import Config
 from ohmymeme.core.database import MemeDB
-from ohmymeme.core.imports import ImageImportService
+from ohmymeme.core.imports import HostImportSink, ImageImportService
 from ohmymeme.core.manifest import build as build_manifest
 from ohmymeme.core.recovery import StorageRecovery
 from ohmymeme.integrations.platform.hotkey import GlobalHotkey
@@ -137,6 +139,9 @@ class Container:
 
     def create_raw_import_service(self):
         return self.create_import_service(coordinated=False)
+
+    def create_import_sink(self, decode_stego=None, coordinated=True):
+        return HostImportSink(self.create_import_service(decode_stego, coordinated))
 
     def create_hotkey(self):
         return GlobalHotkey()

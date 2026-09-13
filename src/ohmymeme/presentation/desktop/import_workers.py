@@ -17,6 +17,6 @@ def import_paths(webui, file_paths, names=None):
             else os.path.splitext(os.path.basename(source))[0]
         )
         requests.append(ImportPath(Path(source), name))
-    import_service = webui._container.create_import_service(webui._decode_stego)
-    result = import_service.import_batch(requests)
+    sink = webui._container.create_import_sink(webui._decode_stego)
+    result = sink.import_batch(requests)
     return {"ids": list(result.imported_ids), "rejected": result.rejected}

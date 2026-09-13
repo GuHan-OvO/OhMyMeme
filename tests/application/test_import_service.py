@@ -1,3 +1,5 @@
+# pyright: basic
+
 import inspect
 import io
 import os
@@ -7,7 +9,12 @@ import pytest
 from PIL import Image
 
 from ohmymeme.core.assets import AssetPaths
-from ohmymeme.core.imports import ImageImportService, ImportBytes, ImportPath
+from ohmymeme.core.imports import (
+    HostImportSink,
+    ImageImportService,
+    ImportBytes,
+    ImportPath,
+)
 
 
 def _png_bytes(width=1, height=1):
@@ -421,7 +428,7 @@ def test_public_import_method_signatures_remain_frozen():
 
     # Then: bridge defaults and annotations stay ABI-compatible
     assert signatures == {
-        "import_memes": "(self) -> bool",
+        "import_memes": "(self) -> dict",
         "import_folder": "(self, make_collection=True) -> dict",
         "clipboard": "(self) -> dict",
         "lan": "(data: bytes, filename: str) -> dict",
@@ -529,6 +536,86 @@ def test_container_consumes_legacy_import_marker_by_rebuilding_manifest(tmp_path
         recovered.close()
 
 
+def test_truncated_import_journal_fails_closed_and_remains_for_recovery(tmp_path):
+    # Given: a truncated version-two journal beside otherwise valid durable state
+    db = FakeDb()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    assets = AssetPaths(tmp_path, cache_dir)
+    assets.manifest_path.write_text("before", encoding="utf-8")
+    assets.recovery_marker_path.write_text('{"version": 2,', encoding="utf-8")
+    rebuilt = []
+    service = ImageImportService(db, assets, lambda: rebuilt.append(True))
+
+    # When: startup attempts recovery
+    with pytest.raises(RuntimeError, match="invalid_import_recovery_marker"):
+        service.recover()
+
+    # Then: corrupt data is preserved for recovery without any durable mutation
+    assert assets.recovery_marker_path.exists()
+    assert assets.manifest_path.read_text(encoding="utf-8") == "before"
+    assert rebuilt == []
+    assert db.rows == {}
+
+
+def test_invalid_journal_snapshot_fails_before_rollback_mutates_state(tmp_path):
+    # Given: a rollback journal with valid entries but an invalid base64 snapshot
+    db = FakeDb()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    assets = AssetPaths(tmp_path, cache_dir)
+    payload = _png_bytes()
+    file_hash = __import__("hashlib").sha256(payload).hexdigest()
+    filename = f"{file_hash[:16]}.png"
+    asset = cache_dir / filename
+    asset.write_bytes(payload)
+    meme_id = db.add_meme(
+        filename=filename,
+        file_hash=file_hash,
+        width=1,
+        height=1,
+        file_size=len(payload),
+        mime_type="image/png",
+        original_name="existing",
+    )
+    assets.manifest_path.write_text("before", encoding="utf-8")
+    assets.recovery_marker_path.write_text(
+        __import__("json").dumps(
+            {
+                "cache_dir": str(cache_dir.resolve()),
+                "data_dir": str(assets.data_dir.resolve()),
+                "entries": [
+                    {
+                        "created": True,
+                        "file_hash": file_hash,
+                        "filename": filename,
+                        "had_target": False,
+                        "meme_id": meme_id,
+                        "state": "replaced",
+                    }
+                ],
+                "manifest_snapshot": "%%%",
+                "phase": "metadata_committing",
+                "version": 2,
+            }
+        ),
+        encoding="utf-8",
+    )
+    rebuilt = []
+    service = ImageImportService(db, assets, lambda: rebuilt.append(True))
+
+    # When: startup validates the journal before applying its rollback
+    with pytest.raises(RuntimeError, match="invalid_import_recovery_marker"):
+        service.recover()
+
+    # Then: invalid snapshot data blocks every row, file, manifest, and journal mutation
+    assert assets.recovery_marker_path.exists()
+    assert file_hash in db.rows
+    assert asset.read_bytes() == payload
+    assert assets.manifest_path.read_text(encoding="utf-8") == "before"
+    assert rebuilt == []
+
+
 def test_container_completes_import_forward_marker_before_exposing_catalog(tmp_path):
     # Given: real committed file/DB state and a durable forward manifest marker
     from ohmymeme.app.container import Container
@@ -581,3 +668,57 @@ def test_bounded_upload_body_rejects_missing_and_lying_content_length():
     # When/Then: both no-header and lying-header streams stop at limit + 1
     assert _read_upload_body(io.BytesIO(oversized)) is None
     assert _read_upload_body(io.BytesIO(oversized)) is None
+
+
+def test_host_import_sink_routes_path_and_bytes_through_precommit_boundary(tmp_path):
+    # Given: a host-owned sink backed by one image import service
+    source = tmp_path / "source.png"
+    source.write_bytes(_png_bytes(2, 1))
+    service, cache_dir = _service(tmp_path)
+    sink = HostImportSink(service)
+
+    # When: a provider submits a cancelled path then a byte payload through the sink
+    cancelled = sink.import_path(
+        ImportPath(source, "source.png"), cancelled=lambda: True
+    )
+    committed = sink.import_bytes(ImportBytes(_png_bytes(), "bytes.png"))
+
+    # Then: cancellation has no durable effect and bytes use the host transaction
+    assert cancelled.imported_ids == ()
+    assert committed.imported_ids == (1,)
+    assert len(service._db.rows) == 1
+    assert len(tuple(cache_dir.iterdir())) == 1
+
+
+def test_host_import_sink_forwards_manifest_after_postcommit_crash(tmp_path):
+    # Given: a manifest callback that crashes after the image and metadata commit
+    class Crash(BaseException):
+        pass
+
+    db = FakeDb()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    assets = AssetPaths(tmp_path, cache_dir)
+    sink = HostImportSink(
+        ImageImportService(
+            db,
+            assets,
+            lambda: (_ for _ in ()).throw(Crash()),
+        )
+    )
+
+    # When: the host process dies during manifest finalization and a fresh service starts
+    with pytest.raises(Crash):
+        sink.import_bytes(ImportBytes(_png_bytes(), "crash.png"))
+    marker = __import__("json").loads(assets.recovery_marker_path.read_text())
+    rebuilt = []
+    recovered = ImageImportService(db, assets, lambda: rebuilt.append(True))
+    result = recovered.recover()
+
+    # Then: recovery keeps committed media/metadata, rebuilds manifest, and clears journal
+    assert marker["phase"] == "manifest_committing"
+    assert result is True
+    assert rebuilt == [True]
+    assert len(db.rows) == 1
+    assert len(tuple(cache_dir.iterdir())) == 1
+    assert not assets.recovery_marker_path.exists()

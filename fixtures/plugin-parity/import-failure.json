@@ -1,0 +1,30 @@
+{
+  "cases": [
+    {
+      "expected": "rejected_without_durable_state",
+      "id": "malformed-bytes",
+      "input": "bytes"
+    },
+    {
+      "expected": "aborted_without_durable_state",
+      "id": "precommit-cancellation",
+      "input": "path"
+    },
+    {
+      "expected": "manifest_completed",
+      "id": "postcommit-cancellation",
+      "input": "bytes"
+    },
+    {
+      "expected": "forward_manifest_recovery_without_orphans",
+      "id": "manifest-crash-recovery",
+      "input": "bytes"
+    },
+    {
+      "expected": "rollback_without_orphans",
+      "id": "rollback-recovery",
+      "input": "bytes"
+    }
+  ],
+  "schema_version": 1
+}
