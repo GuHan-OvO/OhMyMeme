@@ -35,7 +35,11 @@ class PluginContext(namedtuple("PluginContextBase", "descriptor capabilities")):
 
 
 class ImportPluginContext(
-    namedtuple("ImportPluginContextBase", "descriptor sink progress is_cancelled")
+    namedtuple(
+        "ImportPluginContextBase",
+        "descriptor sink progress is_cancelled operation request resources",
+        defaults=(None, None, None),
+    )
 ):
     __slots__ = ()
 

@@ -31,19 +31,19 @@ FACADES = {"main": MainBridgeFacade, "settings": SettingsBridgeFacade}
 FRONTEND = "src/ohmymeme/presentation/frontend"
 PROGRESS_SOURCES = {
     "qqnt_get_progress": (
-        "src/ohmymeme/presentation/desktop/window_manager.py",
+        "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py",
         "_QQNT_STATE",
     ),
     "get_tg_import_progress": (
-        "src/ohmymeme/integrations/imports/telegram.py",
+        "plugins/source.telegram/src/ohmymeme_plugin_telegram/__init__.py",
         "_TG_STATE",
     ),
     "get_douyin_import_progress": (
-        "src/ohmymeme/integrations/imports/douyin.py",
+        "plugins/source.douyin/src/ohmymeme_plugin_douyin/__init__.py",
         "_DOUYIN_STATE",
     ),
     "get_wechat_import_progress": (
-        "src/ohmymeme/integrations/imports/wechat.py",
+        "plugins/source.wechat/src/ohmymeme_plugin_wechat/__init__.py",
         "_WECHAT_STATE",
     ),
     "get_sync_progress": ("src/ohmymeme/services/sync/service.py", "_sync_state"),

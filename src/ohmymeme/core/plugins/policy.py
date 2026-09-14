@@ -60,6 +60,8 @@ PLUGIN_SETTINGS = {
 
 _REDACTED = "[REDACTED]"
 _SCOPED_SECRET_LABELS = {
+    "passcode",
+    "cookie",
     "access_key",
     "access_key_id",
     "password",
@@ -118,9 +120,14 @@ class PluginSecretPort:
         return self._secrets.get(key)
 
     def _values(self):
-        return tuple(
-            value for value in self._secrets.values() if isinstance(value, str)
-        )
+        # Match the provider's Cookie splitting without persisting derived values.
+        values = [value for value in self._secrets.values() if isinstance(value, str)]
+        cookie = self._secrets.get("cookie")
+        if isinstance(cookie, str):
+            for item in cookie.split(";"):
+                if "=" in item:
+                    values.append(item.split("=", 1)[1].strip())
+        return tuple(sorted(filter(None, values), key=len, reverse=True))
 
 
 class PluginOutputPort:
@@ -173,7 +180,10 @@ class ScopedSecrets:
         if self._closed():
             raise PluginPolicyError("operation scope is closed")
         setting = PLUGIN_SETTINGS[self._provider_id].get(key)
-        if setting is None or not setting[1]:
+        transient = {"source.telegram": {"passcode"}, "source.douyin": {"cookie"}}
+        if (setting is None or not setting[1]) and key not in transient.get(
+            self._provider_id, set()
+        ):
             raise PluginPolicyError(f"unknown secret key {key!r}")
         return self._secret_port.get_secret(key)
 
@@ -214,6 +224,7 @@ class PluginOperation:
         self.settings = ScopedSettings(config_port, descriptor.id, self._is_closed)
         self.secrets = ScopedSecrets(secret_port, descriptor.id, self._is_closed)
         self._outputs = PluginOutputPort()
+        self._redaction_values = set()
 
     def __enter__(self):
         return self
@@ -229,7 +240,16 @@ class PluginOperation:
             raise PluginPolicyError(f"undeclared capability {capability!r}")
 
     def redact(self, value):
-        return redact(value, self.secrets._secret_port._values())
+        return redact(
+            value, (*self.secrets._secret_port._values(), *self._redaction_values)
+        )
+
+    def protect_secret(self, value):
+        # Helper/source-derived keys are transient output redaction, never config.
+        if self._closed:
+            raise PluginPolicyError("operation scope is closed")
+        if isinstance(value, str) and value:
+            self._redaction_values.add(value)
 
     def serialize_descriptor(self, value):
         return self.redact(value)
@@ -272,14 +292,26 @@ class PluginPolicy:
         self._workspace_root = config.data_dir / "plugin-workspaces"
         self._operations = {}
 
-    def operation(self, descriptor):
+    def operation(self, descriptor, transient_secrets=None):
         canonical = self._canonical_descriptor(descriptor)
         config_port, secret_port = self._ports(canonical.id)
+        allowed = {"source.telegram": {"passcode"}, "source.douyin": {"cookie"}}
+        transient = dict(transient_secrets or {})
+        if transient.keys() - allowed.get(canonical.id, set()):
+            raise PluginPolicyError("unknown transient secret")
+        secret_port._secrets.update(transient)
         operation = PluginOperation(
             config_port, secret_port, canonical, self._workspace_root
         )
         self._operations[operation] = (canonical.id, config_port)
         return operation
+
+    def close_operation(self, operation):
+        # Close only after the host has drained the worker and its children.
+        operation.__exit__(None, None, None)
+        operation.secrets._secret_port._secrets.clear()
+        operation._redaction_values.clear()
+        self._operations.pop(operation, None)
 
     def commit_settings(self, operation):
         provider_id, config_port = self._operation_record(operation)

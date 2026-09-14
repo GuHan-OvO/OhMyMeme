@@ -1,7 +1,9 @@
+import importlib
 import json
 import subprocess
 import sys
 from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -9,7 +11,7 @@ import pytest
 
 from ohmymeme.core.plugins.manifest import ENTRY_POINT_GROUP, validate_manifest
 from ohmymeme.core.plugins.registry import PluginRegistry
-from ohmymeme.integrations.imports import douyin, wechat
+from ohmymeme.presentation.desktop import import_workers
 from ohmymeme.presentation.desktop import window_manager as desktop
 
 
@@ -34,75 +36,92 @@ def shell(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "module,start,method,args",
+    "provider,method,args,parameters,secrets",
     [
-        (desktop.telegram, "start_tg_import", "start_tg_import", (None, "", True)),
-        (douyin, "start_douyin_import", "start_douyin_import", ("fixture-cookie",)),
-        (wechat, "start_wechat_import", "start_wechat_import", (None, True, None)),
+        (
+            "source.telegram",
+            "start_tg_import",
+            (None, "", True),
+            {"tdata_path": None, "convert_webm": True},
+            {"passcode": ""},
+        ),
+        (
+            "source.douyin",
+            "start_douyin_import",
+            ("fixture-cookie",),
+            {},
+            {"cookie": "fixture-cookie"},
+        ),
+        (
+            "source.wechat",
+            "start_wechat_import",
+            (None, True, None),
+            {"user_root": None, "download": True, "account_path": None},
+            None,
+        ),
     ],
 )
 def test_characterization_start_success_and_busy(
-    shell, monkeypatch, module, start, method, args
+    shell, monkeypatch, provider, method, args, parameters, secrets
 ):
-    # Preserve real legacy success/busy envelopes and pass only the import callback.
+    # Preserve envelopes while testing the actual host worker/context seam.
     api, webui, _ = shell
-    worker = Mock(return_value=True)
-    monkeypatch.setattr(module, start, worker)
+    worker = Mock()
+    worker.start.return_value = True
+    lookup = Mock(return_value=worker)
+    monkeypatch.setattr(import_workers, "get_import_worker", lookup)
     assert getattr(api, method)(*args) == {"ok": True}
-    worker.assert_called_once_with(webui._do_import, *args)
-    worker.return_value = False
+    assert lookup.call_args.args[0]._webui is webui
+    assert lookup.call_args.args[1] == provider
+    worker.start.assert_called_once_with(
+        parameters, *(() if secrets is None else (secrets,))
+    )
+    webui._do_import.assert_not_called()
+    worker.start.return_value = False
     assert getattr(api, method)(*args) == {"ok": False, "error": "已有导入任务正在进行"}
 
 
 def test_characterization_qqnt_start(shell, monkeypatch):
     # QQNT keeps its output choice, defaults and host-owned import callback.
-    api, _, _ = shell
-    worker = Mock(return_value=True)
-    monkeypatch.setattr(desktop, "start_qqnt_extract", worker)
+    api, webui, _ = shell
+    worker = Mock()
+    worker.start_qqnt.return_value = True
+    monkeypatch.setattr(import_workers, "get_import_worker", Mock(return_value=worker))
     assert api.qqnt_start("10001", "chosen-output") == {"ok": True}
-    assert worker.call_args.args == ("10001", "chosen-output")
-    assert worker.call_args.kwargs["image_only"] is False
-    assert worker.call_args.kwargs["overwrite"] is False
-    assert callable(worker.call_args.kwargs["library_import"])
-    worker.return_value = False
+    worker.start_qqnt.assert_called_once_with(
+        "10001", "chosen-output", False, False, webui._cfg
+    )
+    worker.start_qqnt.return_value = False
     assert api.qqnt_start("10001", "chosen-output") == {"ok": False}
 
 
 @pytest.mark.parametrize(
-    "module,progress,cancel,progress_method,cancel_method",
+    "provider,progress_method,cancel_method",
     [
         (
-            desktop,
-            "get_qqnt_progress",
-            "cancel_qqnt_extract",
+            "source.qqnt",
             "qqnt_get_progress",
             "qqnt_cancel",
         ),
         (
-            desktop.telegram,
-            "get_tg_progress",
-            "cancel_tg_import",
+            "source.telegram",
             "get_tg_import_progress",
             "cancel_tg_import",
         ),
         (
-            douyin,
-            "get_douyin_progress",
-            "cancel_douyin_import",
+            "source.douyin",
             "get_douyin_import_progress",
             "cancel_douyin_import",
         ),
         (
-            wechat,
-            "get_wechat_progress",
-            "cancel_wechat_import",
+            "source.wechat",
             "get_wechat_import_progress",
             "cancel_wechat_import",
         ),
     ],
 )
 def test_characterization_progress_and_cancel(
-    shell, monkeypatch, module, progress, cancel, progress_method, cancel_method
+    shell, monkeypatch, provider, progress_method, cancel_method
 ):
     # Existing progress dictionaries are not collapsed into a generic result envelope.
     api, _, _ = shell
@@ -115,12 +134,14 @@ def test_characterization_progress_and_cancel(
         "error_code": "",
         "log": ["fixture"],
     }
-    monkeypatch.setattr(module, progress, Mock(return_value=state))
-    cancellation = Mock(return_value=None)
-    monkeypatch.setattr(module, cancel, cancellation)
+    worker = Mock()
+    worker.get_progress.return_value = state
+    lookup = Mock(return_value=worker)
+    monkeypatch.setattr(import_workers, "get_import_worker", lookup)
     assert getattr(api, progress_method)() == state
     assert getattr(api, cancel_method)() is None
-    cancellation.assert_called_once_with()
+    worker.cancel.assert_called_once_with()
+    assert [call.args[1] for call in lookup.call_args_list] == [provider, provider]
 
 
 @pytest.mark.parametrize(
@@ -319,16 +340,27 @@ def test_progress_stale_result_and_provider_exception(shell):
     assert api.get_tg_import_progress() == {}
 
 
-def test_real_provider_idle_progress_shapes(shell):
+def test_real_provider_idle_progress_shapes(tmp_path):
     # Read actual idle states without launching threads, devices or network access.
-    api, _, _ = shell
-    for method, read_state in (
-        (api.qqnt_get_progress, desktop.get_qqnt_progress),
-        (api.get_tg_import_progress, desktop.telegram.get_tg_progress),
-        (api.get_douyin_import_progress, douyin.get_douyin_progress),
-        (api.get_wechat_import_progress, wechat.get_wechat_progress),
-    ):
-        assert method() == read_state()
+    from ohmymeme.app.container import Container
+
+    container = Container(tmp_path / "host")
+    try:
+        webui = container.create_webui()
+        api = desktop.SettingsApi(webui, container.settings)
+        for provider, method in (
+            ("qqnt", api.qqnt_get_progress),
+            ("telegram", api.get_tg_import_progress),
+            ("douyin", api.get_douyin_import_progress),
+            ("wechat", api.get_wechat_import_progress),
+        ):
+            module = importlib.import_module("ohmymeme_plugin_" + provider)
+            assert method() == module.create_plugin().get_progress()
+            worker = webui._import_workers["source." + provider]
+            method()
+            assert webui._import_workers["source." + provider] is worker
+    finally:
+        container.close()
 
 
 def test_real_qqnt_probe_and_native_picker_success(shell, tmp_path):
@@ -448,3 +480,57 @@ def test_bridge_schema_models_match_existing_generator():
     from scripts.generate_bridge_schemas import SCHEMA_PATH, _schema_bytes
 
     assert SCHEMA_PATH.read_bytes() == _schema_bytes()
+
+
+@pytest.mark.parametrize(
+    "provider_id", ["source.qqnt", "source.telegram", "source.douyin", "source.wechat"]
+)
+def test_idle_instance_cancel_does_not_cancel_another_worker(
+    tmp_path, monkeypatch, provider_id
+):
+    # Same-kind coordinator reuse must not grant ownership to a rejected instance.
+    from ohmymeme.app.container import Container
+    from ohmymeme.core.plugins.policy import PluginPolicy
+    from ohmymeme.presentation.desktop.api.plugin_dispatch import _descriptor
+
+    container = Container(tmp_path / "host")
+    entered, release = Event(), Event()
+    contexts = []
+    descriptor = _descriptor(provider_id)
+    module = importlib.import_module(descriptor.package_root)
+    providers = [module.create_plugin(), module.create_plugin()]
+
+    def run(context):
+        contexts.append(context)
+        entered.set()
+        assert release.wait(5)
+
+    monkeypatch.setattr(providers[0], "import_media", run)
+    workers = [
+        import_workers.HostImportWorker(
+            provider,
+            descriptor,
+            PluginPolicy(container.config),
+            container.operations,
+            container.create_import_sink(),
+        )
+        for provider in providers
+    ]
+    try:
+        assert workers[0].start({})
+        assert entered.wait(5)
+        assert not workers[1].start({})
+        before = workers[0].get_progress()
+        workers[1].cancel()
+        assert not contexts[0].is_cancelled()
+        assert workers[0].get_progress() == before
+        workers[0].cancel()
+        assert contexts[0].is_cancelled()
+    finally:
+        release.set()
+        container.operations.wait(workers[0]._kind, 5)
+        container.close()
+    assert all(worker.operation._closed for worker in workers)
+    assert not list(
+        (container.config.data_dir / "plugin-workspaces").rglob("operation-*")
+    )

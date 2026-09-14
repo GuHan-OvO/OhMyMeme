@@ -1,15 +1,14 @@
 """tg_stickers 模块单测：解密/转换/取消/进度原子性"""
 
-import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import ohmymeme_plugin_telegram as implementation
 
-from ohmymeme.integrations.imports import telegram as tg
+tg = implementation.create_plugin()
 
 
 class DummyProc:
@@ -47,18 +46,23 @@ class DummyProc:
 
 class TestDetectExtension(unittest.TestCase):
     def test_known_formats(self):
-        self.assertEqual(tg.detect_extension(b"\x89PNG\r\n\x1a\nrest"), ".png")
-        self.assertEqual(tg.detect_extension(b"\xff\xd8\xff\xe0rest"), ".jpg")
-        self.assertEqual(tg.detect_extension(b"GIF89a...."), ".gif")
-        self.assertEqual(tg.detect_extension(b"RIFF....WEBPVP8 "), ".webp")
         self.assertEqual(
-            tg.detect_extension(b"\x1a\x45\xdf\xa3\x01\x00\x00\x00"), ".webm"
+            implementation.detect_extension(b"\x89PNG\r\n\x1a\nrest"), ".png"
         )
-        self.assertEqual(tg.detect_extension(b"ZZZZQQQQ"), "")
+        self.assertEqual(
+            implementation.detect_extension(b"\xff\xd8\xff\xe0rest"), ".jpg"
+        )
+        self.assertEqual(implementation.detect_extension(b"GIF89a...."), ".gif")
+        self.assertEqual(implementation.detect_extension(b"RIFF....WEBPVP8 "), ".webp")
+        self.assertEqual(
+            implementation.detect_extension(b"\x1a\x45\xdf\xa3\x01\x00\x00\x00"),
+            ".webm",
+        )
+        self.assertEqual(implementation.detect_extension(b"ZZZZQQQQ"), "")
 
     def test_webp_requires_magic(self):
-        self.assertEqual(tg.detect_extension(b"RIFF....WEBPX"), ".webp")
-        self.assertEqual(tg.detect_extension(b"RIFF....OTHER"), "")
+        self.assertEqual(implementation.detect_extension(b"RIFF....WEBPX"), ".webp")
+        self.assertEqual(implementation.detect_extension(b"RIFF....OTHER"), "")
 
 
 class TestStateElapsed(unittest.TestCase):
@@ -70,7 +74,7 @@ class TestStateElapsed(unittest.TestCase):
 
     # 运行中 elapsed 随 _TG_T0 单调推进，reset 后归零不推进
     def test_elapsed_only_advances_while_running(self):
-        tg._TG_T0 = time.monotonic() - 5
+        tg._t0 = time.monotonic() - 5
         tg._update_tg(status="converting", progress=50, done=5, total=10)
         self.assertGreaterEqual(tg.get_tg_progress()["elapsed_s"], 4)
         # idle 时不再推进（_reset_state 置 None）
@@ -79,9 +83,9 @@ class TestStateElapsed(unittest.TestCase):
 
     # reset 清空 _TG_T0 与 elapsed_s
     def test_elapsed_reset(self):
-        tg._TG_T0 = time.monotonic() - 3  # 手动污染
+        tg._t0 = time.monotonic() - 3  # 手动污染
         tg._reset_state()
-        self.assertIsNone(tg._TG_T0)
+        self.assertIsNone(tg._t0)
         self.assertEqual(tg.get_tg_progress()["elapsed_s"], 0)
 
 
@@ -92,7 +96,7 @@ class TestConvertProcessLifecycle(unittest.TestCase):
     def tearDown(self):
         tg._reset_state()
 
-    @mock.patch("ohmymeme.integrations.imports.telegram.subprocess.Popen")
+    @mock.patch("ohmymeme_plugin_telegram.subprocess.Popen")
     def test_success_adds_and_discards(self, popen):
         proc = DummyProc(ret=0)
         popen.return_value = proc
@@ -101,10 +105,10 @@ class TestConvertProcessLifecycle(unittest.TestCase):
         )
         popen.assert_called_once()
         # 结束后集合为空
-        with tg._TG_LOCK:
-            self.assertEqual(len(tg._TG_ACTIVE_PROC), 0)
+        with tg._lock:
+            self.assertEqual(len(tg._processes), 0)
 
-    @mock.patch("ohmymeme.integrations.imports.telegram.subprocess.Popen")
+    @mock.patch("ohmymeme_plugin_telegram.subprocess.Popen")
     def test_timeout_kills_and_waits(self, popen):
         import subprocess
 
@@ -115,10 +119,10 @@ class TestConvertProcessLifecycle(unittest.TestCase):
         )
         self.assertTrue(proc.killed)
         self.assertTrue(proc.waited)
-        with tg._TG_LOCK:
-            self.assertNotIn(proc, tg._TG_ACTIVE_PROC)
+        with tg._lock:
+            self.assertNotIn(proc, tg._processes)
 
-    @mock.patch("ohmymeme.integrations.imports.telegram.subprocess.Popen")
+    @mock.patch("ohmymeme_plugin_telegram.subprocess.Popen")
     def test_webm_conversion_preserves_alpha_decoder_and_quality_contract(self, popen):
         proc = DummyProc(ret=0)
         popen.return_value = proc
@@ -133,8 +137,8 @@ class TestConvertProcessLifecycle(unittest.TestCase):
 
     def test_cancel_terminates_active_proc(self):
         proc = DummyProc()
-        with tg._TG_LOCK:
-            tg._TG_ACTIVE_PROC.add(proc)
+        with tg._lock:
+            tg._processes.add(proc)
         tg.cancel_tg_import()
         self.assertTrue(proc.terminated)
         # 已终止进程从集合保留（由 convert/discard 清理），这里验证终止被调用即可
@@ -181,7 +185,9 @@ class TestDedup(unittest.TestCase):
         stat = self._make_static_webp(self.tmp / "stat.webp", (200, 30, 30))
         stat2 = self._make_static_webp(self.tmp / "stat2.webp", (20, 200, 40))
         paths = [str(anim), str(stat), str(stat2)]
-        kept, skipped = tg.dedup_static_against_animated(paths, threshold=0.05)
+        kept, skipped = implementation.dedup_static_against_animated(
+            paths, threshold=0.05
+        )
         self.assertEqual(skipped, 1)
         self.assertIn(str(anim), kept)
         self.assertNotIn(str(stat), kept)
@@ -190,7 +196,9 @@ class TestDedup(unittest.TestCase):
     def test_no_animated_keeps_all(self):
         stat = self._make_static_webp(self.tmp / "a.webp", (1, 2, 3))
         stat2 = self._make_static_webp(self.tmp / "b.webp", (4, 5, 6))
-        kept, skipped = tg.dedup_static_against_animated([str(stat), str(stat2)])
+        kept, skipped = implementation.dedup_static_against_animated(
+            [str(stat), str(stat2)]
+        )
         self.assertEqual(skipped, 0)
         self.assertEqual(len(kept), 2)
 
@@ -204,8 +212,92 @@ class TestWorkerParallelState(unittest.TestCase):
 
     def test_parallel_convert_syncs_done(self):
         """转换循环 _TG_LOCK 内累加 done——RLock 支持 _update_tg 嵌套取锁"""
-        self.assertEqual(type(tg._TG_LOCK).__name__, "RLock")
+        self.assertEqual(type(tg._lock).__name__, "RLock")
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_telegram_factory_rejects_invalid_tdata_and_isolates_cancel(tmp_path):
+    # Actual installed providers must not share the legacy module state.
+    from ohmymeme_plugin_telegram import create_plugin
+
+    from ohmymeme.core.plugins.contracts import ImportPluginContext
+    from ohmymeme.core.plugins.policy import (
+        PluginConfigPort,
+        PluginOperation,
+        PluginSecretPort,
+    )
+    from ohmymeme.presentation.desktop.api.plugin_dispatch import _descriptor
+
+    descriptor = _descriptor("source.telegram")
+    first, second = create_plugin(), create_plugin()
+    with PluginOperation(
+        PluginConfigPort({}),
+        PluginSecretPort({"passcode": "ephemeral"}),
+        descriptor,
+        tmp_path,
+    ) as operation:
+        context = ImportPluginContext(
+            descriptor,
+            None,
+            lambda value: None,
+            lambda: False,
+            operation=operation,
+            request={"tdata_path": str(tmp_path / "invalid"), "convert_webm": False},
+        )
+        assert first.start(context)
+        assert not first.start(context)
+        first.stop()
+        first.import_media(context)
+        assert first.get_progress()["status"] == "cancelled"
+        assert second.get_progress()["status"] == "idle"
+        assert first.start(context)
+        first.import_media(context)
+        assert first.get_progress()["error_code"] == "invalid_tdata"
+        assert second.get_progress()["status"] == "idle"
+
+
+def test_telegram_passcode_error_emissions_are_redacted(tmp_path, monkeypatch):
+    # A real worker error must redact both progress and operation log events.
+    from ohmymeme.core.plugins.contracts import ImportPluginContext
+    from ohmymeme.core.plugins.policy import (
+        PluginConfigPort,
+        PluginOperation,
+        PluginSecretPort,
+    )
+    from ohmymeme.presentation.desktop.api.plugin_dispatch import _descriptor
+
+    descriptor = _descriptor("source.telegram")
+    secret = "fixture-passcode-secret"
+    (tmp_path / "key_datas").write_bytes(b"fixture")
+    emissions = []
+
+    def fail(path, passcode):
+        assert passcode == secret
+        raise RuntimeError("key rejected " + passcode)
+
+    monkeypatch.setattr(implementation, "read_local_key", fail)
+    with PluginOperation(
+        PluginConfigPort({}),
+        PluginSecretPort({"passcode": secret}),
+        descriptor,
+        tmp_path,
+    ) as operation:
+        context = ImportPluginContext(
+            descriptor,
+            None,
+            emissions.append,
+            lambda: False,
+            operation,
+            {"tdata_path": str(tmp_path), "convert_webm": False},
+        )
+        provider = implementation.create_plugin()
+        assert provider.start(context)
+        provider.import_media(context)
+        assert provider.get_progress()["error_code"] == "bad_key"
+        logs = operation._outputs._drain_events()
+        assert emissions and logs
+        assert secret not in repr(emissions) + repr(logs)
+        assert "[REDACTED]" in repr(logs)

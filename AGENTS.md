@@ -91,6 +91,10 @@ tests/
 ```
 
 ## js_api 桥接规范
+- `plugins/source.wechat/src/ohmymeme_plugin_wechat` 持有微信真实账号/SQLite/WAL/CDN 算法及 helper JSON 协议；`create_plugin()` 返回独立状态实例。源 SQLite 是用户微信库，不是应用 DB。旧 `integrations/imports/wechat.py` 保留发布 ABI 和宿主 helper 持久缓存/真实 SHA-256/ResourceLocator/offsets 策略，只通过 `resources.wechat_helper()` 提供 operation 内副本，不向插件传持久路径、Config、WebUI、MemeDB 或任意执行器。helper 采用 `Popen`，先注册到 coordinator 再用 0.25s 分段 communicate 检查取消，90s 总超时；terminate/kill/wait 后关闭管道，宿主 drain 后回收 operation 目录。同步列表同样受宿主 coordinator 监管。
+- 四包的默认 Bridge 调用通过固定 `HostActionAdapter` 接到缓存的真实 provider/context/sink；进度/取消绑定同一实例。未取得 task 所有权的空闲/被拒绝实例不能取消其他实例。提供方缺失/禁用/不兼容返回原哨兵，不回退；不更改冻结 ABI/action 矩阵，`plugin_abi_matrix.py` 从四个真实包读取进度字段。源包元数据与本地 editable 已提前建立，全部九包和 frozen 流程仍归 Todo13。
+- `plugins/source.telegram`/`plugins/source.douyin` 持有真实解密、转换、远程协议和 ABogus；`ImportRuntime` 仅复用实例生命周期、sink 投递与脱敏输出。宿主保留 coordinator 线程和临时目录回收，Telegram 保留 20 个一批、VP9 alpha/q80、ETA 和并行子进程回收。`source.telegram/passcode` 与 `source.douyin/cookie` 仅作为 transient operation secret，不加入持久配置映射；旧 integration 仅保留命名 ABI 代理及宿主默认兼容 session。
+- `plugins/source.qqnt/src/ohmymeme_plugin_qqnt` 持有 QQNT 实际提取算法及 GPL 原署名，零参数 `create_plugin()` 返回独立状态实例。宿主 `presentation/desktop/import_workers.py` 持有线程/coordinator、operation、sink、昵称缓存与外部导出路径投影；插件只写 operation staging，缓存及其上下级输出改走 sink，普通 `image_only=False` 导出保留非图片/坏图复制语义。
 - `JsApi` 暴露给主窗口，`SettingsApi` 暴露给设置窗口
 - JS 调用: `pywebview.api.methodName(...args)` → 自动序列化
 - JS 辅助函数: `async function api(method, ...args) { return await pywebview.api[method](...args); }`

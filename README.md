@@ -43,6 +43,16 @@
 
 ## 快速开始
 
+### 独立导入包
+
+`plugins/source.qqnt` 是实际 QQNT 算法包，入口为 `ohmymeme_plugin_qqnt:create_plugin`（`ohmymeme.plugins.v1`）。实例通过 operation 临时目录和 `ImportSink` 工作；昵称缓存、用户输出路径、外部导出覆盖校验、线程和数据库生命周期均属于宿主。旧 `ohmymeme.integrations.imports.qqnt` 保留兼容接口。完整九包源码安装与 frozen 收集工作流由后续打包任务交付。
+
+`plugins/source.telegram` 和 `plugins/source.douyin` 分别持有 Telegram 解密/转换/批量导入与抖音协议/ABogus 算法，工厂为 `ohmymeme_plugin_telegram:create_plugin`、`ohmymeme_plugin_douyin:create_plugin`。进度、取消和子进程清单按实例隔离；passcode/Cookie 仅从 operation 临时密钥读取，输出经宿主 policy 脱敏，结束后清除。旧模块保留公开调用接口，不保存算法副本。
+
+`plugins/source.wechat` 持有微信账号检测、helper JSON 协议、源 SQLite/WAL 解密与 CDN 下载算法，入口为 `ohmymeme.plugins.v1:source.wechat = ohmymeme_plugin_wechat:create_plugin`。helper 持久缓存、发布 SHA-256 和 ResourceLocator/offsets 定位仍由宿主保管，只把校验后的 helper 与 offsets 的 operation 内副本交给插件。读取的是用户微信源库，不是应用数据库；下载结果仅交 `ImportSink`，不直接写入应用 DB、缓存或 manifest。保留 masked/RVA 协议、CDN 白名单、逐跳 SSRF 与 MD5/图片字节校验，缺少真实 helper 哈希时默认拒绝。取消和 90 秒 helper 超时通过宿主 OperationCoordinator 回收进程，等待退出后清理临时目录。
+
+四个默认导入界面沿用原标签、参数、结果与失败哨兵，宿主固定 dispatcher 为同一提供方保留同一实例的进度/取消会话；缺失、禁用、不兼容的包不会回退到其他提供方。旧 `ohmymeme.integrations.imports.wechat` 仅保留发布 ABI 与宿主 helper 资源策略。源码包当前可在本地独立环境中用 `mise exec -- python -m pip install --no-deps --no-build-isolation -e ./plugins/source.qqnt -e ./plugins/source.telegram -e ./plugins/source.douyin -e ./plugins/source.wechat` 安装；未改锁定依赖，完整九包与 frozen 安装流程仍由 Todo13 统一交付。
+
 ### 下载
 
 从 [Releases](https://github.com/OhMyMeme/OhMyMeme/releases/latest) 下载对应系统的安装包或可执行文件，直接运行。

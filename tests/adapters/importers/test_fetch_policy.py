@@ -1,23 +1,25 @@
 import hashlib
 import http.server
-import os
-from dataclasses import dataclass
 import io
-from pathlib import Path
+import os
 import threading
 import zipfile
+from dataclasses import dataclass
+from pathlib import Path
 
+import ohmymeme_plugin_douyin as douyin
+import ohmymeme_plugin_wechat as wechat
 import pytest
 from PIL import Image
 
 from ohmymeme.core.adapters import fetch_policy as fetch_module
-from ohmymeme.integrations.imports import adb_qq, douyin, wechat
 from ohmymeme.core.adapters.fetch_policy import (
     FetchLimitError,
     FetchPolicy,
     FetchRejected,
     validate_image_bytes,
 )
+from ohmymeme.integrations.imports import adb_qq
 from ohmymeme.presentation.desktop import window_manager
 from ohmymeme.services import updates
 
@@ -57,7 +59,10 @@ class FakeConnector:
     def open(self, target, address, timeout, headers):
         self.calls.append((target, address, timeout, dict(headers)))
         self.proxy_values.append(
-            tuple(os.environ.get(name) for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"))
+            tuple(
+                os.environ.get(name)
+                for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY")
+            )
         )
         return self.responses.pop(0)
 
@@ -160,9 +165,14 @@ def test_policy_requires_exact_trusted_cdn_host_and_https_443():
     connector = FakeConnector([FakeResponse(200, _png_bytes(), {})])
     policy = FetchPolicy(resolver=resolver, connector=connector)
 
-    assert policy.fetch_bytes(
-        "https://vweixinf.tc.qq.com/image", trusted_hosts={"vweixinf.tc.qq.com"}, image=True
-    ) == _png_bytes()
+    assert (
+        policy.fetch_bytes(
+            "https://vweixinf.tc.qq.com/image",
+            trusted_hosts={"vweixinf.tc.qq.com"},
+            image=True,
+        )
+        == _png_bytes()
+    )
     with pytest.raises(FetchRejected):
         policy.fetch_bytes(
             "http://vweixinf.tc.qq.com/image", trusted_hosts={"vweixinf.tc.qq.com"}
@@ -366,7 +376,9 @@ def test_updater_download_seam_uses_atomic_policy_destination(tmp_path, monkeypa
     assert not (tmp_path / "release.bin.fetching").exists()
 
 
-def test_adb_download_seam_validates_zip_and_extracts_expected_binary(tmp_path, monkeypatch):
+def test_adb_download_seam_validates_zip_and_extracts_expected_binary(
+    tmp_path, monkeypatch
+):
     archive_data = io.BytesIO()
     with zipfile.ZipFile(archive_data, "w") as archive:
         archive.writestr("platform-tools/adb", b"adb")
@@ -376,11 +388,19 @@ def test_adb_download_seam_validates_zip_and_extracts_expected_binary(tmp_path, 
             destination.write_bytes(archive_data.getvalue())
 
     adb_dir = tmp_path / ".adb"
-    monkeypatch.setitem(adb_qq._ADB_SHA256, "Windows", hashlib.sha256(archive_data.getvalue()).hexdigest())
-    monkeypatch.setitem(adb_qq._ADB_BINARY_SHA256, "Windows", hashlib.sha256(b"adb").hexdigest())
+    monkeypatch.setitem(
+        adb_qq._ADB_SHA256,
+        "Windows",
+        hashlib.sha256(archive_data.getvalue()).hexdigest(),
+    )
+    monkeypatch.setitem(
+        adb_qq._ADB_BINARY_SHA256, "Windows", hashlib.sha256(b"adb").hexdigest()
+    )
     monkeypatch.setattr(adb_qq, "_FETCH_POLICY", Policy())
     monkeypatch.setattr(adb_qq, "_get_adb_dir", lambda: adb_dir)
-    monkeypatch.setattr(adb_qq, "_adb_download_url", lambda: "https://public.example/adb.zip")
+    monkeypatch.setattr(
+        adb_qq, "_adb_download_url", lambda: "https://public.example/adb.zip"
+    )
     monkeypatch.setattr(adb_qq, "_adb_binary_name", lambda: "adb")
 
     assert adb_qq._download_with_progress() == str(adb_dir / "platform-tools" / "adb")
@@ -399,7 +419,9 @@ def test_adb_download_seam_rejects_zip_path_traversal(tmp_path, monkeypatch):
     adb_dir = tmp_path / ".adb"
     monkeypatch.setattr(adb_qq, "_FETCH_POLICY", Policy())
     monkeypatch.setattr(adb_qq, "_get_adb_dir", lambda: adb_dir)
-    monkeypatch.setattr(adb_qq, "_adb_download_url", lambda: "https://public.example/adb.zip")
+    monkeypatch.setattr(
+        adb_qq, "_adb_download_url", lambda: "https://public.example/adb.zip"
+    )
 
     assert adb_qq._download_with_progress() is False
     assert not (tmp_path / "escape").exists()
@@ -428,7 +450,10 @@ def test_policy_pins_socket_peer_and_re_resolves_each_redirect():
         "93.184.216.35",
     ]
     assert resolver.calls == [("public.example", 443), ("cdn.example", 443)]
-    assert all(call[0].hostname in ("public.example", "cdn.example") for call in connector.calls)
+    assert all(
+        call[0].hostname in ("public.example", "cdn.example")
+        for call in connector.calls
+    )
 
 
 def test_default_connectors_use_numeric_peer_and_original_tls_hostname(monkeypatch):
@@ -456,17 +481,27 @@ def test_default_connectors_use_numeric_peer_and_original_tls_hostname(monkeypat
 
     http_socket = FakeSocket()
     monkeypatch.setattr(fetch_module.socket, "socket", lambda *args: http_socket)
-    http_target = fetch_module.FetchTarget("http", "public.example", 80, "public.example", "/")
-    http_address = fetch_module.ResolvedAddress(2, ("93.184.216.34", 80), "93.184.216.34")
+    http_target = fetch_module.FetchTarget(
+        "http", "public.example", 80, "public.example", "/"
+    )
+    http_address = fetch_module.ResolvedAddress(
+        2, ("93.184.216.34", 80), "93.184.216.34"
+    )
     http_connection = fetch_module._PinnedHTTPConnection(http_target, http_address, 10)
     http_connection.connect()
     assert http_socket.peer == ("93.184.216.34", 80)
 
     https_socket = FakeSocket()
     monkeypatch.setattr(fetch_module.socket, "socket", lambda *args: https_socket)
-    https_target = fetch_module.FetchTarget("https", "public.example", 443, "public.example", "/")
-    https_address = fetch_module.ResolvedAddress(2, ("93.184.216.35", 443), "93.184.216.35")
-    https_connection = fetch_module._PinnedHTTPSConnection(https_target, https_address, 10)
+    https_target = fetch_module.FetchTarget(
+        "https", "public.example", 443, "public.example", "/"
+    )
+    https_address = fetch_module.ResolvedAddress(
+        2, ("93.184.216.35", 443), "93.184.216.35"
+    )
+    https_connection = fetch_module._PinnedHTTPSConnection(
+        https_target, https_address, 10
+    )
     context = FakeContext()
     https_connection._context = context
     https_connection.connect()

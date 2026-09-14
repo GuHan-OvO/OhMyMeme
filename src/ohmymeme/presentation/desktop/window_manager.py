@@ -1161,40 +1161,49 @@ class _LegacySettingsApi:
         """启动 Telegram 缓存导入，已有任务时返回 {"ok": False, "error"}"""
         if not tdata_path:
             tdata_path = self._cfg.get("tg_tdata_path", "") or None
-        started = telegram.start_tg_import(
-            self._webui._do_import, tdata_path, passcode, convert_webm
+        from .import_workers import get_import_worker
+
+        started = get_import_worker(self, "source.telegram").start(
+            {"tdata_path": tdata_path, "convert_webm": convert_webm},
+            {"passcode": passcode},
         )
         if not started:
             return {"ok": False, "error": "已有导入任务正在进行"}
         return {"ok": True}
 
     def get_tg_import_progress(self) -> dict:
-        return telegram.get_tg_progress()
+        from .import_workers import get_import_worker
+
+        return get_import_worker(self, "source.telegram").get_progress()
 
     def cancel_tg_import(self):
-        telegram.cancel_tg_import()
+        from .import_workers import get_import_worker
+
+        get_import_worker(self, "source.telegram").cancel()
 
     def start_douyin_import(self, cookie: str) -> dict:
         """启动抖音表情包下载导入（全部下载）"""
         try:
-            from ohmymeme.integrations.imports import douyin
+            from .import_workers import get_import_worker
+
+            worker = get_import_worker(self, "source.douyin")
         except ImportError as e:
             return {"ok": False, "error": f"缺少依赖: {e}"}
 
-        started = douyin.start_douyin_import(self._webui._do_import, cookie)
+        started = worker.start({}, {"cookie": cookie})
         if not started:
             return {"ok": False, "error": "已有导入任务正在进行"}
         return {"ok": True}
 
     def get_douyin_import_progress(self) -> dict:
-        from ohmymeme.integrations.imports import douyin
+        from .import_workers import get_import_worker
 
-        return douyin.get_douyin_progress()
+        return get_import_worker(self, "source.douyin").get_progress()
 
     def cancel_douyin_import(self):
-        from ohmymeme.integrations.imports import douyin
+        from .import_workers import get_import_worker
 
-        douyin.cancel_douyin_import()
+        get_import_worker(self, "source.douyin").cancel()
 
     def pick_wechat_root(self):
         """手动选择微信文件根目录"""
@@ -1210,22 +1219,24 @@ class _LegacySettingsApi:
 
     def inspect_wechat_environment(self, user_root=None):
         """检测微信环境"""
-        from ohmymeme.integrations.imports import wechat
+        from .import_workers import get_import_worker
 
-        return wechat.inspect_wechat_environment(user_root)
+        return get_import_worker(self, "source.wechat").provider.inspect(user_root)
 
     def list_wechat_stickers(self, user_root, account_path=None):
         """列出可导入的微信表情"""
-        from ohmymeme.integrations.imports import wechat
+        from .import_workers import get_import_worker
 
-        return wechat.list_wechat_stickers(user_root, account_path)
+        return get_import_worker(self, "source.wechat").list_wechat(
+            user_root, account_path
+        )
 
     def start_wechat_import(self, user_root=None, download=True, account_path=None):
         """启动微信表情包导入，已有任务时返回 {"ok": False}"""
-        from ohmymeme.integrations.imports import wechat
+        from .import_workers import get_import_worker
 
-        started = wechat.start_wechat_import(
-            self._webui._do_import, user_root, download, account_path
+        started = get_import_worker(self, "source.wechat").start(
+            {"user_root": user_root, "download": download, "account_path": account_path}
         )
         if not started:
             return {"ok": False, "error": "已有导入任务正在进行"}
@@ -1233,15 +1244,15 @@ class _LegacySettingsApi:
 
     def get_wechat_import_progress(self):
         """获取微信导入进度"""
-        from ohmymeme.integrations.imports import wechat
+        from .import_workers import get_import_worker
 
-        return wechat.get_wechat_progress()
+        return get_import_worker(self, "source.wechat").get_progress()
 
     def cancel_wechat_import(self):
         """取消微信导入"""
-        from ohmymeme.integrations.imports import wechat
+        from .import_workers import get_import_worker
 
-        wechat.cancel_wechat_import()
+        get_import_worker(self, "source.wechat").cancel()
 
     def qqnt_check_env(self) -> dict:
         """检查 QQNT 提取环境，返回 get_extract_status 结果"""
@@ -1395,34 +1406,26 @@ class _LegacySettingsApi:
         image_only: bool = False,
         overwrite: bool = False,
     ) -> dict:
-        import_service = self._webui._container.create_import_service(
-            self._webui._decode_stego
-        )
+        from .import_workers import get_import_worker
 
-        def library_import(paths):
-            result = import_service.import_batch(
-                tuple(ImportPath(Path(path), Path(path).stem) for path in paths),
-                cancelled=lambda: _QQNT_CANCEL,
+        try:
+            worker = get_import_worker(self, "source.qqnt")
+            ok = worker.start_qqnt(
+                qq_number, output_dir, image_only, overwrite, self._cfg
             )
-            return {"ids": list(result.imported_ids), "rejected": result.rejected}
-
-        ok = start_qqnt_extract(
-            qq_number,
-            output_dir,
-            image_only=image_only,
-            overwrite=overwrite,
-            ini_path=self._cfg.get("qqnt_ini_path") or None,
-            userdata_save_path=self._cfg.get("qqnt_userdata_path") or None,
-            cache_dir=str(self._cfg.cache_dir),
-            library_import=library_import,
-        )
-        return {"ok": ok}
+            return {"ok": ok}
+        except Exception:
+            return {"ok": False}
 
     def qqnt_get_progress(self) -> dict:
-        return get_qqnt_progress()
+        from .import_workers import get_import_worker
+
+        return get_import_worker(self, "source.qqnt").get_progress()
 
     def qqnt_cancel(self):
-        cancel_qqnt_extract()
+        from .import_workers import get_import_worker
+
+        get_import_worker(self, "source.qqnt").cancel()
 
     def qqnt_open_dir(self, path: str) -> bool:
         try:

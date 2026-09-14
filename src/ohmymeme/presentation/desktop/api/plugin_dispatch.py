@@ -1,5 +1,6 @@
 from copy import deepcopy
 from functools import partial
+from importlib import import_module
 from math import isfinite
 from types import MappingProxyType
 
@@ -281,6 +282,7 @@ class HostDispatcher:
 
 def _legacy_adapter(legacy, provider_id):
     # Bind host compatibility methods lazily; plugin factories receive no WebUI.
+    import_module(_descriptor(provider_id).package_root)
     return HostActionAdapter(
         provider_id,
         {
