@@ -9,7 +9,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from ohmymeme.core.plugins.manifest import ENTRY_POINT_GROUP, validate_manifest
+from ohmymeme.core.plugins.manifest import (
+    ENTRY_POINT_GROUP,
+    canonical_descriptor,
+    validate_manifest,
+)
 from ohmymeme.core.plugins.registry import PluginRegistry
 from ohmymeme.presentation.desktop import import_workers
 from ohmymeme.presentation.desktop import window_manager as desktop
@@ -21,11 +25,30 @@ def shell(monkeypatch):
     config = Mock()
     config.get.side_effect = lambda key, default=None: default
     config.cache_dir = "host-cache"
+    config.data_dir = Path("test-host-data")
+    qqnt = importlib.import_module("ohmymeme_plugin_qqnt")
+    telegram = importlib.import_module("ohmymeme_plugin_telegram")
     webui = SimpleNamespace(
         _cfg=config,
         _library=Mock(),
         _container=SimpleNamespace(
-            sync=Mock(), lan=Mock(), create_import_service=Mock()
+            sync=Mock(),
+            lan=Mock(),
+            create_import_service=Mock(),
+            operations=Mock(),
+            create_import_sink=Mock(),
+            db=SimpleNamespace(close=Mock()),
+            plugins=PluginRegistry(
+                (
+                    canonical_descriptor("source.qqnt"),
+                    canonical_descriptor("source.telegram"),
+                ),
+                {
+                    "source.qqnt": qqnt.create_plugin,
+                    "source.telegram": telegram.create_plugin,
+                },
+                (),
+            ),
         ),
         _do_import=Mock(),
         _decode_stego=Mock(),
@@ -218,6 +241,129 @@ def test_registry_unavailable_returns_sentinel_without_other_provider(
     old_worker.assert_not_called()
     factory.assert_not_called()
     builtins["source.douyin"].assert_not_called()
+
+
+def test_qqnt_check_env_requires_current_registry_before_legacy_helper(
+    shell, monkeypatch
+):
+    # Environment inspection must not succeed through the legacy module alone.
+    api, webui, _ = shell
+    registry = Mock()
+    registry.require.side_effect = ValueError("source.qqnt: provider_unavailable")
+    webui._container.plugins = registry
+    legacy_probe = Mock(return_value={"ok": True})
+    monkeypatch.setattr(desktop.qqnt, "get_extract_status", legacy_probe)
+
+    assert api.qqnt_check_env() == {}
+    registry.require.assert_called_once_with("source.qqnt", None)
+    legacy_probe.assert_not_called()
+
+
+def test_qqnt_default_dir_requires_current_registry_before_legacy_helper(
+    shell, monkeypatch
+):
+    # Output projection also belongs to the fixed source.qqnt action boundary.
+    api, webui, _ = shell
+    registry = Mock()
+    registry.require.side_effect = ValueError("source.qqnt: provider_unavailable")
+    webui._container.plugins = registry
+    legacy_projection = Mock(return_value="chosen-output")
+    monkeypatch.setattr(desktop.qqnt, "get_default_output_dir", legacy_projection)
+
+    assert api.qqnt_default_dir("base", "10001") == {"ok": False}
+    registry.require.assert_called_once_with("source.qqnt", None)
+    legacy_projection.assert_not_called()
+
+
+def test_pick_tg_tdata_requires_current_registry_before_legacy_helper(
+    shell, monkeypatch, tmp_path
+):
+    # The picker validates through the active source provider construction seam.
+    api, webui, dialog = shell
+    registry = Mock()
+    registry.require.side_effect = ValueError("source.telegram: provider_unavailable")
+    webui._container.plugins = registry
+    path = tmp_path / "tdata"
+    path.mkdir()
+    dialog.file_dialog.return_value = (str(path),)
+    legacy_validator = Mock(return_value=True)
+    monkeypatch.setattr(desktop.telegram, "is_valid_tdata", legacy_validator)
+
+    assert api.pick_tg_tdata() == {"ok": False}
+    registry.require.assert_called_once_with("source.telegram", None)
+    legacy_validator.assert_not_called()
+    webui._cfg.set.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "malformed",
+        "api99",
+        "wrong_triplet",
+        "missing_descriptor",
+        "unknown_provider",
+        "wrong_args",
+    ],
+)
+def test_legacy_compatibility_cli_rejects_fixture_before_provider_probe(
+    tmp_path, monkeypatch, mutation
+):
+    # Invalid compatibility metadata must replace any pre-existing PASS report.
+    root = Path(__file__).resolve().parents[2]
+    fixture = json.loads(
+        (root / "fixtures/plugin-parity/legacy-wrapper-unavailable.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    if mutation == "malformed":
+        fixture.pop("production")
+    elif mutation == "api99":
+        fixture["production"]["descriptors"][0]["api_version"] = 99
+    elif mutation == "wrong_triplet":
+        fixture["production"]["descriptors"][0]["entry_point"][
+            2
+        ] = "wrong:create_plugin"
+    elif mutation == "missing_descriptor":
+        fixture["production"]["descriptors"].pop()
+    elif mutation == "unknown_provider":
+        fixture["production"]["descriptors"][0]["id"] = "source.unknown"
+    else:
+        fixture["failure_cases"][-1] = "wrong_arguments_mutated"
+    source = tmp_path / "fixture.json"
+    report = tmp_path / "report.json"
+    source.write_text(json.dumps(fixture), encoding="utf-8")
+    report.write_text('{"status":"PASS","expected":"PASS"}', encoding="utf-8")
+
+    cli = importlib.import_module("scripts.plugin_legacy_compatibility")
+    probes = {}
+    for name in (
+        "_production_probe",
+        "_entry_point_factory_probe",
+        "_unavailable_probe",
+        "_adapter_probe",
+    ):
+        probe = Mock(side_effect=AssertionError("provider probe ran before validation"))
+        probes[name] = probe
+        monkeypatch.setattr(cli, name, probe)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "plugin_legacy_compatibility.py",
+            "--fixture",
+            str(source),
+            "--report",
+            str(report),
+        ],
+    )
+
+    exit_code = cli.main()
+    observed = json.loads(report.read_text(encoding="utf-8"))
+    assert exit_code != 0
+    assert observed["status"] == "REJECTED"
+    assert observed["observations"] == {}
+    assert all(not probe.called for probe in probes.values())
 
 
 @pytest.mark.parametrize(
