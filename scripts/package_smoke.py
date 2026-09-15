@@ -29,6 +29,7 @@ FROZEN_DATA_TARGETS = (
     "ohmymeme/resources",
     "ohmymeme/adb-help.txt",
     "ohmymeme/config/offsets.json",
+    "ohmymeme/config/plugin-manifest.json",
 )
 
 

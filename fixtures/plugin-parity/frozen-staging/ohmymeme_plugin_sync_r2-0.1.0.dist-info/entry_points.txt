@@ -1,0 +1,2 @@
+[ohmymeme.plugins.v1]
+sync.r2 = ohmymeme_plugin_sync_r2:create_plugin

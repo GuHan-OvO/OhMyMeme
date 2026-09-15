@@ -68,16 +68,16 @@ def _load_and_validate(manifest_path, entry_point_group):
     value = load_json(manifest_path)
     schema = load_json(SCHEMA_PATH)
     errors = validate_schema(value, schema, schema, "")
-    raw = manifest_path.read_bytes()
-    if raw != canonical_document(value):
-        errors.append(
-            "manifest: expected canonical UTF-8 JSON bytes with trailing newline"
-        )
     try:
         descriptors = validate_manifest(value, entry_point_group)
     except PluginManifestError as error:
         errors.extend(error.errors)
         descriptors = ()
+    raw = manifest_path.read_bytes()
+    if raw != canonical_document(value):
+        errors.append(
+            "manifest: expected canonical UTF-8 JSON bytes with trailing newline"
+        )
     if errors:
         raise PluginManifestError(errors)
     return value, descriptors

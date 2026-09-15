@@ -29,6 +29,9 @@ def test_source_locator_resolves_fixed_resources_without_creating_user_data(
     assert locator.resources_dir == source_root / "resources"
     assert locator.adb_help_path == source_root / "adb-help.txt"
     assert locator.offsets_path == source_root.parent / "config" / "offsets.json"
+    assert locator.plugin_manifest_path == (
+        source_root.parent / "config" / "plugin-manifest.json"
+    )
     assert locator.webui_dir.joinpath("vue.html").is_file()
     assert locator.resources_dir.joinpath("OhMyMeme.mp4").is_file()
     assert locator.resources_dir.joinpath("icon.png").is_file()
@@ -52,6 +55,7 @@ def test_frozen_locator_resolves_simulated_package_resources_without_user_data_i
     (package_root / "resources" / "icon.png").touch()
     (package_root / "adb-help.txt").touch()
     (package_root / "config" / "offsets.json").touch()
+    (package_root / "config" / "plugin-manifest.json").touch()
     user_data_dir = tmp_path / "user-data"
 
     # When: the frozen locator is created while all filesystem I/O is forbidden.
@@ -71,5 +75,6 @@ def test_frozen_locator_resolves_simulated_package_resources_without_user_data_i
     assert locator.resources_dir.joinpath("icon.png").is_file()
     assert locator.adb_help_path.is_file()
     assert locator.offsets_path.is_file()
+    assert locator.plugin_manifest_path.is_file()
     assert locator.user_data_dir == user_data_dir
     assert not user_data_dir.exists()

@@ -1,0 +1,480 @@
+"""抖音表情包下载导入（纯协议驱动 + ABogus 签名 + curl_cffi TLS 指纹）"""
+
+import hashlib
+import json
+import os
+import random
+import string
+import time
+from urllib.parse import quote, urlencode, urljoin, urlsplit
+
+from curl_cffi import requests
+
+from ohmymeme.core.adapters.fetch_policy import (
+    MAX_FETCH_BYTES,
+    FetchError,
+    FetchPolicy,
+    FetchRejected,
+    proxy_bypass,
+    validate_image_bytes,
+)
+from ohmymeme.core.plugins.import_runtime import ImportRuntime
+
+from .abogus import ABogus
+
+_FETCH_POLICY = FetchPolicy()
+
+_DOUYIN_STATE = {
+    "status": "idle",
+    "progress": 0,
+    "message": "",
+    "error": "",
+    "error_code": "",
+    "total": 0,
+    "done": 0,
+    "imported": 0,
+    "rejected": 0,
+}
+
+
+API_STICKER = "https://www.douyin.com/aweme/v1/web/im/resource/list/aggregation"
+API_TTWID = "https://ttwid.bytedance.com/ttwid/union/register/"
+API_SELF = "https://www.douyin.com/aweme/v1/web/user/profile/self/"
+
+UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/90.0.4430.212 Safari/537.36"
+)
+
+HEADERS = {
+    "User-Agent": UA,
+    "Referer": "https://www.douyin.com/",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+}
+
+
+def _policy_request(session, method, url, **kwargs):
+    """使用已验证地址请求 Douyin，并逐次重定向重新 pin。"""
+    current = url
+    try:
+        original_scheme = urlsplit(url).scheme.lower()
+    except ValueError as error:
+        raise FetchError("malformed request url") from error
+    for _ in range(6):
+        target, _address = _FETCH_POLICY.prepare(current)
+        resolve = [f"{target.hostname}:{target.port}:{_address.ip}"]
+        request_kwargs = dict(kwargs)
+        request_headers = dict(request_kwargs.get("headers") or {})
+        request_headers["Host"] = target.authority
+        request_kwargs["headers"] = request_headers
+        request_kwargs.update(
+            allow_redirects=False,
+            proxies={},
+            resolve=resolve,
+        )
+        with proxy_bypass():
+            response = session.request(method, current, **request_kwargs)
+        if response.status_code not in (301, 302, 303, 307, 308):
+            return response
+        location = response.headers.get("Location")
+        if not location:
+            return response
+        next_url = urljoin(current, location)
+        try:
+            next_scheme = urlsplit(next_url).scheme.lower()
+        except ValueError as error:
+            raise FetchError("malformed redirect url") from error
+        if original_scheme == "https" and next_scheme != "https":
+            raise FetchRejected("https downgrade redirect rejected")
+        current = next_url
+    raise FetchError("too many redirects")
+
+
+def _gen_random_str(length: int = 126) -> str:
+    chars = string.ascii_letters + string.digits
+    return "".join(random.choices(chars, k=length))
+
+
+def _gen_verify_fp() -> str:
+    base_str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    t = len(base_str)
+    ms = int(round(time.time() * 1000))
+    base36 = ""
+    n = ms
+    while n > 0:
+        rem = n % 36
+        base36 = (str(rem) if rem < 10 else chr(ord("a") + rem - 10)) + base36
+        n = int(n / 36)
+
+    o = [""] * 36
+    o[8] = o[13] = o[18] = o[23] = "_"
+    o[14] = "4"
+
+    for i in range(36):
+        if not o[i]:
+            x = int(random.random() * t)
+            if i == 19:
+                x = 3 & x | 8
+            o[i] = base_str[x]
+
+    return "verify_" + base36 + "_" + "".join(o)
+
+
+def _sign_url(base_url: str, params: dict, method: str = "GET") -> str:
+    params_with_ms = dict(params)
+    params_with_ms["msToken"] = ""
+    ab = ABogus()
+    a_bogus_raw = ab.get_value(params_with_ms, method)
+    a_bogus = quote(a_bogus_raw, safe="")
+    return f"{base_url}?{urlencode(params_with_ms)}&a_bogus={a_bogus}"
+
+
+def _get_ttwid(session) -> str:
+    payload = (
+        '{"region":"cn","aid":1128,"needFid":false,"service":"www.douyin.com",'
+        '"migrate_info":{"ticket":"","source":"node"},'
+        '"cbUrlProtocol":"https","union":true}'
+    )
+    try:
+        resp = _policy_request(
+            session,
+            "POST",
+            API_TTWID,
+            data=payload,
+            headers={**HEADERS, "Content-Type": "application/json"},
+            timeout=10,
+        )
+        return resp.cookies.get("ttwid", "")
+    except Exception:
+        return ""
+
+
+def _build_session(cookie_str: str) -> requests.Session:
+    session = requests.Session(impersonate="chrome124")
+    try:
+        session.headers.update(HEADERS)
+
+        ttwid = _get_ttwid(session)
+        if ttwid:
+            session.cookies.set("ttwid", ttwid, domain=".douyin.com")
+
+        verify_fp = _gen_verify_fp()
+        s_v_web_id = _gen_verify_fp()
+        session.cookies.set("verifyFp", verify_fp, domain=".douyin.com")
+        session.cookies.set("s_v_web_id", s_v_web_id, domain=".douyin.com")
+
+        ms_token = _gen_random_str(126) + "=="
+        session.cookies.set("msToken", ms_token, domain=".douyin.com")
+
+        for item in cookie_str.split(";"):
+            item = item.strip()
+            if "=" in item:
+                k, v = item.split("=", 1)
+                session.cookies.set(k.strip(), v.strip())
+
+        return session
+    except BaseException:
+        # Ownership transfers to the worker only after initialization succeeds.
+        try:
+            session.close()
+        except Exception:
+            pass
+        raise
+
+
+def _check_login(session: requests.Session) -> bool:
+    params = {"device_platform": "webapp", "aid": "6383"}
+    endpoint = _sign_url(API_SELF, params)
+    try:
+        r = _policy_request(session, "GET", endpoint, timeout=8)
+        _FETCH_POLICY.validate_bytes(r.content)
+        return r.json().get("status_code") == 0
+    except Exception:
+        return False
+
+
+def _download_sticker(url: str, tmp_dir: str, session, sticker_id: str = "") -> str:
+    """下载单个表情包到临时目录，复用已配置的 session 保持 cookies/TLS 状态"""
+    ext = "webp"
+    if ".gif" in url.lower():
+        ext = "gif"
+    elif ".png" in url.lower():
+        ext = "png"
+
+    resp = _policy_request(session, "GET", url, timeout=12)
+    resp.raise_for_status()
+
+    data = _FETCH_POLICY.validate_bytes(resp.content, image=True)
+    fhash = hashlib.sha256(data).hexdigest()
+    ext = validate_image_bytes(data).lstrip(".")
+    fname = f"{fhash[:16]}.{ext}"
+    fpath = os.path.join(tmp_dir, fname)
+    with open(fpath, "wb") as f:
+        f.write(data)
+    return fpath
+
+
+class DouyinProvider(ImportRuntime):
+    provider_id = "source.douyin"
+    api_version = 1
+
+    def __init__(self):
+        # Isolate state, locks and process inventory for each factory.
+        super().__init__(_DOUYIN_STATE, "running", ())
+
+    def _update_dy(self, **kw):
+        with self._lock:
+            self._state.update(self._sanitize(kw))
+        self._publish()
+
+    def get_douyin_progress(self):
+        with self._lock:
+            return dict(self._state)
+
+    def cancel_douyin_import(self):
+        self._cancel = True
+
+    def _check_cancel(self):
+        return self._cancel or bool(self._context and self._context.is_cancelled())
+
+    def _reset_state(self):
+        self._cancel = False
+        self._update_dy(
+            status="idle",
+            progress=0,
+            message="",
+            error="",
+            error_code="",
+            total=0,
+            done=0,
+            imported=0,
+            rejected=0,
+            download_failed=0,
+        )
+
+    def _fetch_sticker_list(self, session: requests.Session) -> list:
+        cursor = 0
+        has_more = True
+        stickers = []
+
+        while has_more:
+            if self._check_cancel():
+                return stickers
+
+            params = {
+                "device_platform": "webapp",
+                "aid": "1128",
+                "channel": "channel_pc_web",
+                "scenes": "CUSTOM_STICKER_PAGE",
+                "custom_cursor": str(cursor),
+                "custom_page_size": "100",
+                "version_code": "170400",
+                "version_name": "17.4.0",
+                "cookie_enabled": "true",
+                "screen_width": "1536",
+                "screen_height": "864",
+                "browser_language": "zh-CN",
+                "browser_platform": "Win32",
+                "browser_name": "Chrome",
+                "browser_version": "90.0.4430.212",
+                "browser_online": "true",
+                "engine_name": "Blink",
+                "engine_version": "90.0.4430.212",
+                "os_name": "Windows",
+                "os_version": "10",
+                "cpu_core_num": "12",
+                "device_memory": "8",
+                "platform": "PC",
+            }
+
+            try:
+                endpoint = _sign_url(API_STICKER, params)
+                resp = _policy_request(session, "GET", endpoint, timeout=15)
+
+                if resp.status_code == 403:
+                    return None
+
+                if resp.status_code != 200:
+                    break
+
+                data = _FETCH_POLICY.validate_bytes(
+                    resp.content, max_bytes=MAX_FETCH_BYTES
+                )
+                data = json.loads(data.decode("utf-8"))
+                page = data.get("custom_sticker_page_list", {})
+
+                for res in page.get("resources", []):
+                    for s in res.get("stickers", []):
+                        url_info = s.get("animate_url") or s.get("static_url")
+                        if url_info and url_info.get("url_list"):
+                            best_url = url_info["url_list"][0]
+                            for u in url_info["url_list"]:
+                                if "origin" in u.lower():
+                                    best_url = u
+                                    break
+                            stickers.append(
+                                {
+                                    "id": s.get("id_str", "unknown"),
+                                    "url": best_url,
+                                }
+                            )
+
+                has_more = page.get("has_more", False)
+                next_cursor = page.get("next_cursor", cursor)
+                if not has_more or next_cursor == 0 or next_cursor == cursor:
+                    break
+                cursor = next_cursor
+
+            except Exception as e:
+                self._log.warning("fetch list error: %s", e)
+                break
+
+        return stickers
+
+    def _douyin_worker(self, import_callback, cookie):
+        # The host runs this synchronously inside its owned background operation.
+
+        def _run():
+            tmp_dir = str(self._context.operation.temporary.path("douyin"))
+            os.makedirs(tmp_dir, exist_ok=True)
+            downloaded = []
+            download_failed = 0
+            session = None
+
+            try:
+                if self._check_cancel():
+                    self._update_dy(status="cancelled", message="已取消")
+                    return
+                self._update_dy(message="初始化 Session...")
+                session = _build_session(cookie)
+
+                self._update_dy(message="检查登录状态...")
+                if not _check_login(session):
+                    self._log.error("douyin import: 登录失败（Cookie 无效或已过期）")
+                    self._update_dy(
+                        status="error",
+                        error="登录失败：Cookie 无效或已过期",
+                        error_code="login_failed",
+                    )
+                    return
+
+                self._update_dy(message="获取表情列表...")
+                stickers = self._fetch_sticker_list(session)
+
+                if self._check_cancel():
+                    self._update_dy(status="cancelled", message="已取消")
+                    return
+
+                if stickers is None:
+                    self._log.error("douyin import: 接口返回 403，签名验证失败")
+                    self._update_dy(
+                        status="error",
+                        error="接口返回 403：签名验证失败",
+                        error_code="sign_failed",
+                    )
+                    return
+
+                if not stickers:
+                    self._log.error("douyin import: 未获取到任何表情包")
+                    self._update_dy(
+                        status="error",
+                        error="未获取到任何表情包",
+                        error_code="no_stickers",
+                    )
+                    return
+
+                total = len(stickers)
+                self._update_dy(
+                    total=total, message=f"找到 {total} 个表情，开始下载..."
+                )
+
+                for i, item in enumerate(stickers):
+                    if self._check_cancel():
+                        self._update_dy(status="cancelled", message="已取消")
+                        return
+
+                    try:
+                        fpath = _download_sticker(
+                            item["url"], tmp_dir, session, item["id"]
+                        )
+                        downloaded.append(fpath)
+                        done = i + 1
+                        self._update_dy(
+                            done=done,
+                            progress=int(done * 100 / total),
+                            message=f"下载中 {done}/{total}",
+                        )
+                    except Exception as e:
+                        self._log.warning("download %s failed: %s", item["id"], e)
+                        download_failed += 1
+                        done = i + 1
+                        self._update_dy(
+                            done=done,
+                            progress=int(done * 100 / total),
+                            message=f"下载中 {done}/{total}",
+                            download_failed=download_failed,
+                        )
+
+                if self._check_cancel():
+                    self._update_dy(status="cancelled", message="已取消")
+                    return
+
+                self._update_dy(message="导入数据库...")
+
+                if downloaded and import_callback:
+                    result = import_callback(downloaded)
+                    imported = len(result.get("ids", []))
+                    rejected = result.get("rejected", 0)
+                    msg = f"导入完成：{imported} 个成功"
+                    if rejected:
+                        msg += f"，{rejected} 个跳过"
+                    if download_failed:
+                        msg += f"，{download_failed} 个下载失败"
+                    self._update_dy(
+                        status="done",
+                        progress=100,
+                        message=msg,
+                        imported=imported,
+                        rejected=rejected,
+                        download_failed=download_failed,
+                    )
+                else:
+                    msg = "下载完成（无有效数据）"
+                    if download_failed:
+                        msg += f"，{download_failed} 个下载失败"
+                    self._update_dy(
+                        status="done",
+                        progress=100,
+                        message=msg,
+                        download_failed=download_failed,
+                    )
+
+            except Exception as e:
+                self._log.error("douyin import error: %s", e)
+                self._update_dy(status="error", error=str(e), error_code="exception")
+            finally:
+                if session is not None:
+                    session.close()
+
+        _run()
+
+    get_progress = get_douyin_progress
+    stop = cancel_douyin_import
+
+    def import_media(self, context):
+        # Cookie never enters the request/settings namespace or final state.
+        self._context = context
+        try:
+            context.operation.require("network.https")
+            self._douyin_worker(
+                self._submit, context.operation.secrets.get("cookie") or ""
+            )
+        finally:
+            self.finish()
+
+
+def create_plugin():
+    # No factory back-imports the host integration module.
+    return DouyinProvider()

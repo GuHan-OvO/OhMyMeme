@@ -39,6 +39,7 @@ def test_package_smoke_reports_frozen_package_layout():
             "ohmymeme/resources",
             "ohmymeme/adb-help.txt",
             "ohmymeme/config/offsets.json",
+            "ohmymeme/config/plugin-manifest.json",
         ],
     }
 

@@ -5,6 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ohmymeme-plugin-sync-r2"
 version = "0.1.0"
+description = "OhMyMeme Cloudflare R2 sync plugin"
 requires-python = ">=3.12"
 dependencies = ["ohmymeme-plugin-sync-s3==0.1.0"]
 license = "GPL-3.0-only"

@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -26,8 +27,100 @@ SRC_DIR = PROJECT_ROOT / "src"
 PACKAGE_DIR = SRC_DIR / "ohmymeme"
 BUILD_DIR = PROJECT_ROOT / "dist"
 APP_NAME = "OhMyMeme"
+PLUGIN_PACKAGING = PROJECT_ROOT / "scripts" / "plugin_packaging.py"
+PLUGIN_STAGING_DIR = PROJECT_ROOT / "build" / "plugin-staging"
+PLUGIN_STAGING_MANIFEST = PLUGIN_STAGING_DIR / "staging-manifest.json"
+PLUGIN_MANIFEST_TARGET = "ohmymeme/config/plugin-manifest.json"
+OFFICIAL_PLUGIN_IDS = (
+    "source.qqnt",
+    "source.telegram",
+    "source.douyin",
+    "source.wechat",
+    "sync.ftp",
+    "sync.s3",
+    "sync.r2",
+    "sync.webdav",
+    "transport.lan",
+)
 
 PYTHON = sys.executable
+BUILD_TIMEOUT = 1800.0
+
+
+def _configured_build_timeout():
+    # Keep every external build process bounded by one environment setting.
+    raw = os.environ.get("OHMYMEME_BUILD_TIMEOUT", "")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return BUILD_TIMEOUT
+    return value if value > 0 else BUILD_TIMEOUT
+
+
+BUILD_TIMEOUT = _configured_build_timeout()
+
+
+def _run_bounded(command, **kwargs):
+    # subprocess.run terminates and waits for the child when its timeout expires.
+    try:
+        return subprocess.run(command, timeout=BUILD_TIMEOUT, **kwargs)
+    except subprocess.TimeoutExpired as error:
+        print(
+            "ERROR: build command timed out after %.3gs: %s"
+            % (BUILD_TIMEOUT, command),
+            file=sys.stderr,
+        )
+        raise SystemExit(124) from error
+
+
+def _snapshot_path(path):
+    path = Path(path)
+    if not path.exists() and not path.is_symlink():
+        return set()
+    if path.is_dir() and not path.is_symlink():
+        return {path, *path.rglob("*")}
+    return {path}
+
+
+def _remove_path(path):
+    try:
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+    except OSError:
+        pass
+
+
+def _cleanup_created_paths(snapshots):
+    for root, before in snapshots:
+        current = _snapshot_path(root)
+        for path in sorted(
+            current - before, key=lambda item: len(item.parts), reverse=True
+        ):
+            _remove_path(path)
+
+
+@contextmanager
+def _cleanup_owned_on_failure(paths):
+    snapshots = tuple((Path(path), _snapshot_path(path)) for path in paths)
+    completed = False
+    try:
+        yield
+        completed = True
+    finally:
+        if not completed:
+            _cleanup_created_paths(snapshots)
+
+
+def _compiler_cleanup_paths():
+    return (
+        PLUGIN_STAGING_DIR,
+        BUILD_DIR,
+        PROJECT_ROOT / "build",
+        PROJECT_ROOT / (APP_NAME + ".build"),
+        PROJECT_ROOT / (APP_NAME + ".dist"),
+    )
 
 
 def get_version():
@@ -75,114 +168,166 @@ def clean():
         shutil.rmtree(dist_src, ignore_errors=True)
 
 
+def stage_official_plugins():
+    """将官方插件和真实元数据放入一次性 frozen staging。"""
+    if not PLUGIN_PACKAGING.is_file():
+        print("ERROR: plugin packaging script not found:", PLUGIN_PACKAGING)
+        sys.exit(1)
+    command = [
+        PYTHON,
+        str(PLUGIN_PACKAGING),
+        "--stage",
+        "--staging-dir",
+        str(PLUGIN_STAGING_DIR),
+        "--staging-manifest",
+        str(PLUGIN_STAGING_MANIFEST),
+        "--source-manifest",
+        str(PROJECT_ROOT / "config" / "plugin-manifest.json"),
+    ]
+    print("运行: %s" % " ".join(command))
+    with _cleanup_owned_on_failure((PLUGIN_STAGING_DIR,)):
+        result = _run_bounded(command, cwd=str(PROJECT_ROOT))
+        if result.returncode != 0:
+            print("官方插件 staging 失败 (code=%d)" % result.returncode)
+            sys.exit(result.returncode)
+    return PLUGIN_STAGING_DIR
+
+
 def build_nuitka(onefile=False, use_clang=False, target=None):
     check_nuitka()
     clean()
+    with _cleanup_owned_on_failure(_compiler_cleanup_paths()):
+        plugin_staging = stage_official_plugins()
 
-    if target is None:
-        target = platform.system()
+        if target is None:
+            target = platform.system()
 
-    version = get_version()
-    platform_opts = []
+        version = get_version()
+        platform_opts = []
 
-    if target == "Windows":
-        icon_file = str(SRC_DIR / "resources" / "icon.ico")
-        platform_opts = [
-            "--windows-console-mode=disable",
-            "--windows-icon-from-ico=" + icon_file,
-            "--msvc=latest",
-        ]
-        if use_clang:
-            platform_opts.append("--clang")
-    elif target == "Linux":
-        icon_path = SRC_DIR / "resources" / "icon.png"
-        if icon_path.exists():
-            platform_opts.append("--linux-icon=" + str(icon_path))
-        if use_clang:
-            platform_opts.append("--clang")
-    elif target == "Darwin":
-        platform_opts = [
-            "--macos-create-app-bundle",
-            "--macos-app-name=" + APP_NAME,
-        ]
+        if target == "Windows":
+            icon_file = str(SRC_DIR / "resources" / "icon.ico")
+            platform_opts = [
+                "--windows-console-mode=disable",
+                "--windows-icon-from-ico=" + icon_file,
+                "--msvc=latest",
+            ]
+            if use_clang:
+                platform_opts.append("--clang")
+        elif target == "Linux":
+            icon_path = SRC_DIR / "resources" / "icon.png"
+            if icon_path.exists():
+                platform_opts.append("--linux-icon=" + str(icon_path))
+            if use_clang:
+                platform_opts.append("--clang")
+        elif target == "Darwin":
+            platform_opts = [
+                "--macos-create-app-bundle",
+                "--macos-app-name=" + APP_NAME,
+            ]
 
-    data_opts = [
-        "--include-data-dir=" + str(SRC_DIR / "webui") + "=ohmymeme/webui",
-        "--include-data-dir=" + str(SRC_DIR / "resources") + "=ohmymeme/resources",
-        "--include-data-files="
-        + str(SRC_DIR / "adb-help.txt")
-        + "=ohmymeme/adb-help.txt",
-        "--include-data-files="
-        + str(PROJECT_ROOT / "config" / "offsets.json")
-        + "=ohmymeme/config/offsets.json",
-    ]
-
-    nofollow_opts = [
-        "--nofollow-import-to=pygments",
-        "--nofollow-import-to=PyQt5",
-        "--nofollow-import-to=PyQt6",
-        "--nofollow-import-to=PySide2",
-        "--nofollow-import-to=PySide6",
-        "--nofollow-import-to=boto3.docs",
-    ]
-
-    pkg_opts = [
-        "--include-package=PIL",
-        "--include-package=pystray",
-        "--include-package=pyperclip",
-        "--include-package=cryptography",
-        "--include-package=keyboard",
-        "--include-package=bottle",
-        "--disable-plugin=pywebview",
-    ]
-
-    if target == "Windows":
-        pkg_opts += [
-            "--include-module=webview.platforms.win32",
-            "--include-module=webview.platforms.winforms",
-            "--include-module=webview.platforms.edgechromium",
-            "--include-module=webview.platforms.mshtml",
-            "--include-module=webview.platforms.cef",
+        data_opts = [
+            "--include-data-dir=" + str(SRC_DIR / "webui") + "=ohmymeme/webui",
+            "--include-data-dir=" + str(SRC_DIR / "resources") + "=ohmymeme/resources",
+            "--include-data-files="
+            + str(SRC_DIR / "adb-help.txt")
+            + "=ohmymeme/adb-help.txt",
+            "--include-data-files="
+            + str(PROJECT_ROOT / "config" / "offsets.json")
+            + "=ohmymeme/config/offsets.json",
+            "--include-data-files="
+            + str(plugin_staging / PLUGIN_MANIFEST_TARGET)
+            + "="
+            + PLUGIN_MANIFEST_TARGET,
         ]
 
-    cmd = [
-        PYTHON, "-m", "nuitka",
-        "--standalone",
-        "--output-dir=" + str(BUILD_DIR),
-        "--output-filename=" + APP_NAME,
-        "--python-flag=nosite",
-        "--python-flag=-m",
-        "--noinclude-pytest-mode=nofollow",
-        "--low-memory",
-    ] + nofollow_opts + data_opts + pkg_opts + platform_opts
+        nofollow_opts = [
+            "--nofollow-import-to=pygments",
+            "--nofollow-import-to=PyQt5",
+            "--nofollow-import-to=PyQt6",
+            "--nofollow-import-to=PySide2",
+            "--nofollow-import-to=PySide6",
+            "--nofollow-import-to=boto3.docs",
+        ]
 
-    if onefile:
-        cmd.append("--onefile")
+        pkg_opts = [
+            "--include-package=PIL",
+            "--include-package=pystray",
+            "--include-package=pyperclip",
+            "--include-package=cryptography",
+            "--include-package=keyboard",
+            "--include-package=bottle",
+            "--disable-plugin=pywebview",
+        ]
 
-    cmd.append(str(PACKAGE_DIR / "__main__.py"))
+        for provider_id in OFFICIAL_PLUGIN_IDS:
+            package_prefix = (
+                "ohmymeme_plugin_sync_"
+                if provider_id.startswith("sync.")
+                else "ohmymeme_plugin_"
+            )
+            pkg_opts.append(
+                "--include-package="
+                + package_prefix
+                + provider_id.rsplit(".", 1)[-1]
+            )
+            pkg_opts.append(
+                "--include-plugin-directory="
+                + str(PROJECT_ROOT / "plugins" / provider_id / "src")
+            )
 
-    print("运行: %s" % " ".join(cmd))
-    result = subprocess.run(cmd, cwd=str(PROJECT_ROOT))
-    if result.returncode != 0:
-        print("Nuitka 打包失败 (code=%d)" % result.returncode)
-        sys.exit(result.returncode)
+        for metadata_dir in sorted(plugin_staging.glob("*.dist-info")):
+            data_opts.append(
+                "--include-data-dir=" + str(metadata_dir) + "=" + metadata_dir.name
+            )
 
-    ext_map = {"Windows": ".exe", "Darwin": "", "Linux": ".bin"}
-    ext = ext_map.get(target, "")
-    if onefile:
-        src = BUILD_DIR / ("%s%s" % (APP_NAME, ext))
-        dst = BUILD_DIR / ("%s-v%s-%s%s" % (APP_NAME, version, target.lower(), ext))
-        if src.exists():
-            src.rename(dst)
-            print("打包完成: %s" % dst)
-    else:
-        # 查找实际生成的 .dist 目录
-        dist_dirs = sorted(BUILD_DIR.glob("*.dist"))
-        if dist_dirs:
-            print("打包完成: %s" % dist_dirs[-1])
+        if target == "Windows":
+            pkg_opts += [
+                "--include-module=webview.platforms.win32",
+                "--include-module=webview.platforms.winforms",
+                "--include-module=webview.platforms.edgechromium",
+                "--include-module=webview.platforms.mshtml",
+                "--include-module=webview.platforms.cef",
+            ]
 
-    print("Nuitka 构建完成!")
-    return version
+        cmd = [
+            PYTHON, "-m", "nuitka",
+            "--standalone",
+            "--output-dir=" + str(BUILD_DIR),
+            "--output-filename=" + APP_NAME,
+            "--python-flag=nosite",
+            "--python-flag=-m",
+            "--noinclude-pytest-mode=nofollow",
+            "--low-memory",
+        ] + nofollow_opts + data_opts + pkg_opts + platform_opts
+
+        if onefile:
+            cmd.append("--onefile")
+
+        cmd.append(str(PACKAGE_DIR / "__main__.py"))
+
+        print("运行: %s" % " ".join(cmd))
+        result = _run_bounded(cmd, cwd=str(PROJECT_ROOT))
+        if result.returncode != 0:
+            print("Nuitka 打包失败 (code=%d)" % result.returncode)
+            sys.exit(result.returncode)
+
+        ext_map = {"Windows": ".exe", "Darwin": "", "Linux": ".bin"}
+        ext = ext_map.get(target, "")
+        if onefile:
+            src = BUILD_DIR / ("%s%s" % (APP_NAME, ext))
+            dst = BUILD_DIR / ("%s-v%s-%s%s" % (APP_NAME, version, target.lower(), ext))
+            if src.exists():
+                src.rename(dst)
+                print("打包完成: %s" % dst)
+        else:
+            # 查找实际生成的 .dist 目录
+            dist_dirs = sorted(BUILD_DIR.glob("*.dist"))
+            if dist_dirs:
+                print("打包完成: %s" % dist_dirs[-1])
+
+        print("Nuitka 构建完成!")
+        return version
 
 
 def build_installer(version):
@@ -229,15 +374,16 @@ def build_installer(version):
     iss_temp.write_text(iss_content, encoding="utf-8")
 
     print("制作安装包...")
-    result = subprocess.run(
-        [iscc, str(iss_temp)],
-        cwd=str(PROJECT_ROOT),
-    )
+    try:
+        result = _run_bounded(
+            [iscc, str(iss_temp)],
+            cwd=str(PROJECT_ROOT),
+        )
+    finally:
+        if iss_temp.exists():
+            iss_temp.unlink()
     if result.returncode != 0:
         sys.exit(result.returncode)
-
-    if iss_temp.exists():
-        iss_temp.unlink()
 
     output_name = "%s-%s-setup.exe" % (APP_NAME, version)
     installer = BUILD_DIR / output_name

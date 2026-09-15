@@ -5,6 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ohmymeme-plugin-qqnt"
 version = "0.1.0"
+description = "OhMyMeme QQNT source plugin"
 requires-python = ">=3.12"
 license = "GPL-3.0-only"
 

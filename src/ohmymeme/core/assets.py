@@ -60,6 +60,10 @@ class ResourceLocator:
         return self._config_root / "offsets.json"
 
     @property
+    def plugin_manifest_path(self):
+        return self._config_root / "plugin-manifest.json"
+
+    @property
     def _static_root(self):
         if self.frozen_layout:
             return self.package_root

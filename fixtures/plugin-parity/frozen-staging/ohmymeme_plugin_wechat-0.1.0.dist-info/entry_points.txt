@@ -1,0 +1,2 @@
+[ohmymeme.plugins.v1]
+source.wechat = ohmymeme_plugin_wechat:create_plugin

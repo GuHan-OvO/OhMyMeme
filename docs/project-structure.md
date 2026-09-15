@@ -19,7 +19,18 @@ OhMyMeme/
 │       ├── build.yml                              Windows/Linux/macOS 正式版构建
 │       └── nightly.yml                            dev 分支 Nightly 构建和发布
 ├── config/                                       [source]
-│   └── offsets.json                               微信辅助程序的版本偏移配置
+│   ├── offsets.json                               微信辅助程序的版本偏移配置
+│   └── plugin-manifest.json                       九个官方插件的 canonical 分发清单
+├── plugins/                                      [source]
+│   ├── source.qqnt/                               QQNT 源插件分发包
+│   ├── source.telegram/                           Telegram 源插件分发包
+│   ├── source.douyin/                             抖音源插件分发包
+│   ├── source.wechat/                             微信源插件分发包
+│   ├── sync.ftp/                                  FTP 同步插件分发包
+│   ├── sync.s3/                                   S3 同步插件分发包
+│   ├── sync.r2/                                   R2 同步插件分发包
+│   ├── sync.webdav/                               WebDAV 同步插件分发包
+│   └── transport.lan/                             局域网传输插件分发包
 ├── docs/                                         [source]
 │   ├── project-structure.md                       本项目结构地图
 │   └── wechat_keyfinder_protocol.md               Python 与微信 C++ 辅助程序协议
@@ -32,6 +43,7 @@ OhMyMeme/
 │   ├── merge-dev-to-main.bat                      Windows 分支合并辅助脚本
 │   ├── package_lifecycle.py                       构建产物生命周期验证
 │   ├── package_smoke.py                           打包布局和发布契约验证
+│   ├── plugin_packaging.py                        九包 source/frozen staging 与元数据验证
 │   ├── hooks/                                    PyInstaller GTK 自定义 hook
 │   │   ├── hook-gi.repository.Soup.py
 │   │   └── hook-gi.repository.WebKit2.py
@@ -66,7 +78,8 @@ OhMyMeme/
 │   │   │   ├── domain/                             严格类型领域值、纯规则和稳定错误
 │   │   │   ├── gif_stego.py                        GIF 隐写编码、解码和原图恢复
 │   │   │   ├── imports.py                          图片校验、去重、导入事务
-│   │   │   └── manifest.py                         meme-index.json 生成、恢复和投影
+│   │   │   ├── manifest.py                         meme-index.json 生成、恢复和投影
+│   │   │   └── plugins/                            插件清单、契约、策略、注册和运行时边界
 │   │   ├── integrations/                          平台和第三方软件适配
 │   │   │   ├── __init__.py
 │   │   │   ├── imports/                            外部表情包导入器

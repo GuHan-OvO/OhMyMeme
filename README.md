@@ -45,13 +45,13 @@
 
 ### 独立导入包
 
-`plugins/source.qqnt` 是实际 QQNT 算法包，入口为 `ohmymeme_plugin_qqnt:create_plugin`（`ohmymeme.plugins.v1`）。实例通过 operation 临时目录和 `ImportSink` 工作；昵称缓存、用户输出路径、外部导出覆盖校验、线程和数据库生命周期均属于宿主。旧 `ohmymeme.integrations.imports.qqnt` 保留兼容接口。完整九包源码安装与 frozen 收集工作流由后续打包任务交付。
+`plugins/source.qqnt` 是实际 QQNT 算法包，入口为 `ohmymeme_plugin_qqnt:create_plugin`（`ohmymeme.plugins.v1`）。实例通过 operation 临时目录和 `ImportSink` 工作；昵称缓存、用户输出路径、外部导出覆盖校验、线程和数据库生命周期均属于宿主。旧 `ohmymeme.integrations.imports.qqnt` 保留兼容接口。完整九包源码安装与 frozen 收集由 `scripts/plugin_packaging.py` 统一校验。
 
 `plugins/source.telegram` 和 `plugins/source.douyin` 分别持有 Telegram 解密/转换/批量导入与抖音协议/ABogus 算法，工厂为 `ohmymeme_plugin_telegram:create_plugin`、`ohmymeme_plugin_douyin:create_plugin`。进度、取消和子进程清单按实例隔离；passcode/Cookie 仅从 operation 临时密钥读取，输出经宿主 policy 脱敏，结束后清除。旧模块保留公开调用接口，不保存算法副本。
 
 `plugins/source.wechat` 持有微信账号检测、helper JSON 协议、源 SQLite/WAL 解密与 CDN 下载算法，入口为 `ohmymeme.plugins.v1:source.wechat = ohmymeme_plugin_wechat:create_plugin`。helper 持久缓存、发布 SHA-256 和 ResourceLocator/offsets 定位仍由宿主保管，只把校验后的 helper 与 offsets 的 operation 内副本交给插件。读取的是用户微信源库，不是应用数据库；下载结果仅交 `ImportSink`，不直接写入应用 DB、缓存或 manifest。保留 masked/RVA 协议、CDN 白名单、逐跳 SSRF 与 MD5/图片字节校验，缺少真实 helper 哈希时默认拒绝。取消和 90 秒 helper 超时通过宿主 OperationCoordinator 回收进程，等待退出后清理临时目录。
 
-四个默认导入界面沿用原标签、参数、结果与失败哨兵，宿主固定 dispatcher 为同一提供方保留同一实例的进度/取消会话；缺失、禁用、不兼容的包不会回退到其他提供方。旧 `ohmymeme.integrations.imports.wechat` 仅保留发布 ABI 与宿主 helper 资源策略。源码包当前可在本地独立环境中用 `mise exec -- python -m pip install --no-deps --no-build-isolation -e ./plugins/source.qqnt -e ./plugins/source.telegram -e ./plugins/source.douyin -e ./plugins/source.wechat` 安装；未改锁定依赖，完整九包与 frozen 安装流程仍由 Todo13 统一交付。
+四个默认导入界面沿用原标签、参数、结果与失败哨兵，宿主固定 dispatcher 为同一提供方保留同一实例的进度/取消会话；缺失、禁用、不兼容的包不会回退到其他提供方。旧 `ohmymeme.integrations.imports.wechat` 仅保留发布 ABI 与宿主 helper 资源策略。九个官方包可通过 `mise exec -- python scripts/plugin_packaging.py --install-editable-official` 配合九个包路径离线安装；冻结构建会从同一 staging 收集模块、入口元数据和 manifest。
 
 ### 下载
 
@@ -108,7 +108,7 @@ npm install        # 首次构建前安装依赖
 npx vite build     # 构建 Vue 前端 → src/webui/dist/ohmymeme.js
 ```
 
-设置窗口仍为 vanilla 前端（`src/webui/settings.*`，独立 webview，无需构建）。`src/webui` 与 `src/resources` 是源码运行时静态资源，不是 Python 包。冻结构建会将它们分别放入 `ohmymeme/webui` 与 `ohmymeme/resources`，并将 `config/offsets.json` 放入 `ohmymeme/config/offsets.json`。
+设置窗口仍为 vanilla 前端（`src/webui/settings.*`，独立 webview，无需构建）。`src/webui` 与 `src/resources` 是源码运行时静态资源，不是 Python 包。冻结构建会将它们分别放入 `ohmymeme/webui` 与 `ohmymeme/resources`，并将 `config/offsets.json` 与 canonical `config/plugin-manifest.json` 原样放入 `ohmymeme/config/`。
 
 ### 同步与 LAN 实现包
 
@@ -116,7 +116,7 @@ npx vite build     # 构建 Vue 前端 → src/webui/dist/ohmymeme.js
 
 `plugins/transport.lan` 的入口为 `transport.lan = ohmymeme_plugin_lan:create_plugin`，只负责 socket 字节 I/O、UDP 发现与多接口源地址选择。宿主保留 LAN v1 帧限额/解析、HMAC/PBKDF2/AES-GCM、重放策略、设备审批、命令白名单、文件校验和持久化。listeners、sessions 和等待任务先注册到 `OperationCoordinator`；关闭 socket 会唤醒阻塞读，挂起会话在 deadline 报告中保持可见，真正退出前不会释放宿主状态 lease。启停不持久化，默认不分享密钥。
 
-`Container.sync`、`Container.lan` 与旧模块入口实际经 registry 选择这些包；缺失、禁用、描述符/入口不兼容均拒绝，固定 Bridge/UI 不变。配置错误（包括 bool 冒充 int）在加载 provider 或访问网络前报告具体字段；不再把无效超时/寻址配置悄悄转换为默认值。`docs/plugin-{sync,lan}-config-matrix.json` 与 `scripts/plugin_{sync,lan}.py` 用真实包和声明的回环 fixture 校验此边界。五包可在独立环境执行 `mise exec -- python -m pip install --no-deps --no-build-isolation -e plugins/sync.ftp -e plugins/sync.s3 -e plugins/sync.r2 -e plugins/sync.webdav -e plugins/transport.lan`；未增加第三方依赖或修改锁定版本，九包 frozen 收集仍留 Todo13。
+`Container.sync`、`Container.lan` 与旧模块入口实际经 registry 选择这些包；缺失、禁用、描述符/入口不兼容均拒绝，固定 Bridge/UI 不变。配置错误（包括 bool 冒充 int）在加载 provider 或访问网络前报告具体字段；不再把无效超时/寻址配置悄悄转换为默认值。`docs/plugin-{sync,lan}-config-matrix.json` 与 `scripts/plugin_{sync,lan}.py` 用真实包和声明的回环 fixture 校验此边界。九包可用 `mise exec -- python scripts/plugin_packaging.py --install-editable-official` 配合九个包路径离线安装到当前环境；`--source` 会实际导入源码和 frozen staging 的工厂，比较模块哈希、入口元数据和 manifest 原始字节，不访问网络。
 
 ### 固定插件兼容边界
 
@@ -311,7 +311,7 @@ python scripts/build.py --linux --installer-only --package appimage
 
 > 原 Nuitka 构建脚本已移至 `scripts/nuitka/build.py`，待申诉完成后重新启用。
 
-输出目录: `dist/`。冻结包内的运行时资源固定位于 `ohmymeme/webui`、`ohmymeme/resources`、`ohmymeme/adb-help.txt` 和 `ohmymeme/config/offsets.json`。
+输出目录: `dist/`。冻结包内的运行时资源固定位于 `ohmymeme/webui`、`ohmymeme/resources`、`ohmymeme/adb-help.txt`、`ohmymeme/config/offsets.json` 和 `ohmymeme/config/plugin-manifest.json`。
 
 ## 外部兼容契约
 

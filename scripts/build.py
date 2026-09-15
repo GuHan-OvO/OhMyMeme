@@ -22,6 +22,7 @@ import re
 import shutil
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -29,9 +30,102 @@ SRC_DIR = PROJECT_ROOT / "src"
 PACKAGE_DIR = SRC_DIR / "ohmymeme"
 BUILD_DIR = PROJECT_ROOT / "dist"
 APP_NAME = "OhMyMeme"
+PLUGIN_PACKAGING = PROJECT_ROOT / "scripts" / "plugin_packaging.py"
+PLUGIN_STAGING_DIR = PROJECT_ROOT / "build" / "plugin-staging"
+PLUGIN_STAGING_MANIFEST = PLUGIN_STAGING_DIR / "staging-manifest.json"
+PLUGIN_MANIFEST_TARGET = "ohmymeme/config/plugin-manifest.json"
+OFFICIAL_PLUGIN_IDS = (
+    "source.qqnt",
+    "source.telegram",
+    "source.douyin",
+    "source.wechat",
+    "sync.ftp",
+    "sync.s3",
+    "sync.r2",
+    "sync.webdav",
+    "transport.lan",
+)
 
 PYTHON = sys.executable
 IS_WINDOWS = platform.system() == "Windows"
+BUILD_TIMEOUT = 1800.0
+
+
+def _configured_build_timeout():
+    # Keep every external build process bounded by one environment setting.
+    raw = os.environ.get("OHMYMEME_BUILD_TIMEOUT", "")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return BUILD_TIMEOUT
+    return value if value > 0 else BUILD_TIMEOUT
+
+
+BUILD_TIMEOUT = _configured_build_timeout()
+
+
+def _run_bounded(command, **kwargs):
+    # subprocess.run terminates and waits for the child when its timeout expires.
+    try:
+        return subprocess.run(command, timeout=BUILD_TIMEOUT, **kwargs)
+    except subprocess.TimeoutExpired as error:
+        print(
+            "ERROR: build command timed out after %.3gs: %s"
+            % (BUILD_TIMEOUT, command),
+            file=sys.stderr,
+        )
+        raise SystemExit(124) from error
+
+
+def _snapshot_path(path):
+    path = Path(path)
+    if not path.exists() and not path.is_symlink():
+        return set()
+    if path.is_dir() and not path.is_symlink():
+        return {path, *path.rglob("*")}
+    return {path}
+
+
+def _remove_path(path):
+    try:
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+    except OSError:
+        pass
+
+
+def _cleanup_created_paths(snapshots):
+    for root, before in snapshots:
+        current = _snapshot_path(root)
+        for path in sorted(
+            current - before, key=lambda item: len(item.parts), reverse=True
+        ):
+            _remove_path(path)
+
+
+@contextmanager
+def _cleanup_owned_on_failure(paths):
+    snapshots = tuple((Path(path), _snapshot_path(path)) for path in paths)
+    completed = False
+    try:
+        yield
+        completed = True
+    finally:
+        if not completed:
+            _cleanup_created_paths(snapshots)
+
+
+def _compiler_cleanup_paths():
+    return (
+        PLUGIN_STAGING_DIR,
+        BUILD_DIR,
+        PROJECT_ROOT / "build",
+        PROJECT_ROOT / (APP_NAME + ".spec"),
+        PROJECT_ROOT / (APP_NAME + ".build"),
+        PROJECT_ROOT / (APP_NAME + ".dist"),
+    )
 
 # --- i18n ---
 _MSGS = {
@@ -142,7 +236,7 @@ def ensure_vue_frontend():
     cmds.append([npx, "vite", "build"])
     for c in cmds:
         print("Running:", " ".join(c))
-        result = subprocess.run(c, cwd=str(PROJECT_ROOT))
+        result = _run_bounded(c, cwd=str(PROJECT_ROOT))
         if result.returncode != 0:
             print(L("vue_build_failed"))
             sys.exit(result.returncode)
@@ -158,69 +252,118 @@ def clean():
     build_dir = PROJECT_ROOT / "build" / APP_NAME
     if build_dir.is_dir():
         shutil.rmtree(build_dir, ignore_errors=True)
+    if PLUGIN_STAGING_DIR.is_dir():
+        shutil.rmtree(PLUGIN_STAGING_DIR, ignore_errors=True)
     spec_file = PROJECT_ROOT / ("%s.spec" % APP_NAME)
     if spec_file.exists():
         spec_file.unlink()
+
+
+def stage_official_plugins():
+    """将官方插件和真实元数据放入一次性 frozen staging。"""
+    if not PLUGIN_PACKAGING.is_file():
+        print("ERROR: plugin packaging script not found:", PLUGIN_PACKAGING)
+        sys.exit(1)
+    command = [
+        PYTHON,
+        str(PLUGIN_PACKAGING),
+        "--stage",
+        "--staging-dir",
+        str(PLUGIN_STAGING_DIR),
+        "--staging-manifest",
+        str(PLUGIN_STAGING_MANIFEST),
+        "--source-manifest",
+        str(PROJECT_ROOT / "config" / "plugin-manifest.json"),
+    ]
+    print(L("running"), " ".join(command))
+    with _cleanup_owned_on_failure((PLUGIN_STAGING_DIR,)):
+        result = _run_bounded(command, cwd=str(PROJECT_ROOT))
+        if result.returncode != 0:
+            print("ERROR: official plugin staging failed (code=%d)" % result.returncode)
+            sys.exit(result.returncode)
+    return PLUGIN_STAGING_DIR
 
 
 def build_pyinstaller(target=None):
     check_pyinstaller()
     ensure_vue_frontend()
     clean()
+    with _cleanup_owned_on_failure(_compiler_cleanup_paths()):
+        plugin_staging = stage_official_plugins()
 
-    version = get_version()
-    sep = ";" if IS_WINDOWS else ":"
+        version = get_version()
+        sep = ";" if IS_WINDOWS else ":"
 
-    cmd = [
-        PYTHON, "-m", "PyInstaller",
-        "--onedir",
-        "--name", APP_NAME,
-        "--distpath", str(BUILD_DIR),
-        "--specpath", str(PROJECT_ROOT / "build"),
-        "--noconfirm",
-        "--clean",
-        "--add-data", str(SRC_DIR / "webui") + sep + "ohmymeme/webui",
-        "--add-data", str(SRC_DIR / "resources") + sep + "ohmymeme/resources",
-        "--add-data", str(SRC_DIR / "adb-help.txt") + sep + "ohmymeme/adb-help.txt",
-        "--add-data",
-        str(PROJECT_ROOT / "config" / "offsets.json")
-        + sep
-        + "ohmymeme/config/offsets.json",
-        "--hidden-import", "ohmymeme.app.bootstrap",
-        str(PROJECT_ROOT / "scripts" / "launcher.py"),
-    ]
+        cmd = [
+            PYTHON, "-m", "PyInstaller",
+            "--onedir",
+            "--name", APP_NAME,
+            "--distpath", str(BUILD_DIR),
+            "--specpath", str(PROJECT_ROOT / "build"),
+            "--noconfirm",
+            "--clean",
+            "--add-data", str(SRC_DIR / "webui") + sep + "ohmymeme/webui",
+            "--add-data", str(SRC_DIR / "resources") + sep + "ohmymeme/resources",
+            "--add-data", str(SRC_DIR / "adb-help.txt") + sep + "ohmymeme/adb-help.txt",
+            "--add-data",
+            str(PROJECT_ROOT / "config" / "offsets.json")
+            + sep
+            + "ohmymeme/config/offsets.json",
+            "--add-data",
+            str(plugin_staging / PLUGIN_MANIFEST_TARGET)
+            + sep
+            + PLUGIN_MANIFEST_TARGET,
+            "--hidden-import", "ohmymeme.app.bootstrap",
+            str(PROJECT_ROOT / "scripts" / "launcher.py"),
+        ]
 
-    exclude = [
-        "numpy", "PyQt5", "PyQt5.QtCore", "PyQt5.QtGui",
-        "PyQt5.QtWidgets", "PyQt5.QtNetwork", "PyQt5.QtSvg",
-        "psutil", "setuptools", "pkg_resources", "pyreadline3",
-        "yaml", "tornado", "jaraco", "jaraco.text", "jaraco.functools",
-    ]
-    for m in exclude:
-        cmd += ["--exclude-module", m]
+        for provider_id in OFFICIAL_PLUGIN_IDS:
+            package_prefix = (
+                "ohmymeme_plugin_sync_"
+                if provider_id.startswith("sync.")
+                else "ohmymeme_plugin_"
+            )
+            package_root = package_prefix + provider_id.rsplit(".", 1)[-1]
+            cmd += [
+                "--paths",
+                str(PROJECT_ROOT / "plugins" / provider_id / "src"),
+                "--collect-submodules",
+                package_root,
+            ]
+        for metadata_dir in sorted(plugin_staging.glob("*.dist-info")):
+            cmd += ["--add-data", str(metadata_dir) + sep + metadata_dir.name]
 
-    if target == "Windows" or (target is None and IS_WINDOWS):
-        icon = str(SRC_DIR / "resources" / "icon.ico")
-        cmd += ["--windowed", "--icon=" + icon]
-    elif target == "Linux":
-        icon_png = SRC_DIR / "resources" / "icon.png"
-        if icon_png.exists():
-            cmd += ["--icon=" + str(icon_png)]
-        _add_linux_gi_flags(cmd, sep)
-    elif target == "Darwin":
-        icon_icns = _ensure_icns()
-        cmd += ["--windowed"]
-        if icon_icns:
-            cmd += ["--icon=" + str(icon_icns)]
+        exclude = [
+            "numpy", "PyQt5", "PyQt5.QtCore", "PyQt5.QtGui",
+            "PyQt5.QtWidgets", "PyQt5.QtNetwork", "PyQt5.QtSvg",
+            "psutil", "setuptools", "pkg_resources", "pyreadline3",
+            "yaml", "tornado", "jaraco", "jaraco.text", "jaraco.functools",
+        ]
+        for m in exclude:
+            cmd += ["--exclude-module", m]
 
-    print(L("running"), " ".join(cmd))
-    result = subprocess.run(cmd, cwd=str(PROJECT_ROOT))
-    if result.returncode != 0:
-        print(L("build_failed", result.returncode))
-        sys.exit(result.returncode)
+        if target == "Windows" or (target is None and IS_WINDOWS):
+            icon = str(SRC_DIR / "resources" / "icon.ico")
+            cmd += ["--windowed", "--icon=" + icon]
+        elif target == "Linux":
+            icon_png = SRC_DIR / "resources" / "icon.png"
+            if icon_png.exists():
+                cmd += ["--icon=" + str(icon_png)]
+            _add_linux_gi_flags(cmd, sep)
+        elif target == "Darwin":
+            icon_icns = _ensure_icns()
+            cmd += ["--windowed"]
+            if icon_icns:
+                cmd += ["--icon=" + str(icon_icns)]
 
-    print(L("build_done"), BUILD_DIR / APP_NAME)
-    return version
+        print(L("running"), " ".join(cmd))
+        result = _run_bounded(cmd, cwd=str(PROJECT_ROOT))
+        if result.returncode != 0:
+            print(L("build_failed", result.returncode))
+            sys.exit(result.returncode)
+
+        print(L("build_done"), BUILD_DIR / APP_NAME)
+        return version
 
 
 _LANG_URL = "https://raw.githubusercontent.com/jrsoftware/issrc/refs/heads/main/Files/Languages/ChineseSimplified.isl"
@@ -315,15 +458,16 @@ def build_installer(version, target=None, filename_version=None):
     iss_temp.write_text(iss_content, encoding="utf-8")
 
     print(L("building_installer"))
-    result = subprocess.run(
-        [iscc, str(iss_temp)],
-        cwd=str(PROJECT_ROOT),
-    )
+    try:
+        result = _run_bounded(
+            [iscc, str(iss_temp)],
+            cwd=str(PROJECT_ROOT),
+        )
+    finally:
+        if iss_temp.exists():
+            iss_temp.unlink()
     if result.returncode != 0:
         sys.exit(result.returncode)
-
-    if iss_temp.exists():
-        iss_temp.unlink()
 
     output_name = "%s-%s-setup.exe" % (APP_NAME, filename_version)
     installer = BUILD_DIR / output_name
@@ -349,7 +493,7 @@ def build_linux_packages(version, package="all", pkg_version=None, arch=None):
         # 统一架构名称：aarch64 -> aarch64, arm64 -> aarch64
         env["OHMYMEME_ARCH"] = "aarch64" if arch in ("arm64", "aarch64") else arch
     print(L("building_linux"))
-    result = subprocess.run(
+    result = _run_bounded(
         ["bash", str(build_sh), package],
         cwd=str(PROJECT_ROOT),
         env=env,
@@ -370,8 +514,9 @@ def _ensure_icns():
         return icns
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        from PIL import Image
         import tempfile
+
+        from PIL import Image
 
         tmp = tempfile.mkdtemp()
         iconset = Path(tmp) / "icon.iconset"
@@ -393,16 +538,18 @@ def _ensure_icns():
             resized = img.resize((px, px), Image.LANCZOS)
             resized.save(iconset / name)
         # 用 iconutil 生成 .icns（macOS 自带）
-        result = subprocess.run(
-            ["iconutil", "-c", "icns", str(iconset), "-o", str(icns)],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            print("WARNING: iconutil failed:", result.stderr or result.stdout)
-            return None
-        shutil.rmtree(tmp, ignore_errors=True)
-        return icns
+        try:
+            result = _run_bounded(
+                ["iconutil", "-c", "icns", str(iconset), "-o", str(icns)],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                print("WARNING: iconutil failed:", result.stderr or result.stdout)
+                return None
+            return icns
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
     except Exception as e:
         print("WARNING: failed to generate .icns:", e)
         return None
@@ -453,22 +600,24 @@ def build_macos_packages(version, filename_version=None, arch=None):
     except OSError:
         pass
 
-    result = subprocess.run(
-        [
-            "hdiutil",
-            "create",
-            "-volname",
-            APP_NAME,
-            "-srcfolder",
-            str(staging),
-            "-ov",
-            "-format",
-            "UDZO",
-            str(dmg_path),
-        ],
-        cwd=str(PROJECT_ROOT),
-    )
-    shutil.rmtree(staging, ignore_errors=True)
+    try:
+        result = _run_bounded(
+            [
+                "hdiutil",
+                "create",
+                "-volname",
+                APP_NAME,
+                "-srcfolder",
+                str(staging),
+                "-ov",
+                "-format",
+                "UDZO",
+                str(dmg_path),
+            ],
+            cwd=str(PROJECT_ROOT),
+        )
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
     if result.returncode != 0:
         print(L("macos_failed", result.returncode))
         sys.exit(result.returncode)

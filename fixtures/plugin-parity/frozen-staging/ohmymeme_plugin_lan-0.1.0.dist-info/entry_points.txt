@@ -1,0 +1,2 @@
+[ohmymeme.plugins.v1]
+transport.lan = ohmymeme_plugin_lan:create_plugin

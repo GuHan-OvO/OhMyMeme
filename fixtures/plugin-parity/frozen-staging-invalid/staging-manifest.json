@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "manifest_target": "ohmymeme/config/plugin-manifest.json",
+  "packages": [
+    {
+      "id": "source.qqnt",
+      "distribution": "ohmymeme-plugin-qqnt",
+      "module": "ohmymeme_plugin_qqnt",
+      "factory": "ohmymeme_plugin_qqnt:create_plugin",
+      "license": "GPL-3.0-only",
+      "module_files": ["ohmymeme_plugin_qqnt/__init__.py.missing"],
+      "metadata_files": [
+        "ohmymeme-plugin-qqnt-0.1.0.dist-info/METADATA.missing"
+      ],
+      "dependencies": [],
+      "resource_files": [
+        "ohmymeme_plugin_qqnt/resources/qqnt-resource.missing"
+      ],
+      "optional_dependencies": [],
+      "optional_dependencies_disabled": true,
+      "license_files": [],
+      "license_files_disabled": true,
+      "resources_disabled": false
+    }
+  ]
+}

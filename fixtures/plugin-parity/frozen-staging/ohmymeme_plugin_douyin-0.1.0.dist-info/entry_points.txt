@@ -1,0 +1,2 @@
+[ohmymeme.plugins.v1]
+source.douyin = ohmymeme_plugin_douyin:create_plugin
