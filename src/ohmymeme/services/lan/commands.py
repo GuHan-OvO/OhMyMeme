@@ -111,7 +111,7 @@ class CommandHandlers:
         """返回本地清单。"""
         from ohmymeme.core.manifest import load as load_manifest
 
-        coordinator = getattr(self._server, "_coordinator", None)
+        coordinator = getattr(self._server, "_mutation_coordinator", None)
         try:
             if coordinator is None:
                 build_manifest()
@@ -132,7 +132,7 @@ class CommandHandlers:
         """合并远端清单的排序与分组。"""
         try:
             projection = ManifestService().parse_data(manifest, strict_hash=True)
-            coordinator = getattr(self._server, "_coordinator", None)
+            coordinator = getattr(self._server, "_mutation_coordinator", None)
             if coordinator is None:
                 self._apply_manifest(projection.to_data())
                 build_manifest()
@@ -207,7 +207,7 @@ class CommandHandlers:
             hashlib.sha256(data).hexdigest(), expected
         ):
             return {"ok": False, "error": "文件哈希不一致"}
-        coordinator = getattr(self._server, "_coordinator", None)
+        coordinator = getattr(self._server, "_mutation_coordinator", None)
         if coordinator is None:
             return _import_bytes(data, filename)
         try:
@@ -248,7 +248,7 @@ class CommandHandlers:
             config = {
                 key: value for key, value in config.items() if key not in _SECRET_KEYS
             }
-        coordinator = getattr(self._server, "_coordinator", None)
+        coordinator = getattr(self._server, "_mutation_coordinator", None)
         try:
             if coordinator is None:
                 target = self._config()

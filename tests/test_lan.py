@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ["OHMYMEME_TEST"] = "1"
 
+import ohmymeme_plugin_lan as transport
 import pytest
 
 import ohmymeme.core.config as config_module
@@ -20,8 +21,9 @@ import ohmymeme.services.lan as lan_package
 import ohmymeme.services.lan.server as lan
 from ohmymeme.core.config import Config
 from ohmymeme.core.database import MemeDB
+from ohmymeme.core.plugins.network_config import LanTransportConfig
 
-TEST_PORT = 17990
+TEST_PORT = 0
 _IV_LEN = 12
 
 
@@ -38,6 +40,7 @@ def test_lan_package_exports_public_server_api():
     )
 
     assert all(callable(getattr(lan_package, name, None)) for name in exports)
+
 
 # 1x1 透明 PNG（合法图片，PIL 可解码，宽高 1x1）
 TINY_PNG = bytes.fromhex(
@@ -116,10 +119,10 @@ def _handshake(sock, secret):
     return _derive_client_key(secret)
 
 
-def _connect(port=TEST_PORT):
+def _connect(port=None):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(5)
-    sock.connect(("127.0.0.1", port))
+    sock.connect(("127.0.0.1", lan.get_status()["port"] if port is None else port))
     return sock
 
 
@@ -156,7 +159,7 @@ def test_udp_discovery(lan_env):
     cfg, db, tmp = lan_env
     udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp.settimeout(5)
-    udp.sendto(b'{"t":"discover"}', ("127.0.0.1", TEST_PORT))
+    udp.sendto(b'{"t":"discover"}', ("127.0.0.1", lan.get_status()["port"]))
     data, _ = udp.recvfrom(2048)
     udp.close()
     reply = json.loads(data.decode("utf-8"))
@@ -168,8 +171,8 @@ def test_udp_discovery(lan_env):
 def test_pktinfo_extract_linux_layout(monkeypatch):
     """Linux in_pktinfo 布局 (ifindex, spec_dst, addr) 解析"""
     monkeypatch.setattr(lan.socket, "IP_PKTINFO", 8, raising=False)
-    monkeypatch.setattr(lan.sys, "platform", "linux")
-    srv = lan.LanServer()
+    monkeypatch.setattr(transport.sys, "platform", "linux")
+    srv = transport.LanTransport(LanTransportConfig())
     cdata = struct.pack(
         "i4s4s",
         1,
@@ -183,8 +186,8 @@ def test_pktinfo_extract_linux_layout(monkeypatch):
 def test_pktinfo_extract_windows_layout(monkeypatch):
     """Windows in_pktinfo 仅 8 字节 (ipi_addr, ipi_ifindex)，返回接口索引"""
     monkeypatch.setattr(lan.socket, "IP_PKTINFO", 8, raising=False)
-    monkeypatch.setattr(lan.sys, "platform", "win32")
-    srv = lan.LanServer()
+    monkeypatch.setattr(transport.sys, "platform", "win32")
+    srv = transport.LanTransport(LanTransportConfig())
     cdata = struct.pack("4sI", socket.inet_aton("255.255.255.255"), 7)
     anc = [(socket.IPPROTO_IP, getattr(socket, "IP_PKTINFO", 8), cdata)]
     assert srv._extract_pktinfo_src(anc) == ("ifindex", 7)
@@ -193,35 +196,35 @@ def test_pktinfo_extract_windows_layout(monkeypatch):
 def test_pktinfo_extract_windows_zero_ifindex(monkeypatch):
     """Windows 接口索引为 0（不可用）时返回 None"""
     monkeypatch.setattr(lan.socket, "IP_PKTINFO", 8, raising=False)
-    monkeypatch.setattr(lan.sys, "platform", "win32")
-    srv = lan.LanServer()
+    monkeypatch.setattr(transport.sys, "platform", "win32")
+    srv = transport.LanTransport(LanTransportConfig())
     cdata = struct.pack("4sI", socket.inet_aton("255.255.255.255"), 0)
     anc = [(socket.IPPROTO_IP, getattr(socket, "IP_PKTINFO", 8), cdata)]
     assert srv._extract_pktinfo_src(anc) is None
 
 
-@pytest.mark.skipif(
-    not hasattr(socket, "IP_PKTINFO") or not hasattr(socket.socket, "recvmsg"),
-    reason="平台不支持 IP_PKTINFO 或 recvmsg（pktinfo 源地址钉定依赖 recvmsg）",
-)
 def test_udp_reply_pins_source_interface(lan_env):
-    """回包源 IP 钉在广播到达的接口上（虚拟网卡环境发现可达）"""
+    """支持 pktinfo 时钉接口，否则实测回环发现降级路径。"""
     cfg, db, tmp = lan_env
     srv = lan._server
-    assert srv is not None and srv._udp_pktinfo
+    assert srv is not None
     cli = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     cli.settimeout(5)
-    cli.sendto(b'{"t":"discover"}', ("127.0.0.1", TEST_PORT))
+    cli.sendto(b'{"t":"discover"}', ("127.0.0.1", lan.get_status()["port"]))
     data, src = cli.recvfrom(2048)
     cli.close()
     assert json.loads(data.decode("utf-8"))["t"] == "hello"
     assert src[0] == "127.0.0.1"
+    if hasattr(socket, "IP_PKTINFO") and hasattr(socket.socket, "recvmsg"):
+        assert srv._transport.pktinfo
+    else:
+        assert not srv._transport.pktinfo
 
 
 def test_pktinfo_extract_ignores_other_cmsg(monkeypatch):
     """非 IP_PKTINFO 控制消息被忽略并返回 None"""
     monkeypatch.setattr(lan.socket, "IP_PKTINFO", 8, raising=False)
-    srv = lan.LanServer()
+    srv = transport.LanTransport(LanTransportConfig())
     anc = [
         (socket.SOL_SOCKET, socket.SO_REUSEADDR, b"\x00\x00\x00\x00"),
         (socket.IPPROTO_TCP, socket.IP_TTL, b"\x00" * 4),
@@ -232,7 +235,7 @@ def test_pktinfo_extract_ignores_other_cmsg(monkeypatch):
 def test_pktinfo_extract_short_cdata(monkeypatch):
     """cdata 过短时解析失败返回 None 而非抛异常"""
     monkeypatch.setattr(lan.socket, "IP_PKTINFO", 8, raising=False)
-    srv = lan.LanServer()
+    srv = transport.LanTransport(LanTransportConfig())
     anc = [(socket.IPPROTO_IP, 8, b"\x00")]
     assert srv._extract_pktinfo_src(anc) is None
 
@@ -256,11 +259,11 @@ class _FakeUdpSock:
 def test_send_udp_reply_uses_sendmsg_with_pktinfo(monkeypatch):
     """Linux 路径 sendmsg 的 ancdata 携带 IP_PKTINFO（源地址 = 接收接口）"""
     monkeypatch.setattr(lan.socket, "IP_PKTINFO", 8, raising=False)
-    srv = lan.LanServer()
+    srv = transport.LanTransport(LanTransportConfig())
     sock = _FakeUdpSock()
-    srv._udp_sock = sock
-    srv._udp_pktinfo = True
-    srv._send_udp_reply(b'{"t":"hello"}', ("192.168.0.1", 12345), ("ip", "192.168.1.5"))
+    srv.udp = sock
+    srv.pktinfo = True
+    srv.send_discovery(b'{"t":"hello"}', ("192.168.0.1", 12345), ("ip", "192.168.1.5"))
     assert not sock.sendto_calls
     assert len(sock.sendmsg_calls) == 1
     call = sock.sendmsg_calls[0]
@@ -274,13 +277,13 @@ def test_send_udp_reply_uses_sendmsg_with_pktinfo(monkeypatch):
 def test_send_udp_reply_windows_sendmsg_pins_ifindex(monkeypatch):
     """Windows 路径 sendmsg 的 ancdata 源地址填 ipi_addr、接口填 ipi_ifindex"""
     monkeypatch.setattr(lan.socket, "IP_PKTINFO", 8, raising=False)
-    monkeypatch.setattr(lan.sys, "platform", "win32")
-    srv = lan.LanServer()
+    monkeypatch.setattr(transport.sys, "platform", "win32")
+    srv = transport.LanTransport(LanTransportConfig())
     sock = _FakeUdpSock()
-    srv._udp_sock = sock
-    srv._udp_pktinfo = True
+    srv.udp = sock
+    srv.pktinfo = True
     monkeypatch.setattr(srv, "_win_ifindex_source_ip", lambda ifindex, peer: "10.0.0.5")
-    srv._send_udp_reply(b'{"t":"hello"}', ("192.168.0.1", 12345), ("ifindex", 7))
+    srv.send_discovery(b'{"t":"hello"}', ("192.168.0.1", 12345), ("ifindex", 7))
     assert not sock.sendto_calls
     assert len(sock.sendmsg_calls) == 1
     level, ctype, cdata = sock.sendmsg_calls[0]["ancdata"][0]
@@ -292,7 +295,7 @@ def test_send_udp_reply_windows_sendmsg_pins_ifindex(monkeypatch):
 
 def test_win_ifindex_source_ip_sets_unicast_if(monkeypatch):
     """Windows 反查接口 IP：用 IP_UNICAST_IF（网络字节序）钉接口并 connect"""
-    monkeypatch.setattr(lan.sys, "platform", "win32")
+    monkeypatch.setattr(transport.sys, "platform", "win32")
     captured = {}
 
     class _FakeProbeSock:
@@ -309,7 +312,7 @@ def test_win_ifindex_source_ip_sets_unicast_if(monkeypatch):
             pass
 
     monkeypatch.setattr(lan.socket, "socket", lambda *a, **k: _FakeProbeSock())
-    srv = lan.LanServer()
+    srv = transport.LanTransport(LanTransportConfig())
     assert srv._win_ifindex_source_ip(7, ("192.168.0.1", 12345)) == "10.0.0.5"
     level, optname, value = captured["opt"]
     assert level == socket.IPPROTO_IP
@@ -320,7 +323,7 @@ def test_win_ifindex_source_ip_sets_unicast_if(monkeypatch):
 
 def test_win_ifindex_source_ip_oserror(monkeypatch):
     """Windows 反查失败（OSError）时返回 None"""
-    monkeypatch.setattr(lan.sys, "platform", "win32")
+    monkeypatch.setattr(transport.sys, "platform", "win32")
 
     class _FakeProbeSock:
         def setsockopt(self, level, optname, value):
@@ -336,7 +339,7 @@ def test_win_ifindex_source_ip_oserror(monkeypatch):
             pass
 
     monkeypatch.setattr(lan.socket, "socket", lambda *a, **k: _FakeProbeSock())
-    srv = lan.LanServer()
+    srv = transport.LanTransport(LanTransportConfig())
     assert srv._win_ifindex_source_ip(7, ("192.168.0.1", 12345)) is None
 
 

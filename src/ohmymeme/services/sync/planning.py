@@ -31,10 +31,15 @@ def _remote_root(cfg) -> str:
     """返回远端根路径：FTP→ftp_path，WebDAV→webdav_path，对象存储→空"""
     st = cfg.get("sync_type", "")
     if st in ("ftp", "ftps"):
-        return cfg.get("ftp_path", "/")
-    if st == "webdav":
-        return cfg.get("webdav_path", "")
-    return ""
+        provider, key, default = "sync.ftp", "ftp_path", "/"
+    elif st == "webdav":
+        provider, key, default = "sync.webdav", "webdav_path", ""
+    else:
+        return ""
+    getter = getattr(cfg, "get_plugin_value", None)
+    if callable(getter):
+        return getter(provider, "path", key, default=default)
+    return cfg.get(key, default)
 
 
 def _safe_remote_fname(name: str) -> bool:

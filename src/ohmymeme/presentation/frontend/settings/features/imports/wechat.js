@@ -172,9 +172,10 @@ async function startWechatImport() {
         return;
       }
       nullCount = 0;
-      document.getElementById('wechat-import-bar').style.width = (s.progress || 0) + '%';
-      document.getElementById('wechat-import-pct').textContent = (s.progress || 0) + '%';
-      document.getElementById('wechat-import-msg').textContent = s.message || '';
+      const progress = pluginProgressValue('get_wechat_import_progress', s, 'progress');
+      document.getElementById('wechat-import-bar').style.width = (progress || 0) + '%';
+      document.getElementById('wechat-import-pct').textContent = (progress || 0) + '%';
+      document.getElementById('wechat-import-msg').textContent = pluginProgressValue('get_wechat_import_progress', s, 'message') || '';
       if (s.status === 'done') {
         document.getElementById('wechat-import-title').textContent = '导入完成';
         if (wechatPollTimer) { clearInterval(wechatPollTimer); wechatPollTimer = null; }

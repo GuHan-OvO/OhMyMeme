@@ -4,14 +4,14 @@ import threading
 import pytest
 from PIL import Image
 
-from ohmymeme.core.imports import ImportBytes
+from ohmymeme.app.library import LibraryService
 from ohmymeme.app.remote_mutation_coordinator import (
     RemoteMutationBusyError,
     RemoteMutationCoordinator,
     RemoteMutationReentrantError,
 )
-from ohmymeme.app.library import LibraryService
 from ohmymeme.app.remote_mutation_errors import RemoteMutationWorkerError
+from ohmymeme.core.imports import ImportBytes
 from ohmymeme.services.sync import service as sync_service
 
 
@@ -164,6 +164,7 @@ def test_container_when_library_imports_then_all_state_services_share_one_coordi
 ):
     # Given: one fully composed Container and a valid image payload
     from ohmymeme.app.container import Container
+
     container = Container(tmp_path / "app")
     payload = io.BytesIO()
     Image.new("RGBA", (1, 1), (255, 0, 0, 255)).save(payload, "PNG")
@@ -177,17 +178,19 @@ def test_container_when_library_imports_then_all_state_services_share_one_coordi
         assert container.catalog._mutation_coordinator is container.remote_mutations
         assert service._mutation_coordinator is container.remote_mutations
         assert container.sync._coordinator is container.remote_mutations
-        assert container.lan._coordinator is container.remote_mutations
+        assert container.lan._mutation_coordinator is container.remote_mutations
+        assert container.lan._coordinator is container.operations
         assert any(
-            event["event"] == "commit"
-            and event["entrypoint"] == "library.import"
+            event["event"] == "commit" and event["entrypoint"] == "library.import"
             for event in container.remote_mutations.get_transcript()
         )
     finally:
         container.close()
 
 
-def test_container_when_same_data_root_is_open_then_second_container_fails_closed(tmp_path):
+def test_container_when_same_data_root_is_open_then_second_container_fails_closed(
+    tmp_path,
+):
     # Given: a live Container that owns its process-local data root
     from ohmymeme.app.container import Container
 
@@ -201,7 +204,7 @@ def test_container_when_same_data_root_is_open_then_second_container_fails_close
         first.close()
 
 
-def test_container_when_sync_pushes_to_loopback_webdav_then_transcript_has_worker_barrier(
+def test_sync_pushes_to_loopback_webdav_with_worker_barrier(
     tmp_path,
 ):
     # Given: a Container-bound library and an actual loopback WebDAV listener
@@ -234,7 +237,7 @@ def test_container_when_sync_pushes_to_loopback_webdav_then_transcript_has_worke
         server.close()
 
 
-def test_container_when_lan_file_arrives_while_sync_lease_is_owned_then_busy_envelope_returns(
+def test_lan_file_during_sync_lease_returns_busy(
     tmp_path,
 ):
     # Given: a Container whose LAN command handler shares the library-state lease
@@ -244,6 +247,7 @@ def test_container_when_lan_file_arrives_while_sync_lease_is_owned_then_busy_env
     entered = threading.Event()
     release = threading.Event()
     try:
+
         def hold_lease():
             with container.remote_mutations.mutation("sync.push"):
                 entered.set()
@@ -282,10 +286,15 @@ def test_container_sync_apply_remote_metadata_mutations_use_the_shared_lease(tmp
 
         # Then: each public mutation has its own ordered coordinator transcript
         events = container.remote_mutations.get_transcript()
-        commits = [event["entrypoint"] for event in events if event["event"] == "commit"]
+        commits = [
+            event["entrypoint"] for event in events if event["event"] == "commit"
+        ]
         assert commits == ["sync.apply_remote_order", "sync.apply_remote_collections"]
         assert first != second
-        assert [row["filename"] for row in container.db.search()] == ["two.png", "one.png"]
+        assert [row["filename"] for row in container.db.search()] == [
+            "two.png",
+            "one.png",
+        ]
     finally:
         container.close()
 
@@ -412,6 +421,7 @@ def test_container_lan_send_config_when_busy_does_not_mutate_or_commit(tmp_path)
     entered = threading.Event()
     release = threading.Event()
     try:
+
         def hold_lease():
             with container.remote_mutations.mutation("sync.push"):
                 entered.set()

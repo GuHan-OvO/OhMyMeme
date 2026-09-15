@@ -1,6 +1,8 @@
 /* Init */
 let initRetries = 0;
 async function initSettings() {
+  try { await loadPluginUI(); }
+  catch (error) { console.error(error); return; }
   const s = await getSettings();
   if (s) {
     document.getElementById('s-hotkey')?.focus();

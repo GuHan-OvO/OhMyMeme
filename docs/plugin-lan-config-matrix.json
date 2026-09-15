@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "provider": "transport.lan",
+  "record": "LanTransportConfig",
+  "transport_fields": ["host", "port"],
+  "legacy_keys": {"port": "lan_port", "secret": "lan_secret"},
+  "wire_version": 1,
+  "frame_limit": 67108864,
+  "security": "host:HMAC-SHA256/PBKDF2-SHA256/AES-GCM",
+  "approval": "host:callback-or-headless",
+  "replay": "host:session-direction-frame-command",
+  "commands": "host:fixed-allowlist",
+  "lifecycle": "host:OperationCoordinator",
+  "share_secrets_default": false,
+  "activation": "temporary"
+}

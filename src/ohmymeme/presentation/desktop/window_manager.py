@@ -933,8 +933,20 @@ class _LegacySettingsApi:
         return _check_connectivity()
 
     def lan_start(self, port: int = None, secret: str = None) -> dict:
-        p = int(port or self._cfg.get("lan_port", 17852))
-        s = secret if secret is not None else self._cfg.get("lan_secret", "")
+        getter = getattr(self._cfg, "get_plugin_value", None)
+        p, s = port, secret
+        if p is None:
+            p = (
+                getter("transport.lan", "port", "lan_port", default=17852)
+                if callable(getter)
+                else self._cfg.get("lan_port", 17852)
+            )
+        if s is None:
+            s = (
+                getter("transport.lan", "secret", "lan_secret", default="", secret=True)
+                if callable(getter)
+                else self._cfg.get("lan_secret", "")
+            )
         service = self._lan_service()
         ok = service.start(p, s)
         return {"ok": ok, "status": service.get_status()}
@@ -1921,6 +1933,17 @@ class WebUI:
             if html_path.exists():
                 return bottle.static_file("settings.html", root=str(self._html_dir))
             return "<h1>设置</h1><p>settings.html not found</p>"
+
+        @app.route("/api/plugin-ui")
+        def plugin_ui():
+            # 固定宿主数据，不加载 provider，不扩展 Bridge 或设置返回对象。
+            from .api.ui_contributions import load_ui_projection
+
+            try:
+                return load_ui_projection(self._html_dir / "plugin-ui.json")
+            except (OSError, ValueError):
+                bottle.response.status = 503
+                return {"error": "ui: host contribution data rejected"}
 
         @app.route("/api/contributors")
         def serve_contributors():

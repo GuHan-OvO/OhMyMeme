@@ -54,6 +54,8 @@ class _SyncRuntime:
     coordinator: RemoteMutationCoordinator
     lease: RemoteMutationLease | None
     legacy_lock: bool = False
+    backend_registry: object = None
+    enabled_plugins: object = None
 
 
 _SYNC_RUNTIME: ContextVar[_SyncRuntime | None] = ContextVar(
@@ -72,12 +74,16 @@ class SyncService:
         build_manifest: Callable[[], None],
         write_manifest: Callable[[dict], None],
         coordinator: RemoteMutationCoordinator,
+        registry=None,
+        enabled=None,
     ) -> None:
         self._config = config
         self._database = database
         self._build_manifest = build_manifest
         self._write_manifest = write_manifest
         self._coordinator = coordinator
+        self._registry = registry
+        self._enabled = None if enabled is None else frozenset(enabled)
 
     def push(self, delete_remote: bool | None = None) -> dict:
         with self._coordinator.mutation("sync.push") as lease:
@@ -170,6 +176,8 @@ class SyncService:
                 self._coordinator,
                 lease,
                 False,
+                self._registry,
+                self._enabled,
             )
         )
         try:
@@ -334,7 +342,12 @@ def get_sync_progress() -> dict:
 
 
 def _get_backend():
-    return get_backend(_runtime_config())
+    runtime = _runtime()
+    return get_backend(
+        _runtime_config(),
+        registry=runtime.backend_registry if runtime else None,
+        enabled=runtime.enabled_plugins if runtime else None,
+    )
 
 
 def _connect():
@@ -826,6 +839,8 @@ def _push_impl(delete_remote: bool = None) -> dict:
     try:
         bk = _get_backend()
         bk.connect()
+        if cfg.get("sync_type") == "webdav":
+            bk.clear_directory_cache()
         remote_memes = _fetch_remote_memes(bk, remote_root)
         bk.ensure_remote_dir(remote_root)
         local_idx = {m["filename"]: m for m in local["memes"]}
@@ -1139,9 +1154,11 @@ def sync_test() -> str:
     """测试当前配置的存储后端连接是否可用，返回 'ok' 或错误信息"""
     try:
         bk = _get_backend()
-        bk.connect()
-        bk.test_connection()
-        bk.close()
+        try:
+            bk.connect()
+            bk.test_connection()
+        finally:
+            bk.close()
         return "ok"
     except Exception as e:
         return str(e)

@@ -1,0 +1,15 @@
+{
+  "schema_version": true,
+  "contributions": [
+    {"provider":"source.qqnt","label":"Misleading PASS","icon":"qq","screen":"qqnt","handler":"startQQNTWizard","actions":[{"action":"execute","label":"检测环境","arguments":[],"progress_fields":[],"args":[true],"script":"run()"}]},
+    {"provider":"source.telegram","label":42,"icon":"telegram","screen":"telegram","handler":"openTGImportDialog","actions":[],"html":"<img onerror=run()>"},
+    {"provider":"source.douyin","label":"抖音","icon":"<svg onload=run()>","screen":"douyin","handler":"openDYImportDialog","actions":[],"javascript":"run()"},
+    {"provider":"source.wechat","label":"微信","icon":"wechat","screen":"wechat","handler":"eval","actions":[],"bridge_methods":["execute"]},
+    {"provider":"sync.unknown","label":"FTP","icon":"none","screen":"ftp","handler":"toggleSyncType","actions":[]},
+    {"provider":"sync.s3","label":"S3 兼容存储","icon":"none","screen":"s3","handler":"toggleSyncType","actions":[],"extra":{}},
+    {"provider":"sync.r2","label":"Cloudflare R2","icon":"none","screen":"r2","handler":"toggleSyncType","actions":[],"script":"run()"},
+    {"provider":"sync.webdav","label":"WebDAV","icon":"none","screen":"body","handler":"toggleSyncType","actions":[]},
+    {"provider":"qq.mobile","label":"局域网互联","icon":"none","screen":"lan","handler":"toggleLan","actions":[]}
+  ],
+  "expected": {"status":"PASS"}
+}

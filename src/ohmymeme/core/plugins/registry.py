@@ -2,6 +2,8 @@
 
 from importlib.metadata import entry_points
 
+from .manifest import CANONICAL_BY_ID, canonical_descriptor
+
 
 class PluginRegistry:
     def __init__(self, descriptors, builtins=None, discovered_entry_points=None):
@@ -69,6 +71,31 @@ class PluginRegistry:
 
     def descriptors(self):
         return tuple(record["descriptor"] for record in self._records.values())
+
+    def require(self, provider_id, enabled=None):
+        # Runtime adapters reject stale identity before loading the selected factory.
+        if enabled is not None and provider_id not in enabled:
+            raise ValueError(f"{provider_id}: provider_disabled")
+        record = self._records.get(provider_id)
+        if record is None:
+            raise ValueError(f"{provider_id}: provider_unavailable")
+        descriptor = record["descriptor"]
+        if (
+            provider_id not in CANONICAL_BY_ID
+            or type(descriptor.api_version) is not int
+            or descriptor != canonical_descriptor(provider_id)
+        ):
+            raise ValueError(f"{provider_id}: provider_incompatible")
+        instance = self.get(provider_id)
+        if instance is None:
+            raise ValueError(f"{provider_id}: provider_unavailable")
+        if (
+            getattr(instance, "provider_id", None) != provider_id
+            or type(getattr(instance, "api_version", None)) is not int
+            or instance.api_version != descriptor.api_version
+        ):
+            raise ValueError(f"{provider_id}: provider_incompatible")
+        return instance
 
     def status(self):
         return tuple(

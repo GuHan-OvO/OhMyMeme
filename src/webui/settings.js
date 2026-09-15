@@ -1,3 +1,5 @@
+/* Generated host-owned UI data; no plugin code. */
+const fixedPluginUI = {"contributions":[{"actions":[{"action":"qqnt_check_env","arguments":[],"label":"检测环境","progress_fields":[]},{"action":"qqnt_pick_ini","arguments":[],"label":"选择配置文件","progress_fields":[]},{"action":"qqnt_pick_userdata","arguments":[],"label":"选择用户数据目录","progress_fields":[]},{"action":"qqnt_pick_base","arguments":[],"label":"选择保存文件夹","progress_fields":[]},{"action":"qqnt_default_dir","arguments":[{"name":"base","required":true,"schema":{"type":"string"}},{"name":"qq_number","required":true,"schema":{"type":"string"}}],"label":"输出目录","progress_fields":[]},{"action":"qqnt_start","arguments":[{"name":"qq_number","required":true,"schema":{"type":"string"}},{"name":"output_dir","required":true,"schema":{"type":"string"}},{"default":false,"name":"image_only","required":false,"schema":{"type":"boolean"}},{"default":false,"name":"overwrite","required":false,"schema":{"type":"boolean"}}],"label":"开始提取","progress_fields":[]},{"action":"qqnt_get_progress","arguments":[],"label":"提取进度","progress_fields":["status","progress","message","error","log","result"]},{"action":"qqnt_cancel","arguments":[],"label":"取消","progress_fields":[]},{"action":"qqnt_open_dir","arguments":[{"name":"path","required":true,"schema":{"type":"string"}}],"label":"打开目录","progress_fields":[]}],"handler":"startQQNTWizard","icon":"qq","label":"电脑版 QQ（QQNT 本地缓存）","provider":"source.qqnt","screen":"qqnt"},{"actions":[{"action":"pick_tg_tdata","arguments":[],"label":"手动指定 tdata 目录","progress_fields":[]},{"action":"start_tg_import","arguments":[{"default":null,"name":"tdata_path","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}]}},{"default":"","name":"passcode","required":false,"schema":{"type":"string"}},{"default":true,"name":"convert_webm","required":false,"schema":{"type":"boolean"}}],"label":"开始导入","progress_fields":[]},{"action":"get_tg_import_progress","arguments":[],"label":"导入进度","progress_fields":["status","progress","message","error","error_code","total","done","imported","rejected","convert_failed","skipped_static","elapsed_s"]},{"action":"cancel_tg_import","arguments":[],"label":"取消导入","progress_fields":[]}],"handler":"openTGImportDialog","icon":"telegram","label":"Telegram Desktop","provider":"source.telegram","screen":"telegram"},{"actions":[{"action":"start_douyin_import","arguments":[{"name":"cookie","required":true,"schema":{"type":"string"}}],"label":"开始下载","progress_fields":[]},{"action":"get_douyin_import_progress","arguments":[],"label":"下载进度","progress_fields":["status","progress","message","error","error_code","total","done","imported","rejected"]},{"action":"cancel_douyin_import","arguments":[],"label":"取消","progress_fields":[]}],"handler":"openDYImportDialog","icon":"douyin","label":"抖音","provider":"source.douyin","screen":"douyin"},{"actions":[{"action":"pick_wechat_root","arguments":[],"label":"选择目录","progress_fields":[]},{"action":"inspect_wechat_environment","arguments":[{"default":null,"name":"user_root","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}]}}],"label":"检测环境","progress_fields":[]},{"action":"list_wechat_stickers","arguments":[{"name":"user_root","required":true,"schema":{"type":"string"}},{"default":null,"name":"account_path","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}]}}],"label":"表情列表","progress_fields":[]},{"action":"start_wechat_import","arguments":[{"default":null,"name":"user_root","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}]}},{"default":true,"name":"download","required":false,"schema":{"type":"boolean"}},{"default":null,"name":"account_path","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}]}}],"label":"开始导入","progress_fields":[]},{"action":"get_wechat_import_progress","arguments":[],"label":"导入进度","progress_fields":["status","progress","message","error","error_code","total","done","imported","failed","rejected"]},{"action":"cancel_wechat_import","arguments":[],"label":"取消导入","progress_fields":[]}],"handler":"openWechatImportDialog","icon":"wechat","label":"微信","provider":"source.wechat","screen":"wechat"},{"actions":[{"action":"sync_push","arguments":[{"default":null,"name":"delete_remote","required":false,"schema":{"anyOf":[{"type":"boolean"},{"type":"null"}]}}],"label":"上传","progress_fields":[]},{"action":"sync_pull","arguments":[{"default":null,"name":"remove_local","required":false,"schema":{"anyOf":[{"type":"boolean"},{"type":"null"}]}}],"label":"下载","progress_fields":[]},{"action":"sync_test","arguments":[],"label":"测试连接","progress_fields":[]},{"action":"get_sync_progress","arguments":[],"label":"同步进度","progress_fields":["status","direction","progress","files_done","files_total","bytes_done","bytes_total","current_file","speed","start_time","results","error","failed_items"]},{"action":"delete_all_cloud","arguments":[],"label":"清空云端","progress_fields":[]},{"action":"get_remote_orphans","arguments":[{"default":false,"name":"delete","required":false,"schema":{"type":"boolean"}}],"label":"孤儿文件","progress_fields":[]},{"action":"check_sync_status","arguments":[],"label":"检查同步状态","progress_fields":[]}],"handler":"toggleSyncType","icon":"none","label":"FTP","provider":"sync.ftp","screen":"ftp"},{"actions":[{"action":"sync_push","arguments":[{"default":null,"name":"delete_remote","required":false,"schema":{"anyOf":[{"type":"boolean"},{"type":"null"}]}}],"label":"上传","progress_fields":[]},{"action":"sync_pull","arguments":[{"default":null,"name":"remove_local","required":false,"schema":{"anyOf":[{"type":"boolean"},{"type":"null"}]}}],"label":"下载","progress_fields":[]},{"action":"sync_test","arguments":[],"label":"测试连接","progress_fields":[]},{"action":"get_sync_progress","arguments":[],"label":"同步进度","progress_fields":["status","direction","progress","files_done","files_total","bytes_done","bytes_total","current_file","speed","start_time","results","error","failed_items"]},{"action":"delete_all_cloud","arguments":[],"label":"清空云端","progress_fields":[]},{"action":"get_remote_orphans","arguments":[{"default":false,"name":"delete","required":false,"schema":{"type":"boolean"}}],"label":"孤儿文件","progress_fields":[]},{"action":"check_sync_status","arguments":[],"label":"检查同步状态","progress_fields":[]}],"handler":"toggleSyncType","icon":"none","label":"S3 兼容存储","provider":"sync.s3","screen":"s3"},{"actions":[{"action":"sync_push","arguments":[{"default":null,"name":"delete_remote","required":false,"schema":{"anyOf":[{"type":"boolean"},{"type":"null"}]}}],"label":"上传","progress_fields":[]},{"action":"sync_pull","arguments":[{"default":null,"name":"remove_local","required":false,"schema":{"anyOf":[{"type":"boolean"},{"type":"null"}]}}],"label":"下载","progress_fields":[]},{"action":"sync_test","arguments":[],"label":"测试连接","progress_fields":[]},{"action":"get_sync_progress","arguments":[],"label":"同步进度","progress_fields":["status","direction","progress","files_done","files_total","bytes_done","bytes_total","current_file","speed","start_time","results","error","failed_items"]},{"action":"delete_all_cloud","arguments":[],"label":"清空云端","progress_fields":[]},{"action":"get_remote_orphans","arguments":[{"default":false,"name":"delete","required":false,"schema":{"type":"boolean"}}],"label":"孤儿文件","progress_fields":[]},{"action":"check_sync_status","arguments":[],"label":"检查同步状态","progress_fields":[]}],"handler":"toggleSyncType","icon":"none","label":"Cloudflare R2","provider":"sync.r2","screen":"r2"},{"actions":[{"action":"sync_push","arguments":[{"default":null,"name":"delete_remote","required":false,"schema":{"anyOf":[{"type":"boolean"},{"type":"null"}]}}],"label":"上传","progress_fields":[]},{"action":"sync_pull","arguments":[{"default":null,"name":"remove_local","required":false,"schema":{"anyOf":[{"type":"boolean"},{"type":"null"}]}}],"label":"下载","progress_fields":[]},{"action":"sync_test","arguments":[],"label":"测试连接","progress_fields":[]},{"action":"get_sync_progress","arguments":[],"label":"同步进度","progress_fields":["status","direction","progress","files_done","files_total","bytes_done","bytes_total","current_file","speed","start_time","results","error","failed_items"]},{"action":"delete_all_cloud","arguments":[],"label":"清空云端","progress_fields":[]},{"action":"get_remote_orphans","arguments":[{"default":false,"name":"delete","required":false,"schema":{"type":"boolean"}}],"label":"孤儿文件","progress_fields":[]},{"action":"check_sync_status","arguments":[],"label":"检查同步状态","progress_fields":[]}],"handler":"toggleSyncType","icon":"none","label":"WebDAV","provider":"sync.webdav","screen":"webdav"},{"actions":[{"action":"lan_start","arguments":[{"default":null,"name":"port","required":false,"schema":{"anyOf":[{"type":"integer"},{"type":"null"}]}},{"default":null,"name":"secret","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}]}}],"label":"启用局域网互联","progress_fields":[]},{"action":"lan_stop","arguments":[],"label":"停止局域网互联","progress_fields":[]},{"action":"lan_get_status","arguments":[],"label":"局域网状态","progress_fields":[]},{"action":"lan_get_ip","arguments":[],"label":"局域网 IP","progress_fields":[]},{"action":"lan_set_allow_secret_config","arguments":[{"name":"enabled","required":true,"schema":{"type":"boolean"}}],"label":"允许密钥传输","progress_fields":[]}],"handler":"toggleLan","icon":"none","label":"局域网互联","provider":"transport.lan","screen":"lan"}],"schema_version":1};
 /* Runtime decoder for the generated bridge schema. */
 class BridgeDecodeError extends Error {
   constructor(method, message) {
@@ -48,12 +50,112 @@ function decodeBridgeResult(method, value) {
   return value;
 }
 
+/* Bounded host data for the existing screens; never selectors, markup or code. */
+let pluginUI = null;
+
+function samePluginUI(value, expected, field = 'ui') {
+  if (typeof value !== typeof expected || value === null || expected === null) {
+    if (value !== expected) throw new Error(field + ': unexpected type');
+    return;
+  }
+  if (typeof expected !== 'object') {
+    if (value !== expected) throw new Error(field + ': differs from fixed host data');
+    return;
+  }
+  if (Array.isArray(value) !== Array.isArray(expected)) throw new Error(field + ': unexpected type');
+  const keys = Object.keys(expected);
+  for (const key of Object.keys(value)) {
+    if (!Object.hasOwn(expected, key)) throw new Error(field + '.' + key + ': forbidden field');
+  }
+  for (const key of keys) {
+    if (!Object.hasOwn(value, key)) throw new Error(field + '.' + key + ': missing field');
+    samePluginUI(value[key], expected[key], field + '.' + key);
+  }
+}
+
+function installPluginUI(value) {
+  // Validate the whole snapshot before looking up nodes or binding host callbacks.
+  samePluginUI(value, fixedPluginUI);
+  const snapshot = JSON.parse(JSON.stringify(value));
+  const rows = {
+    qq: document.querySelector('[onclick="startQQNTWizard()"]'),
+    telegram: document.querySelector('[onclick="openTGImportDialog()"]'),
+    douyin: document.querySelector('[onclick="openDYImportDialog()"]'),
+    wechat: document.querySelector('[onclick="openWechatImportDialog()"]'),
+  };
+  const handlers = { startQQNTWizard, openTGImportDialog, openDYImportDialog, openWechatImportDialog };
+  const options = document.getElementById('s-sync-type').options;
+  for (const contribution of snapshot.contributions) {
+    if (Object.hasOwn(rows, contribution.icon)) {
+      const row = rows[contribution.icon];
+      row.querySelector('.import-name').textContent = contribution.label;
+      row.onclick = handlers[contribution.handler];
+    } else if (contribution.screen !== 'lan') {
+      const option = Array.from(options).find(item => item.value === contribution.screen);
+      option.textContent = contribution.label;
+    } else {
+      document.querySelector('[data-group="network"] .section-title').textContent = contribution.label;
+    }
+  }
+  pluginUI = snapshot;
+}
+
+async function loadPluginUI() {
+  // A read-only, same-origin host route, separate from Config and the Bridge ABI.
+  if (pluginUI) return;
+  const response = await fetch('/api/plugin-ui', { cache: 'no-store', credentials: 'same-origin' });
+  if (!response.ok) throw new Error('ui: host projection unavailable');
+  installPluginUI(await response.json());
+}
+
+function pluginUIAction(method) {
+  // Caller names are existing host literals; data can never introduce a new method.
+  const known = fixedPluginUI.contributions.flatMap(row => row.actions).some(row => row.action === method);
+  if (!known) return null;
+  if (!pluginUI) throw new Error('ui: host projection not ready');
+  return pluginUI.contributions.flatMap(row => row.actions).find(row => row.action === method);
+}
+
+function pluginArgumentMatches(value, schema) {
+  // Only the primitive schemas already present in the fixed Bridge are supported.
+  if (schema.anyOf) return schema.anyOf.some(item => pluginArgumentMatches(value, item));
+  if (schema.type === 'null') return value === null;
+  if (schema.type === 'integer') return Number.isInteger(value);
+  if (schema.type === 'number') return typeof value === 'number' && Number.isFinite(value);
+  return (schema.type === 'string' || schema.type === 'boolean') && typeof value === schema.type;
+}
+
+function checkPluginUIArguments(method, args) {
+  const action = pluginUIAction(method);
+  if (!action) return;
+  if (args.length > action.arguments.length) throw new Error('args: too many arguments');
+  action.arguments.forEach((argument, index) => {
+    if (index >= args.length && !argument.required) return;
+    if (!pluginArgumentMatches(args[index], argument.schema)) {
+      throw new Error('args.' + argument.name + ': invalid type');
+    }
+  });
+}
+
+function pluginUILabel(method) {
+  return pluginUIAction(method).label;
+}
+
+function pluginProgressValue(method, state, field) {
+  // Read the original field without replacing/filtering the public progress object.
+  if (!pluginUIAction(method).progress_fields.includes(field)) {
+    throw new Error('progress_fields.' + field + ': unavailable');
+  }
+  return state[field];
+}
+
 /* API helper */
 function api(method, ...args) {
   if (typeof pywebview === 'undefined' || !pywebview.api || typeof pywebview.api[method] !== 'function') {
     return null;
   }
   try {
+    checkPluginUIArguments(method, args);
     return decodeBridgeResult(method, pywebview.api[method](...args));
   }
   catch(e) { console.error('api error', method, e); return null; }
@@ -554,16 +656,17 @@ function cancelStorageMigration() {
 
 function toggleSyncType() {
   const t = document.getElementById('s-sync-type')?.value;
+  const selected = pluginUI?.contributions.find(row => row.provider.startsWith('sync.') && row.screen === t);
   const f = document.getElementById('s-sync-ftp');
   const s3 = document.getElementById('s-sync-s3');
   const r2 = document.getElementById('s-sync-r2');
   const wd = document.getElementById('s-sync-webdav');
   const o = document.getElementById('s-sync-options');
   const b = document.getElementById('s-sync-buttons');
-  if (f) f.style.display = t === 'ftp' ? 'block' : 'none';
-  if (s3) s3.style.display = t === 's3' ? 'block' : 'none';
-  if (r2) r2.style.display = t === 'r2' ? 'block' : 'none';
-  if (wd) wd.style.display = t === 'webdav' ? 'block' : 'none';
+  if (f) f.style.display = selected?.screen === 'ftp' ? 'block' : 'none';
+  if (s3) s3.style.display = selected?.screen === 's3' ? 'block' : 'none';
+  if (r2) r2.style.display = selected?.screen === 'r2' ? 'block' : 'none';
+  if (wd) wd.style.display = selected?.screen === 'webdav' ? 'block' : 'none';
   if (o) o.style.display = t ? 'block' : 'none';
   if (b) b.style.display = t ? 'block' : 'none';
 }
@@ -763,7 +866,7 @@ async function testSync() {
   btn.disabled = true; btn.textContent = '连接中...'; status.textContent = '';
   await api('save_settings', sync);
   const r = await api('sync_test');
-  btn.disabled = false; btn.textContent = '测试连接';
+  btn.disabled = false; btn.textContent = pluginUILabel('sync_test');
   status.textContent = r === 'ok' ? '连接成功' : '连接失败: ' + r;
 }
 
@@ -906,9 +1009,10 @@ async function doSyncWithProgress(method, title, progressSetting, doneSetting, b
     syncPollTimer = setInterval(async () => {
       const s = await api('get_sync_progress');
       if (!s || s.status === 'idle') return;
-      document.getElementById('sync-progress-file').textContent = s.current_file || '';
-      document.getElementById('sync-progress-bar').style.width = (s.progress || 0) + '%';
-      document.getElementById('sync-progress-pct').textContent = (s.progress || 0) + '%';
+      document.getElementById('sync-progress-file').textContent = pluginProgressValue('get_sync_progress', s, 'current_file') || '';
+      const progress = pluginProgressValue('get_sync_progress', s, 'progress');
+      document.getElementById('sync-progress-bar').style.width = (progress || 0) + '%';
+      document.getElementById('sync-progress-pct').textContent = (progress || 0) + '%';
       if (s.speed) {
         document.getElementById('sync-progress-speed').textContent = formatSpeed(s.speed);
       }
@@ -1179,9 +1283,10 @@ async function startDYImport() {
       }
       nullCount = 0;
 
-      document.getElementById('dy-import-bar').style.width = (s.progress || 0) + '%';
-      document.getElementById('dy-import-pct').textContent = (s.progress || 0) + '%';
-      document.getElementById('dy-import-msg').textContent = s.message || '';
+      const progress = pluginProgressValue('get_douyin_import_progress', s, 'progress');
+      document.getElementById('dy-import-bar').style.width = (progress || 0) + '%';
+      document.getElementById('dy-import-pct').textContent = (progress || 0) + '%';
+      document.getElementById('dy-import-msg').textContent = pluginProgressValue('get_douyin_import_progress', s, 'message') || '';
 
       if (s.status === 'done') {
         document.getElementById('dy-import-title').textContent = '导入完成';
@@ -1357,9 +1462,10 @@ async function startTGImport() {
       }
       nullCount = 0;
 
-      document.getElementById('tg-import-bar').style.width = (s.progress || 0) + '%';
-      document.getElementById('tg-import-pct').textContent = (s.progress || 0) + '%';
-      document.getElementById('tg-import-msg').textContent = s.message || '';
+      const progress = pluginProgressValue('get_tg_import_progress', s, 'progress');
+      document.getElementById('tg-import-bar').style.width = (progress || 0) + '%';
+      document.getElementById('tg-import-pct').textContent = (progress || 0) + '%';
+      document.getElementById('tg-import-msg').textContent = pluginProgressValue('get_tg_import_progress', s, 'message') || '';
       updateTgEta(s);
 
       if (s.status === 'done') {
@@ -1594,9 +1700,10 @@ async function startWechatImport() {
         return;
       }
       nullCount = 0;
-      document.getElementById('wechat-import-bar').style.width = (s.progress || 0) + '%';
-      document.getElementById('wechat-import-pct').textContent = (s.progress || 0) + '%';
-      document.getElementById('wechat-import-msg').textContent = s.message || '';
+      const progress = pluginProgressValue('get_wechat_import_progress', s, 'progress');
+      document.getElementById('wechat-import-bar').style.width = (progress || 0) + '%';
+      document.getElementById('wechat-import-pct').textContent = (progress || 0) + '%';
+      document.getElementById('wechat-import-msg').textContent = pluginProgressValue('get_wechat_import_progress', s, 'message') || '';
       if (s.status === 'done') {
         document.getElementById('wechat-import-title').textContent = '导入完成';
         if (wechatPollTimer) { clearInterval(wechatPollTimer); wechatPollTimer = null; }
@@ -1654,7 +1761,7 @@ function qqntGo(step) {
   document.getElementById('qqnt-prev').style.display = (step === 2) ? '' : 'none';
   const nextBtn = document.getElementById('qqnt-next');
   if (step === 1) { nextBtn.style.display = ''; nextBtn.textContent = '下一步'; }
-  else if (step === 2) { nextBtn.style.display = ''; nextBtn.textContent = '开始提取'; }
+  else if (step === 2) { nextBtn.style.display = ''; nextBtn.textContent = pluginUILabel('qqnt_start'); }
   else nextBtn.style.display = 'none';
 }
 
@@ -1785,9 +1892,10 @@ async function qqntStartExtract() {
   qqntPollTimer = setInterval(async () => {
     const s = await api('qqnt_get_progress');
     if (!s) return;
-    document.getElementById('qqnt-progress-bar').style.width = (s.progress || 0) + '%';
-    document.getElementById('qqnt-progress-pct').textContent = (s.progress || 0) + '%';
-    document.getElementById('qqnt-progress-msg').textContent = s.message || '';
+    const progress = pluginProgressValue('qqnt_get_progress', s, 'progress');
+    document.getElementById('qqnt-progress-bar').style.width = (progress || 0) + '%';
+    document.getElementById('qqnt-progress-pct').textContent = (progress || 0) + '%';
+    document.getElementById('qqnt-progress-msg').textContent = pluginProgressValue('qqnt_get_progress', s, 'message') || '';
     if (s.log) {
       const logEl = document.getElementById('qqnt-progress-log');
       logEl.textContent = s.log.join('\n');
@@ -2093,6 +2201,8 @@ async function dangerExec() {
 /* Init */
 let initRetries = 0;
 async function initSettings() {
+  try { await loadPluginUI(); }
+  catch (error) { console.error(error); return; }
   const s = await getSettings();
   if (s) {
     document.getElementById('s-hotkey')?.focus();

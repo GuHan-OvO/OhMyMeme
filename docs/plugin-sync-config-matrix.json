@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "port": "RemoteBackendPort",
+  "host_owns": ["configuration", "secrets", "durable_paths", "leases", "manifest", "order", "pull_commit", "hash_validation"],
+  "providers": {
+    "sync.ftp": {"record": "FtpConfig", "fields": ["host", "port", "user", "path", "tls", "tls_ca", "tls_protect_data"], "secrets": ["password"]},
+    "sync.s3": {"record": "S3Config", "fields": ["endpoint", "region", "bucket", "path", "addressing_style", "signature_version", "multipart_threshold", "multipart_part_size"], "secrets": ["access_key", "secret_key"]},
+    "sync.r2": {"record": "R2Config", "fields": ["account_id", "bucket", "path", "endpoint", "region", "addressing_style", "multipart_threshold", "multipart_part_size"], "secrets": ["access_key_id", "secret_access_key"]},
+    "sync.webdav": {"record": "WebDAVConfig", "fields": ["url", "user", "path", "timeout", "ca_file"], "secrets": ["password"]}
+  }
+}

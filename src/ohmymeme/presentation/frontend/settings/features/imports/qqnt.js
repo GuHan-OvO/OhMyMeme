@@ -10,7 +10,7 @@ function qqntGo(step) {
   document.getElementById('qqnt-prev').style.display = (step === 2) ? '' : 'none';
   const nextBtn = document.getElementById('qqnt-next');
   if (step === 1) { nextBtn.style.display = ''; nextBtn.textContent = '下一步'; }
-  else if (step === 2) { nextBtn.style.display = ''; nextBtn.textContent = '开始提取'; }
+  else if (step === 2) { nextBtn.style.display = ''; nextBtn.textContent = pluginUILabel('qqnt_start'); }
   else nextBtn.style.display = 'none';
 }
 
@@ -141,9 +141,10 @@ async function qqntStartExtract() {
   qqntPollTimer = setInterval(async () => {
     const s = await api('qqnt_get_progress');
     if (!s) return;
-    document.getElementById('qqnt-progress-bar').style.width = (s.progress || 0) + '%';
-    document.getElementById('qqnt-progress-pct').textContent = (s.progress || 0) + '%';
-    document.getElementById('qqnt-progress-msg').textContent = s.message || '';
+    const progress = pluginProgressValue('qqnt_get_progress', s, 'progress');
+    document.getElementById('qqnt-progress-bar').style.width = (progress || 0) + '%';
+    document.getElementById('qqnt-progress-pct').textContent = (progress || 0) + '%';
+    document.getElementById('qqnt-progress-msg').textContent = pluginProgressValue('qqnt_get_progress', s, 'message') || '';
     if (s.log) {
       const logEl = document.getElementById('qqnt-progress-log');
       logEl.textContent = s.log.join('\n');

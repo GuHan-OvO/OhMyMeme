@@ -15,6 +15,7 @@ import urllib.error
 from ohmymeme.services.sync import service as sync
 from ohmymeme.services.sync.backends import _WebDAVBackend
 from ohmymeme.services.sync.service import SyncError
+from ohmymeme_plugin_sync_webdav import clear_directory_cache
 
 
 class _FakeResp:
@@ -84,7 +85,7 @@ class TestWebDAVURL(unittest.TestCase):
         with self.assertRaises(SyncError):
             _make_backend(url="http:///dav")
 
-    def test_connect_non_numeric_timeout_defaults(self):
+    def test_connect_non_numeric_timeout_rejected_before_network(self):
         cfg = {
             "webdav_url": "https://host",
             "webdav_user": "u",
@@ -92,44 +93,43 @@ class TestWebDAVURL(unittest.TestCase):
             "webdav_path": "",
             "webdav_timeout": "abc",
         }
-        bk = _WebDAVBackend(cfg)
-        bk.connect()
-        self.assertEqual(bk.timeout, 30)
+        with self.assertRaisesRegex(SyncError, "webdav_timeout"):
+            _WebDAVBackend(cfg)
 
 
 class TestWebDAVFileExists(unittest.TestCase):
     def setUp(self):
         self.bk = _make_backend()
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_404_returns_false(self, urlopen):
         urlopen.side_effect = urllib.error.HTTPError("u", 404, "nf", {}, None)
         self.assertFalse(self.bk.file_exists("memes/a.png"))
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_207_returns_true(self, urlopen):
         urlopen.return_value = _FakeResp(207)
         self.assertTrue(self.bk.file_exists("memes/a.png"))
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_401_raises(self, urlopen):
         urlopen.side_effect = urllib.error.HTTPError("u", 401, "auth", {}, None)
         with self.assertRaises(SyncError):
             self.bk.file_exists("memes/a.png")
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_500_raises(self, urlopen):
         urlopen.side_effect = urllib.error.HTTPError("u", 500, "boom", {}, None)
         with self.assertRaises(SyncError):
             self.bk.file_exists("memes/a.png")
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_timeout_raises(self, urlopen):
         urlopen.side_effect = urllib.error.URLError("timed out")
         with self.assertRaises(SyncError):
             self.bk.file_exists("memes/a.png")
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_405_falls_back_to_head(self, urlopen):
         def fake_open(req, timeout=30):
             if req.method == "PROPFIND":
@@ -139,7 +139,7 @@ class TestWebDAVFileExists(unittest.TestCase):
         urlopen.side_effect = fake_open
         self.assertTrue(self.bk.file_exists("memes/a.png"))
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_405_head_404_returns_false(self, urlopen):
         def fake_open(req, timeout=30):
             if req.method == "PROPFIND":
@@ -162,7 +162,7 @@ class TestWebDAVUpload(unittest.TestCase):
     def tearDown(self):
         self.local.unlink(missing_ok=True)
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_3xx_returns_false(self, urlopen):
         for code in (301, 302, 303):
             urlopen.side_effect = urllib.error.HTTPError(
@@ -170,7 +170,7 @@ class TestWebDAVUpload(unittest.TestCase):
             )
             self.assertFalse(self.bk.upload_file(self.local, "memes/a.png"))
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_sets_content_type(self, urlopen):
         seen = {}
 
@@ -192,7 +192,7 @@ class TestWebDAVDownload(unittest.TestCase):
         self.tmp_dir = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp_dir, ignore_errors=True)
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_download_streams_and_replaces(self, urlopen):
         urlopen.return_value = _FakeResp(200, b"0123456789")
         target = self.tmp_dir / "a.png"
@@ -200,7 +200,7 @@ class TestWebDAVDownload(unittest.TestCase):
         self.assertEqual(target.read_bytes(), b"0123456789")
         self.assertFalse(Path(str(target) + ".tmp").exists())
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_download_failure_cleans_tmp(self, urlopen):
         urlopen.side_effect = urllib.error.URLError("boom")
         target = self.tmp_dir / "a.png"
@@ -210,20 +210,20 @@ class TestWebDAVDownload(unittest.TestCase):
 
 
 class TestWebDAVTestConnection(unittest.TestCase):
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_ok_on_207(self, urlopen):
         urlopen.return_value = _FakeResp(207)
         bk = _make_backend(path="memes")
         bk.test_connection()
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_401_raises(self, urlopen):
         urlopen.side_effect = urllib.error.HTTPError("u", 401, "auth", {}, None)
         bk = _make_backend(path="memes")
         with self.assertRaises(SyncError):
             bk.test_connection()
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_404_raises(self, urlopen):
         urlopen.side_effect = urllib.error.HTTPError("u", 404, "nf", {}, None)
         bk = _make_backend(path="memes")
@@ -231,7 +231,7 @@ class TestWebDAVTestConnection(unittest.TestCase):
             bk.test_connection()
         self.assertIn("首次上传将自动创建", str(ctx.exception))
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_timeout_raises(self, urlopen):
         urlopen.side_effect = urllib.error.URLError("timed out")
         bk = _make_backend(path="memes")
@@ -257,7 +257,7 @@ class TestSyncTestWebDAV(unittest.TestCase):
 
 
 class TestWebDAVList(unittest.TestCase):
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_relative_root_href_is_not_returned_as_a_child(self, urlopen):
         # Given: a Depth-1 response containing the requested collection itself
         body = (
@@ -275,7 +275,7 @@ class TestWebDAVList(unittest.TestCase):
         # Then: only its actual child file is returned
         self.assertEqual(names, ["orphan.png"])
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_delete_404_is_not_counted_as_a_remote_removal(self, urlopen):
         # Given: a remote delete whose target disappeared before DELETE completed
         urlopen.side_effect = urllib.error.HTTPError("u", 404, "gone", {}, None)
@@ -287,7 +287,7 @@ class TestWebDAVList(unittest.TestCase):
         # Then: the caller can distinguish a missing target from a confirmed delete
         self.assertFalse(removed)
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_unquotes_href(self, urlopen):
         body = (
             b'<?xml version="1.0"?><D:multistatus xmlns:D="DAV:">'
@@ -299,14 +299,14 @@ class TestWebDAVList(unittest.TestCase):
         bk = _make_backend(url="https://host/dav")
         self.assertEqual(bk.list_files("memes"), ["a b.png", "表情.png"])
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_invalid_xml_raises(self, urlopen):
         urlopen.return_value = _FakeResp(207, b"<not-xml")
         bk = _make_backend(url="https://host/dav")
         with self.assertRaises(SyncError):
             bk.list_files("memes")
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_405_raises(self, urlopen):
         urlopen.side_effect = urllib.error.HTTPError("u", 405, "method", {}, None)
         bk = _make_backend(url="https://host/dav")
@@ -317,15 +317,15 @@ class TestWebDAVList(unittest.TestCase):
 class TestWebDAVEnsureDir(unittest.TestCase):
     def setUp(self):
         # 进程级 `_dav_dirs` 目录缓存会跨测试残留，逐个测试清空以保证独立
-        sync._dav_dirs.clear()
+        clear_directory_cache()
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_405_ok(self, urlopen):
         urlopen.side_effect = urllib.error.HTTPError("u", 405, "exists", {}, None)
         bk = _make_backend()
         self.assertTrue(bk.ensure_remote_dir("memes"))
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_second_call_skips_mkcol(self, urlopen):
         urlopen.side_effect = urllib.error.HTTPError("u", 405, "exists", {}, None)
         bk = _make_backend()
@@ -335,7 +335,7 @@ class TestWebDAVEnsureDir(unittest.TestCase):
         self.assertTrue(bk.ensure_remote_dir("memes"))
         self.assertEqual(urlopen.call_count, 1)
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_success_also_caches_and_single_mkcol(self, urlopen):
         # RFC 4918：MKCOL 成功返回 201 Created
         urlopen.return_value = _FakeResp(201)
@@ -346,7 +346,7 @@ class TestWebDAVEnsureDir(unittest.TestCase):
         self.assertTrue(bk.ensure_remote_dir("memes"))
         self.assertEqual(urlopen.call_count, 1)
 
-    @patch("src.sync.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_clear_cache_retriggers_mkcol(self, urlopen):
         """push 开始时清空缓存后，ensure_remote_dir 会再次发 MKCOL（重建已删目录）。"""
         # 两次 URL 计调用次数用 405（"已存在"）路径进缓存
@@ -358,12 +358,12 @@ class TestWebDAVEnsureDir(unittest.TestCase):
         self.assertTrue(bk.ensure_remote_dir("memes"))
         self.assertEqual(urlopen.call_count, 1)
         # 模拟 push 开始清空进程级缓存
-        sync._dav_dirs.clear()
+        clear_directory_cache()
         # 清空后再次确保：应重新发 MKCOL（远端目录可能已被删除）
         self.assertTrue(bk.ensure_remote_dir("memes"))
         self.assertEqual(urlopen.call_count, 2)
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_301_existing_collection_ok(self, urlopen):
         # MKCOL 301，PROPFIND 复核确认集合存在 → 幂等继续
         urlopen.side_effect = [
@@ -373,7 +373,7 @@ class TestWebDAVEnsureDir(unittest.TestCase):
         bk = _make_backend()
         self.assertTrue(bk.ensure_remote_dir("memes"))
 
-    @patch("ohmymeme.services.sync.backends.urllib.request.urlopen")
+    @patch("ohmymeme_plugin_sync_webdav.urllib.request.urlopen")
     def test_301_missing_collection_raises(self, urlopen):
         # MKCOL 301，PROPFIND 复核确认集合不存在 → 判失败
         urlopen.side_effect = [

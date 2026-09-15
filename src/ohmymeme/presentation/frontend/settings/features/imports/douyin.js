@@ -86,9 +86,10 @@ async function startDYImport() {
       }
       nullCount = 0;
 
-      document.getElementById('dy-import-bar').style.width = (s.progress || 0) + '%';
-      document.getElementById('dy-import-pct').textContent = (s.progress || 0) + '%';
-      document.getElementById('dy-import-msg').textContent = s.message || '';
+      const progress = pluginProgressValue('get_douyin_import_progress', s, 'progress');
+      document.getElementById('dy-import-bar').style.width = (progress || 0) + '%';
+      document.getElementById('dy-import-pct').textContent = (progress || 0) + '%';
+      document.getElementById('dy-import-msg').textContent = pluginProgressValue('get_douyin_import_progress', s, 'message') || '';
 
       if (s.status === 'done') {
         document.getElementById('dy-import-title').textContent = '导入完成';

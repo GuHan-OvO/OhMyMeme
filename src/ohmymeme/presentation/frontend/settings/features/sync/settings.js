@@ -1,15 +1,16 @@
 function toggleSyncType() {
   const t = document.getElementById('s-sync-type')?.value;
+  const selected = pluginUI?.contributions.find(row => row.provider.startsWith('sync.') && row.screen === t);
   const f = document.getElementById('s-sync-ftp');
   const s3 = document.getElementById('s-sync-s3');
   const r2 = document.getElementById('s-sync-r2');
   const wd = document.getElementById('s-sync-webdav');
   const o = document.getElementById('s-sync-options');
   const b = document.getElementById('s-sync-buttons');
-  if (f) f.style.display = t === 'ftp' ? 'block' : 'none';
-  if (s3) s3.style.display = t === 's3' ? 'block' : 'none';
-  if (r2) r2.style.display = t === 'r2' ? 'block' : 'none';
-  if (wd) wd.style.display = t === 'webdav' ? 'block' : 'none';
+  if (f) f.style.display = selected?.screen === 'ftp' ? 'block' : 'none';
+  if (s3) s3.style.display = selected?.screen === 's3' ? 'block' : 'none';
+  if (r2) r2.style.display = selected?.screen === 'r2' ? 'block' : 'none';
+  if (wd) wd.style.display = selected?.screen === 'webdav' ? 'block' : 'none';
   if (o) o.style.display = t ? 'block' : 'none';
   if (b) b.style.display = t ? 'block' : 'none';
 }

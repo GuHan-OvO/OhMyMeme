@@ -110,7 +110,17 @@ npx vite build     # 构建 Vue 前端 → src/webui/dist/ohmymeme.js
 
 设置窗口仍为 vanilla 前端（`src/webui/settings.*`，独立 webview，无需构建）。`src/webui` 与 `src/resources` 是源码运行时静态资源，不是 Python 包。冻结构建会将它们分别放入 `ohmymeme/webui` 与 `ohmymeme/resources`，并将 `config/offsets.json` 放入 `ohmymeme/config/offsets.json`。
 
+### 同步与 LAN 实现包
+
+`plugins/sync.ftp`、`plugins/sync.s3`、`plugins/sync.r2`、`plugins/sync.webdav` 分别持有真实 FTP/FTPS、S3/OSS、R2 和 WebDAV 网络实现。四包的 `ohmymeme.plugins.v1` 入口分别为 `sync.ftp = ohmymeme_plugin_sync_ftp:create_plugin`、`sync.s3 = ohmymeme_plugin_sync_s3:create_plugin`、`sync.r2 = ohmymeme_plugin_sync_r2:create_plugin`、`sync.webdav = ohmymeme_plugin_sync_webdav:create_plugin`。宿主 `RemoteBackendPort` 适配器接收旧配置，验证后只投递不可变配置 record 与操作限域的密钥读取器；每个线程/连接有独立实例，关闭后撤销密钥并清理临时文件。上传和下载通过宿主临时投影，插件不接收持久缓存路径。R2 仅依赖 S3 包的纯网络代码，不通过 S3 provider 选路，禁用 S3 不会改选或替代 R2。
+
+`plugins/transport.lan` 的入口为 `transport.lan = ohmymeme_plugin_lan:create_plugin`，只负责 socket 字节 I/O、UDP 发现与多接口源地址选择。宿主保留 LAN v1 帧限额/解析、HMAC/PBKDF2/AES-GCM、重放策略、设备审批、命令白名单、文件校验和持久化。listeners、sessions 和等待任务先注册到 `OperationCoordinator`；关闭 socket 会唤醒阻塞读，挂起会话在 deadline 报告中保持可见，真正退出前不会释放宿主状态 lease。启停不持久化，默认不分享密钥。
+
+`Container.sync`、`Container.lan` 与旧模块入口实际经 registry 选择这些包；缺失、禁用、描述符/入口不兼容均拒绝，固定 Bridge/UI 不变。配置错误（包括 bool 冒充 int）在加载 provider 或访问网络前报告具体字段；不再把无效超时/寻址配置悄悄转换为默认值。`docs/plugin-{sync,lan}-config-matrix.json` 与 `scripts/plugin_{sync,lan}.py` 用真实包和声明的回环 fixture 校验此边界。五包可在独立环境执行 `mise exec -- python -m pip install --no-deps --no-build-isolation -e plugins/sync.ftp -e plugins/sync.s3 -e plugins/sync.r2 -e plugins/sync.webdav -e plugins/transport.lan`；未增加第三方依赖或修改锁定版本，九包 frozen 收集仍留 Todo13。
+
 ### 固定插件兼容边界
+
+设置页通过只读 `/api/plugin-ui` 消费 `src/webui/plugin-ui.json` 的九个固定宿主 UI 投影。`api/ui_contributions.py` 逐字段严格校验既有 label/icon/screen/handler、action 参数 schema 与进度映射，`initSettings` 验证整份数据后才绑定原来源行和同步面板；SVG、布局、取消/结果和 Bridge 公开签名不变。UI 数据由 `scripts/plugin_ui_dispatch.py --write-host --actions docs/plugin-action-matrix.json` 从 Todo6 固定矩阵生成，再运行 `mise exec -- npm run build:settings` 拼接；`--check` 同时核对矩阵、schema、fixture 和产物是否过期。不加载插件 UI 代码，不支持额外字段、HTML/JS、动态 Bridge/DOM 注入；UI 记录不进入 Config，手机版 QQ/ADB 仍在边界外。
 
 桌面 Bridge 的四个导入入口（QQNT、Telegram、抖音、微信）经宿主 `HostDispatcher`、`PluginRegistry` 与 `HostActionAdapter` 调度，保留原方法、参数默认值、成功/取消对象及进度字段。当前内置适配器继续调用已有实现；显式缺失、禁用或不兼容的 provider 仅返回该方法的旧失败哨兵，不改用其他 provider。同步与 LAN 保持宿主固定动作映射，手机版 QQ/ADB 不参与插件分派。
 

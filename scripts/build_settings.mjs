@@ -98,7 +98,9 @@ async function assembleRuntime() {
   const sources = await Promise.all(
     settingsModules.map((name) => readFile(resolve(sourceRoot, name), "utf8")),
   )
-  await writeFile(runtimeEntry, sources.join("\n"), "utf8")
+  const pluginUI = JSON.parse(await readFile(resolve(projectRoot, "src/webui/plugin-ui.json"), "utf8"))
+  const fixedData = `/* Generated host-owned UI data; no plugin code. */\nconst fixedPluginUI = ${JSON.stringify(pluginUI)};\n`
+  await writeFile(runtimeEntry, fixedData + sources.join("\n"), "utf8")
 }
 
 if (!(await exists(resolve(sourceRoot, settingsModules[0])))) {

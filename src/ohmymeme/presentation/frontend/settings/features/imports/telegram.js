@@ -129,9 +129,10 @@ async function startTGImport() {
       }
       nullCount = 0;
 
-      document.getElementById('tg-import-bar').style.width = (s.progress || 0) + '%';
-      document.getElementById('tg-import-pct').textContent = (s.progress || 0) + '%';
-      document.getElementById('tg-import-msg').textContent = s.message || '';
+      const progress = pluginProgressValue('get_tg_import_progress', s, 'progress');
+      document.getElementById('tg-import-bar').style.width = (progress || 0) + '%';
+      document.getElementById('tg-import-pct').textContent = (progress || 0) + '%';
+      document.getElementById('tg-import-msg').textContent = pluginProgressValue('get_tg_import_progress', s, 'message') || '';
       updateTgEta(s);
 
       if (s.status === 'done') {

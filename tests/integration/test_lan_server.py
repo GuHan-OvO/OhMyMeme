@@ -18,7 +18,7 @@ from ohmymeme.core.database import MemeDB
 def lan_env(tmp_path):
     cfg = Config(tmp_path / "config.json")
     cfg.set("cache_dir", str(tmp_path / "cache"))
-    cfg.set("lan_port", 17990)
+    cfg.set("lan_port", 0)
     db = MemeDB(tmp_path / "test.db")
     old_cfg = config_module._config
     old_db = database._db
@@ -27,7 +27,7 @@ def lan_env(tmp_path):
     database._db = db
     lan.stop()
     lan.set_allow_secret_config(False)
-    assert lan.start(17990, "test-secret")
+    assert lan.start(0, "test-secret")
     yield cfg
     lan.stop()
     lan.set_confirm_callback(old_callback)
@@ -74,10 +74,10 @@ def handshake(sock, secret="test-secret"):
     return lan.lan_protocol.derive_key(secret)
 
 
-def connect(port):
+def connect(port=None):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(2)
-    sock.connect(("127.0.0.1", port))
+    sock.connect(("127.0.0.1", lan.get_status()["port"] if port is None else port))
     return sock
 
 
@@ -87,7 +87,7 @@ def test_rejected_connection_cannot_dispatch(lan_env):
 
     old = lan.set_confirm_callback(reject)
     try:
-        sock = connect(17990)
+        sock = connect()
         key = handshake(sock)
         sock.sendall(frame(key, {"cmd": "device_info", "name": "blocked"}))
         assert recv_frame(sock, key)["approved"] is False
@@ -99,7 +99,7 @@ def test_rejected_connection_cannot_dispatch(lan_env):
 
 
 def test_replayed_mutation_is_rejected_but_ping_remains_compatible(lan_env):
-    sock = connect(17990)
+    sock = connect()
     key = handshake(sock)
     payload = frame(key, {"cmd": "send_config", "config": {"theme": "light"}})
     sock.sendall(payload)
@@ -112,8 +112,8 @@ def test_replayed_mutation_is_rejected_but_ping_remains_compatible(lan_env):
 
 
 def test_replay_identity_does_not_cross_sessions(lan_env):
-    first = connect(17990)
-    second = connect(17990)
+    first = connect()
+    second = connect()
     first_key = handshake(first)
     second_key = handshake(second)
     payload = frame(first_key, {"cmd": "send_config", "config": {"theme": "light"}})
@@ -141,8 +141,8 @@ def test_device_confirmation_isolated_per_connection(lan_env):
     old = lan.set_confirm_callback(defer)
     first = second = None
     try:
-        first = connect(17990)
-        second = connect(17990)
+        first = connect()
+        second = connect()
         first_key = handshake(first)
         second_key = handshake(second)
         first.sendall(frame(first_key, {"cmd": "device_info", "name": "first"}))
@@ -186,14 +186,14 @@ def test_late_confirmation_does_not_authorize_next_connection(lan_env, monkeypat
     old = lan.set_confirm_callback(defer)
     first = second = None
     try:
-        first = connect(17990)
+        first = connect()
         first_key = handshake(first)
         first.sendall(frame(first_key, {"cmd": "device_info", "name": "first"}))
         assert recv_frame(first, first_key)["approved"] is False
         assert ready.wait(1)
         first.close()
 
-        second = connect(17990)
+        second = connect()
         second_key = handshake(second)
         second.sendall(frame(second_key, {"cmd": "device_info", "name": "second"}))
         assert recv_frame(second, second_key)["approved"] is False

@@ -1,642 +1,295 @@
-"""同步远端后端适配器。"""
-
-import logging
-import os
 import shutil
-import ssl
-import urllib.error
-import urllib.request
-from ftplib import FTP, FTP_TLS, error_perm
+import sys
+import tempfile
+from functools import wraps
 from pathlib import Path
-from urllib.parse import quote, unquote, urlparse
 
-logger = logging.getLogger(__name__)
+from ohmymeme.core.assets import is_safe_filename
+from ohmymeme.core.plugins.manifest import canonical_descriptor
+from ohmymeme.core.plugins.network_config import (
+    SYNC_CONFIGS,
+    SYNC_SECRETS,
+    SyncError,
+    validate_sync_config,
+)
+from ohmymeme.core.plugins.policy import PluginSecretPort, ScopedSecrets, redact
+from ohmymeme.core.plugins.registry import PluginRegistry
 
 
-class SyncError(Exception):
-    pass
+def _redact_exception(error, secrets):
+    # Keep exception classes/codes, including structured SDK errors and URL reasons.
+    seen = set()
+
+    def clean(value):
+        if isinstance(value, BaseException):
+            if id(value) in seen:
+                return value
+            seen.add(id(value))
+            value.args = clean(value.args)
+            value.__dict__.update(clean(value.__dict__))
+            for name in ("strerror", "filename", "filename2"):
+                text = getattr(value, name, None)
+                if isinstance(text, str):
+                    setattr(value, name, redact(text, secrets))
+            value.__cause__ = None
+            value.__context__ = None
+            value.__traceback__ = None
+            return value
+        if isinstance(value, dict):
+            return {key: clean(item) for key, item in redact(value, secrets).items()}
+        if isinstance(value, (tuple, list)):
+            return type(value)(clean(item) for item in value)
+        return redact(value, secrets)
+
+    return clean(error)
+
+
+def _protect_errors(method):
+    # Only explicitly decorated host methods cross this boundary; no dynamic action API.
+    @wraps(method)
+    def protected(self, *args, **kwargs):
+        port = vars(self).get("_secret_port")
+        secrets = port._values() if port is not None else None
+        try:
+            return method(self, *args, **kwargs)
+        except Exception as error:
+            if secrets is None:
+                # Construction may have created the scope after entering this guard.
+                port = vars(self).get("_secret_port")
+                secrets = port._values() if port is not None else ()
+            try:
+                safe = _redact_exception(error, secrets)
+            finally:
+                if port is not None and vars(self).get("_closed"):
+                    port._secrets.clear()
+            raise safe.with_traceback(None) from None
+
+    return protected
+
+
+def configuration(cfg, provider_id):
+    # Project legacy/namespaced values into a non-global, secret-free record.
+    kind = provider_id.split(".")[1]
+
+    def read(key, default, secret=False):
+        legacy = f"{kind}_{key}"
+        getter = getattr(cfg, "get_plugin_value", None)
+        if callable(getter):
+            return getter(provider_id, key, legacy, default=default, secret=secret)
+        return cfg.get(legacy, default)
+
+    record = SYNC_CONFIGS[provider_id]
+    values = {k: read(k, v) for k, v in record._field_defaults.items()}
+    if provider_id == "sync.ftp":
+        if type(values["tls"]) is not bool:
+            raise SyncError("ftp_tls: expected bool")
+        values["tls"] = values["tls"] or cfg.get("sync_type") == "ftps"
+    snapshot = validate_sync_config(provider_id, record(**values))
+    secrets = {}
+    for key in SYNC_SECRETS[provider_id]:
+        value = read(key, "", secret=True)
+        if type(value) is not str:
+            raise SyncError(f"{kind}_{key}: expected str")
+        if provider_id == "sync.r2" and not value:
+            raise SyncError(f"{kind}_{key}: not configured")
+        secrets[key] = value
+    return snapshot, secrets
 
 
 class _SyncBackend:
-    """后端基类，定义同步所需的底层操作"""
+    provider_id = None
 
+    @_protect_errors
+    def __init__(self, cfg, registry=None, enabled=None):
+        # Validate before provider loading, even when the selected provider is absent.
+        snapshot, secrets = configuration(cfg, self.provider_id)
+        self._closed = False
+        self._secret_port = PluginSecretPort(secrets)
+        scoped = ScopedSecrets(
+            self._secret_port, self.provider_id, lambda: self._closed
+        )
+        self._temporary = None
+        registry = (
+            registry
+            if registry is not None
+            else PluginRegistry(tuple(canonical_descriptor(p) for p in SYNC_CONFIGS))
+        )
+        try:
+            provider = registry.require(self.provider_id, enabled)
+            self._backend = provider.create_backend(snapshot, scoped)
+        except Exception as error:
+            self._closed = True
+            raise SyncError(str(error)) from error
+
+    @_protect_errors
     def connect(self):
-        raise NotImplementedError
+        # Failed connects cannot retain usable credentials or partial connections.
+        if self._closed:
+            raise SyncError("operation scope is closed")
+        try:
+            self._backend.connect()
+        except Exception as error:
+            self.close()
+            raise SyncError(str(error)) from error
 
-    def ensure_remote_dir(self, path: str):
-        raise NotImplementedError
+    def _stage(self):
+        # Persistent host paths never enter a network implementation.
+        if self._closed:
+            raise SyncError("operation scope is closed")
+        if self._temporary is None:
+            self._temporary = tempfile.TemporaryDirectory(prefix="ohmm-sync-")
+        return Path(self._temporary.name) / "payload"
 
-    def upload_file(self, local_path: Path, remote_path: str) -> bool:
-        raise NotImplementedError
+    @_protect_errors
+    def upload_file(self, local_path, remote_path):
+        # Copy each host asset into the backend's independent operation workspace.
+        try:
+            staged = self._stage()
+            shutil.copyfile(local_path, staged)
+            return self._boolean(
+                self._backend.upload_file(staged, remote_path), "upload_file"
+            )
+        except OSError:
+            return False
+        finally:
+            if self._temporary is not None:
+                (Path(self._temporary.name) / "payload").unlink(missing_ok=True)
 
-    def download_file(self, remote_path: str, local_path: Path) -> bool:
-        raise NotImplementedError
+    @_protect_errors
+    def download_file(self, remote_path, local_path):
+        # Only successful byte transfers are projected back to the host destination.
+        try:
+            staged = self._stage()
+            if not self._boolean(
+                self._backend.download_file(remote_path, staged), "download_file"
+            ):
+                return False
+            local_path = Path(local_path)
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(staged, local_path)
+            return True
+        except OSError:
+            return False
+        finally:
+            if self._temporary is not None:
+                (Path(self._temporary.name) / "payload").unlink(missing_ok=True)
 
-    def file_exists(self, path: str) -> bool:
-        raise NotImplementedError
+    @_protect_errors
+    def list_files(self, path):
+        # Remote names are untrusted; unsafe children must never reach deletion code.
+        self._ensure_open()
+        names = self._backend.list_files(path)
+        if not isinstance(names, list):
+            raise SyncError("list_files: expected list")
+        return [name for name in names if is_safe_filename(name)]
 
-    def delete_file(self, path: str) -> bool:
-        raise NotImplementedError
+    def _boolean(self, value, method):
+        # Malformed truthy provider results cannot be treated as committed transfers.
+        if type(value) is not bool:
+            raise SyncError(f"{method}: expected bool")
+        return value
 
-    def list_files(self, path: str) -> list:
-        """列出远端目录下的文件名（仅顶层）。不支持时抛 NotImplementedError。"""
-        raise NotImplementedError
+    def _ensure_open(self):
+        # No closed adapter can issue a new network operation.
+        if self._closed:
+            raise SyncError("operation scope is closed")
 
+    @_protect_errors
+    def ensure_remote_dir(self, path):
+        # Directory semantics stay provider-specific.
+        self._ensure_open()
+        return self._backend.ensure_remote_dir(path)
+
+    @_protect_errors
+    def file_exists(self, path):
+        # Preserve false versus exception without selecting a fallback provider.
+        self._ensure_open()
+        return self._boolean(self._backend.file_exists(path), "file_exists")
+
+    @_protect_errors
+    def delete_file(self, path):
+        # Only the host's validated remote path is supplied to the provider.
+        self._ensure_open()
+        return self._boolean(self._backend.delete_file(path), "delete_file")
+
+    @_protect_errors
     def test_connection(self):
-        """连接后做一次真实可达性/权限探测（可选）。失败抛 SyncError。"""
+        # Connection probes retain their existing public diagnostics, without secrets.
+        self._ensure_open()
+        return self._backend.test_connection()
 
+    def __getattr__(self, name):
+        # Preserve published backend operations and the legacy inspection attributes.
+        return getattr(self._backend, name)
+
+    @_protect_errors
     def close(self):
-        raise NotImplementedError
-
-
-# ─── FTP 后端 ───
+        # Closing revokes operation secrets and removes only host-owned staging.
+        if self._closed:
+            return
+        primary = sys.exception()
+        failure = None
+        self._closed = True
+        try:
+            self._backend.close()
+        except Exception as error:
+            failure = error
+        finally:
+            self._secret_port._secrets.clear()
+            if self._temporary is not None:
+                try:
+                    self._temporary.cleanup()
+                except Exception as error:
+                    if failure is None:
+                        failure = error
+                else:
+                    self._temporary = None
+        if failure is not None:
+            if primary is None:
+                raise failure
+            primary.add_note("Sync backend cleanup failed while handling this error")
 
 
 class _FtpBackend(_SyncBackend):
-    def __init__(self, cfg):
-        self.cfg = cfg
-        self.ftp = None
-
-    def connect(self):
-        host = self.cfg.get("ftp_host", "")
-        port = self.cfg.get("ftp_port", 21)
-        user = self.cfg.get("ftp_user", "")
-        password = self.cfg.get("ftp_password", "")
-
-        if not host:
-            raise SyncError("FTP host not configured")
-
-        try:
-            use_tls = (
-                bool(self.cfg.get("ftp_tls", False))
-                or self.cfg.get("sync_type", "") == "ftps"
-            )
-            if use_tls:
-                ca_file = self.cfg.get("ftp_tls_ca", "")
-                context = ssl.create_default_context(cafile=ca_file or None)
-                ftp = FTP_TLS(context=context)
-            else:
-                ftp = FTP()
-            ftp.connect(host, int(port), timeout=15)
-            if user:
-                ftp.login(user, password)
-            else:
-                ftp.login()
-            ftp.encoding = "utf-8"
-            if use_tls and self.cfg.get("ftp_tls_protect_data", True):
-                ftp.prot_p()
-            self.ftp = ftp
-        except Exception as e:
-            raise SyncError("FTP connect failed: %s" % e)
-
-    def ensure_remote_dir(self, path):
-        parts = path.strip("/").split("/")
-        sofar = ""
-        for p in parts:
-            if not p:
-                continue
-            sofar += "/" + p
-            try:
-                self.ftp.cwd(sofar)
-            except error_perm:
-                self.ftp.mkd(sofar)
-                self.ftp.cwd(sofar)
-
-    def upload_file(self, local_path, remote_path):
-        try:
-            with open(local_path, "rb") as f:
-                self.ftp.storbinary("STOR %s" % remote_path, f)
-            return True
-        except Exception as e:
-            logger.warning("upload failed %s: %s", remote_path, e)
-            return False
-
-    def download_file(self, remote_path, local_path):
-        try:
-            local_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(local_path, "wb") as f:
-                self.ftp.retrbinary("RETR %s" % remote_path, f.write)
-            return True
-        except Exception as e:
-            logger.warning("download failed %s: %s", remote_path, e)
-            return False
-
-    def file_exists(self, path):
-        try:
-            self.ftp.size(path)
-            return True
-        except error_perm:
-            return False
-        except Exception:
-            return False
-
-    def delete_file(self, path):
-        try:
-            self.ftp.delete(path)
-            return True
-        except error_perm as e:
-            if "550" in str(e):  # 550说明文件不存在，视为删除成功
-                return True
-            return False
-        except Exception as e:
-            logger.warning("delete failed %s: %s", path, e)
-            return False
-
-    def list_files(self, path):
-        try:
-            names = []
-            self.ftp.retrlines("NLST %s" % path, names.append)
-            return [n.split("/")[-1] for n in names if n and not n.endswith("/")]
-        except Exception as e:
-            logger.warning("list_files %s failed: %s", path, e)
-            raise
-
-    def close(self):
-        if self.ftp is not None:
-            try:
-                self.ftp.quit()
-            except Exception:
-                pass
-            self.ftp = None
-
-
-# ─── S3 后端（兼容 R2 / MinIO） ───
+    provider_id = "sync.ftp"
 
 
 class _S3Backend(_SyncBackend):
-    def __init__(self, cfg):
-        self.cfg = cfg
-        self.client = None
-        self.bucket = ""
-        self.prefix = ""
-        self.multipart_threshold = 8 * 1024 * 1024
-        self.multipart_part_size = 5 * 1024 * 1024
-
-    def connect(self):
-        """连接 S3 后端，创建 boto3 客户端"""
-        endpoint = self.cfg.get("s3_endpoint", "")
-        region = self.cfg.get("s3_region", "")
-        access_key = self.cfg.get("s3_access_key", "")
-        secret_key = self.cfg.get("s3_secret_key", "")
-        bucket = self.cfg.get("s3_bucket", "")
-
-        if not endpoint or not bucket:
-            raise SyncError("S3 endpoint or bucket not configured")
-
-        import boto3
-        from botocore.config import Config as BotoConfig
-
-        kwargs = {"endpoint_url": endpoint}
-        if access_key and secret_key:
-            kwargs["aws_access_key_id"] = access_key
-            kwargs["aws_secret_access_key"] = secret_key
-        if region:
-            kwargs["region_name"] = region
-
-        try:
-            addressing = self.cfg.get("s3_addressing_style", "virtual")
-            if addressing not in ("virtual", "path"):
-                addressing = "virtual"
-            sig_ver = self.cfg.get("s3_signature_version", "s3")
-            if sig_ver not in ("s3", "s3v4"):
-                sig_ver = "s3"
-            config = BotoConfig(
-                signature_version=sig_ver,
-                s3={"payload_signing_enabled": False, "addressing_style": addressing},
-            )
-            self.client = boto3.client("s3", config=config, **kwargs)
-            self.bucket = bucket
-            prefix = self.cfg.get("s3_path", "").strip("/")
-            self.prefix = (prefix + "/") if prefix else ""
-            self.multipart_threshold = max(
-                5 * 1024 * 1024,
-                int(self.cfg.get("s3_multipart_threshold", 8 * 1024 * 1024)),
-            )
-            self.multipart_part_size = max(
-                5 * 1024 * 1024,
-                int(self.cfg.get("s3_multipart_part_size", 5 * 1024 * 1024)),
-            )
-        except Exception as e:
-            raise SyncError("S3 connect failed: %s" % e)
-
-    def _key(self, remote_path):
-        return self.prefix + remote_path.lstrip("/")
-
-    def ensure_remote_dir(self, path):
-        pass
-
-    def upload_file(self, local_path, remote_path):
-        # V2 签名下 boto3 put_object 不走 chunked 编码，直接用 SDK 上传
-        # （presigned URL + urllib 会因多出的 Content-Type 与签名不匹配，OSS 拒绝）
-        try:
-            key = self._key(remote_path)
-            if local_path.stat().st_size < self.multipart_threshold:
-                with open(local_path, "rb") as f:
-                    self.client.put_object(
-                        Bucket=self.bucket,
-                        Key=key,
-                        Body=f.read(),
-                        ContentType="application/octet-stream",
-                    )
-                return True
-            upload = self.client.create_multipart_upload(
-                Bucket=self.bucket, Key=key, ContentType="application/octet-stream"
-            )
-            upload_id = upload["UploadId"]
-            parts = []
-            try:
-                with open(local_path, "rb") as f:
-                    part_number = 1
-                    while data := f.read(self.multipart_part_size):
-                        response = self.client.upload_part(
-                            Bucket=self.bucket,
-                            Key=key,
-                            PartNumber=part_number,
-                            UploadId=upload_id,
-                            Body=data,
-                        )
-                        parts.append(
-                            {"ETag": response["ETag"], "PartNumber": part_number}
-                        )
-                        part_number += 1
-                self.client.complete_multipart_upload(
-                    Bucket=self.bucket,
-                    Key=key,
-                    UploadId=upload_id,
-                    MultipartUpload={"Parts": parts},
-                )
-            except Exception:
-                self.client.abort_multipart_upload(
-                    Bucket=self.bucket, Key=key, UploadId=upload_id
-                )
-                raise
-            return True
-        except Exception as e:
-            logger.warning("upload failed %s: %s", remote_path, e)
-            return False
-
-    def download_file(self, remote_path, local_path):
-        try:
-            local_path.parent.mkdir(parents=True, exist_ok=True)
-            resp = self.client.get_object(
-                Bucket=self.bucket, Key=self._key(remote_path)
-            )
-            raw = resp["Body"].read()
-            with open(local_path, "wb") as f:
-                f.write(raw)
-            return True
-        except Exception as e:
-            logger.warning("download failed %s: %s", remote_path, e)
-            return False
-
-    def file_exists(self, path):
-        key = self._key(path)
-        try:
-            self.client.head_object(Bucket=self.bucket, Key=key)
-            return True
-        except Exception:
-            try:
-                self.client.get_object(Bucket=self.bucket, Key=key)["Body"].close()
-                return True
-            except Exception:
-                return False
-
-    def delete_file(self, path):
-        try:
-            self.client.delete_object(Bucket=self.bucket, Key=self._key(path))
-            return True
-        except Exception as e:
-            logger.warning("delete failed %s: %s", path, e)
-            return False
-
-    def list_files(self, path):
-        prefix = self._key(path)
-        if prefix and not prefix.endswith("/"):
-            prefix += "/"
-        keys = []
-        kwargs = {"Bucket": self.bucket, "Prefix": prefix}
-        while True:
-            resp = self.client.list_objects_v2(**kwargs)
-            for obj in resp.get("Contents", []):
-                key = obj["Key"]
-                if key.endswith("/"):
-                    continue
-                keys.append(key[len(prefix) :])
-            if resp.get("IsTruncated"):
-                kwargs["ContinuationToken"] = resp.get("NextContinuationToken")
-            else:
-                break
-        return keys
-
-    def close(self):
-        self.client = None
+    provider_id = "sync.s3"
 
 
-# ─── R2 后端 ───
-
-
-class _R2Backend(_S3Backend):
-
-    def connect(self):
-        account_id = self.cfg.get("r2_account_id", "")
-        access_key = self.cfg.get("r2_access_key_id", "")
-        secret_key = self.cfg.get("r2_secret_access_key", "")
-        bucket = self.cfg.get("r2_bucket", "")
-
-        if not account_id or not bucket:
-            raise SyncError("R2 account ID and bucket not configured")
-        if not access_key or not secret_key:
-            raise SyncError("R2 credentials not configured")
-
-        import boto3
-
-        endpoint = "https://%s.r2.cloudflarestorage.com" % account_id
-
-        try:
-            from botocore.config import Config as BotoConfig
-
-            addressing = self.cfg.get("r2_addressing_style", "virtual")
-            if addressing not in ("virtual", "path"):
-                addressing = "virtual"
-            self.client = boto3.client(
-                "s3",
-                endpoint_url=self.cfg.get("r2_endpoint", endpoint),
-                region_name=self.cfg.get("r2_region", "auto"),
-                aws_access_key_id=access_key,
-                aws_secret_access_key=secret_key,
-                config=BotoConfig(
-                    signature_version="s3v4",
-                    s3={
-                        "payload_signing_enabled": False,
-                        "addressing_style": addressing,
-                    },
-                ),
-            )
-            self.bucket = bucket
-            prefix = self.cfg.get("r2_path", "").strip("/")
-            self.prefix = (prefix + "/") if prefix else ""
-            self.multipart_threshold = max(
-                5 * 1024 * 1024,
-                int(self.cfg.get("r2_multipart_threshold", 8 * 1024 * 1024)),
-            )
-            self.multipart_part_size = max(
-                5 * 1024 * 1024,
-                int(self.cfg.get("r2_multipart_part_size", 5 * 1024 * 1024)),
-            )
-        except Exception as e:
-            raise SyncError("R2 connect failed: %s" % e)
-
-
-# ─── WebDAV 后端 ───
-
-
-def _quote_path(path: str) -> str:
-    """按路径段做百分号编码，/ 保留为路径分隔符"""
-    return "/".join(quote(part, safe="") for part in path.split("/"))
+class _R2Backend(_SyncBackend):
+    provider_id = "sync.r2"
 
 
 class _WebDAVBackend(_SyncBackend):
-    def __init__(self, cfg):
-        self.cfg = cfg
-        self.base_url = ""
-        self.auth_header = ""
-        self.timeout = 30
-        self.ssl_context = None
-
-    def connect(self):
-        url = self.cfg.get("webdav_url", "")
-        user = self.cfg.get("webdav_user", "")
-        password = self.cfg.get("webdav_password", "")
-        if not url:
-            raise SyncError("WebDAV url not configured")
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            raise SyncError("WebDAV URL 必须以 http:// 或 https:// 开头")
-        if not parsed.netloc:
-            raise SyncError("WebDAV URL 缺少主机名")
-        # 规范化 base_url 的 path：按段编码；保留 "/" 与已存在的 "%XX"，避免双重编码
-        enc_path = quote(parsed.path, safe="/%")
-        self.base_url = "%s://%s%s" % (
-            parsed.scheme,
-            parsed.netloc,
-            enc_path.rstrip("/"),
-        )
-        if parsed.scheme == "https" and self.cfg.get("webdav_ca_file"):
-            self.ssl_context = ssl.create_default_context(
-                cafile=self.cfg.get("webdav_ca_file")
-            )
-        try:
-            self.timeout = int(self.cfg.get("webdav_timeout", 30))
-        except (TypeError, ValueError):
-            self.timeout = 30
-        if user:
-            import base64
-
-            token = base64.b64encode(
-                ("%s:%s" % (user, password)).encode("utf-8")
-            ).decode("ascii")
-            self.auth_header = "Basic %s" % token
-
-    def _url(self, remote_path):
-        encoded = _quote_path(remote_path.lstrip("/"))
-        if encoded:
-            return self.base_url.rstrip("/") + "/" + encoded
-        return self.base_url.rstrip("/")
-
-    def _request(self, method, url, data=None, headers=None):
-        req = urllib.request.Request(url, data=data, method=method)
-        req.add_header("User-Agent", "OhMyMeme")
-        if self.auth_header:
-            req.add_header("Authorization", self.auth_header)
-        if headers:
-            for k, v in headers.items():
-                req.add_header(k, v)
-        if self.ssl_context is None:
-            return urllib.request.urlopen(req, timeout=self.timeout)
-        return urllib.request.urlopen(
-            req, timeout=self.timeout, context=self.ssl_context
-        )
-
-    def ensure_remote_dir(self, path):
-        rel = ""
-        for p in [p for p in path.strip("/").split("/") if p]:
-            rel += "/" + p
-            url = self._url(rel)
-            try:
-                with self._request("MKCOL", url):
-                    pass
-            except urllib.error.HTTPError as e:
-                if e.code == 405:
-                    continue  # 标准"已存在"
-                if 300 <= e.code < 400:
-                    # 重定向：复核集合确实存在 → 幂等继续，否则判失败
-                    if self.file_exists(rel):
-                        continue
-                raise SyncError("MKCOL %s 失败: HTTP %d" % (url, e.code)) from e
-            except Exception as e:
-                raise SyncError("MKCOL %s 失败: %s" % (url, e)) from e
-        return True
-
-    def upload_file(self, local_path, remote_path):
-        try:
-            size = local_path.stat().st_size
-            with open(local_path, "rb") as f:
-                with self._request(
-                    "PUT",
-                    self._url(remote_path),
-                    data=f,
-                    headers={
-                        "Content-Length": str(size),
-                        "Content-Type": "application/octet-stream",
-                    },
-                ) as resp:
-                    return 200 <= resp.status < 300
-        except Exception as e:
-            logger.warning("upload failed %s: %s", remote_path, e)
-            return False
-
-    def download_file(self, remote_path, local_path):
-        tmp_path = local_path.with_suffix(local_path.suffix + ".tmp")
-        try:
-            local_path.parent.mkdir(parents=True, exist_ok=True)
-            with (
-                self._request("GET", self._url(remote_path)) as resp,
-                tmp_path.open("wb") as f,
-            ):
-                shutil.copyfileobj(resp, f, length=1024 * 1024)
-            os.replace(tmp_path, local_path)
-            return True
-        except Exception as e:
-            try:
-                if tmp_path.exists():
-                    tmp_path.unlink()
-            except Exception:
-                pass
-            logger.warning("download failed %s: %s", remote_path, e)
-            return False
-
-    def file_exists(self, path):
-        try:
-            with self._request(
-                "PROPFIND", self._url(path), headers={"Depth": "0"}
-            ) as resp:
-                return resp.status in (200, 207)
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                return False
-            if e.code in (405, 501):
-                # 服务器不支持 PROPFIND → HEAD fallback
-                try:
-                    with self._request("HEAD", self._url(path)) as resp:
-                        return resp.status in (200, 204)
-                except urllib.error.HTTPError as e2:
-                    if e2.code == 404:
-                        return False
-                    raise SyncError(
-                        "WebDAV HEAD fallback failed: HTTP %d" % e2.code
-                    ) from e2
-                except Exception as e2:
-                    raise SyncError("WebDAV HEAD fallback failed: %s" % e2) from e2
-            raise SyncError("WebDAV PROPFIND failed: HTTP %d" % e.code) from e
-        except Exception as e:
-            raise SyncError("WebDAV file_exists failed: %s" % e) from e
-
-    def test_connection(self):
-        """真实网络探测：对 webdav_path 目录发 PROPFIND Depth:0。失败抛 SyncError。"""
-        url = self._url(self.cfg.get("webdav_path", ""))
-        try:
-            with self._request("PROPFIND", url, headers={"Depth": "0"}) as resp:
-                if resp.status not in (200, 207):
-                    raise SyncError("WebDAV PROPFIND returned HTTP %d" % resp.status)
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                raise SyncError(
-                    "WebDAV 目录不存在（HTTP 404），首次上传将自动创建"
-                ) from e
-            if e.code in (401, 403):
-                raise SyncError("WebDAV 鉴权失败（HTTP %d）" % e.code) from e
-            if e.code in (405, 501):
-                raise SyncError(
-                    "WebDAV 服务器不支持 PROPFIND（HTTP %d）" % e.code
-                ) from e
-            raise SyncError("WebDAV 连接测试失败: HTTP %d" % e.code) from e
-        except (urllib.error.URLError, OSError, TimeoutError) as e:
-            raise SyncError("WebDAV 网络不可达: %s" % e) from e
-
-    def delete_file(self, path):
-        try:
-            with self._request("DELETE", self._url(path)) as resp:
-                return resp.status in (200, 204)
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                return False
-            logger.warning("delete failed %s -> HTTP %d", path, e.code)
-            return False
-        except Exception as e:
-            logger.warning("delete failed %s: %s", path, e)
-            return False
-
-    def list_files(self, path):
-        import xml.etree.ElementTree as ET
-
-        url = self._url(path)
-        try:
-            with self._request("PROPFIND", url, headers={"Depth": "1"}) as resp:
-                raw = resp.read().decode("utf-8", errors="replace")
-        except urllib.error.HTTPError as e:
-            if e.code in (405, 501):
-                raise SyncError(
-                    "WebDAV 服务器不支持 PROPFIND（HTTP %d）" % e.code
-                ) from e
-            raise SyncError("WebDAV list_files failed: HTTP %d" % e.code) from e
-        except Exception as e:
-            raise SyncError("WebDAV list_files failed: %s" % e) from e
-        requested_path = urlparse(url).path.rstrip("/") or "/"
-        files = []
-        try:
-            root = ET.fromstring(raw)
-        except ET.ParseError as e:
-            raise SyncError("WebDAV PROPFIND 响应不是合法 XML: %s" % e) from e
-        for response in root.findall("{DAV:}response"):
-            href_el = response.find("{DAV:}href")
-            if href_el is None or href_el.text is None:
-                continue
-            href = href_el.text.strip()
-            if href.endswith("/"):
-                continue  # 目录条目跳过（仅顶层）
-            href_path = urlparse(href).path if "://" in href else href
-            href_path = href_path.rstrip("/") or "/"
-            if href_path == requested_path:
-                continue
-            child_prefix = requested_path.rstrip("/") + "/"
-            if href_path.startswith(child_prefix):
-                name = href_path[len(child_prefix) :]
-            else:
-                name = href_path.split("/")[-1]
-            name = unquote(name)
-            if name:
-                files.append(name)
-        return files
-
-    def close(self):
-        pass
+    provider_id = "sync.webdav"
 
 
-def get_backend(cfg):
-    sync_type = cfg.get("sync_type", "")
-    if sync_type in ("ftp", "ftps"):
-        return _FtpBackend(cfg)
-    elif sync_type == "s3":
-        return _S3Backend(cfg)
-    elif sync_type == "r2":
-        return _R2Backend(cfg)
-    elif sync_type == "webdav":
-        return _WebDAVBackend(cfg)
-    else:
+def get_backend(cfg, registry=None, enabled=None):
+    # Select exactly one provider; absence never selects a different backend.
+    kind = cfg.get("sync_type", "")
+    backend = (
+        {
+            "ftp": _FtpBackend,
+            "ftps": _FtpBackend,
+            "s3": _S3Backend,
+            "r2": _R2Backend,
+            "webdav": _WebDAVBackend,
+        }.get(kind)
+        if isinstance(kind, str)
+        else None
+    )
+    if backend is None:
         raise SyncError("No sync type configured")
+    return backend(cfg, registry, enabled)
 
 
 def connect_ftp(cfg):
+    # Retain the raw FTP ABI, but revoke the construction secret scope immediately.
     backend = _FtpBackend(cfg)
     backend.connect()
-    return backend.ftp
+    connection = backend.ftp
+    backend._backend.ftp = None
+    backend.close()
+    return connection

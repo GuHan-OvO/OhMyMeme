@@ -4,6 +4,7 @@ function api(method, ...args) {
     return null;
   }
   try {
+    checkPluginUIArguments(method, args);
     return decodeBridgeResult(method, pywebview.api[method](...args));
   }
   catch(e) { console.error('api error', method, e); return null; }

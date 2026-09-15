@@ -11,6 +11,9 @@ from ohmymeme.core.config import Config
 from ohmymeme.core.database import MemeDB
 from ohmymeme.core.imports import HostImportSink, ImageImportService
 from ohmymeme.core.manifest import build as build_manifest
+from ohmymeme.core.plugins.manifest import canonical_descriptor
+from ohmymeme.core.plugins.network_config import SYNC_CONFIGS
+from ohmymeme.core.plugins.registry import PluginRegistry
 from ohmymeme.core.recovery import StorageRecovery
 from ohmymeme.integrations.platform.hotkey import GlobalHotkey
 from ohmymeme.integrations.platform.system import is_auto_start_enabled, set_auto_start
@@ -69,12 +72,16 @@ class Container:
             mutation_coordinator=self.remote_mutations,
         )
         self.settings = Settings(self.config, is_auto_start_enabled, set_auto_start)
+        self.plugins = PluginRegistry(
+            tuple(canonical_descriptor(p) for p in (*SYNC_CONFIGS, "transport.lan"))
+        )
         self.sync = SyncService(
             self.config,
             self.db,
             self.build_manifest,
             self._write_manifest_data,
             self.remote_mutations,
+            registry=self.plugins,
         )
         self._closed = False
         self._closing = False
@@ -89,6 +96,8 @@ class Container:
             database=self.db,
             build_manifest=self.build_manifest,
             import_service_factory=self.create_raw_import_service,
+            registry=self.plugins,
+            mutation_coordinator=self.remote_mutations,
         )
         self.recovery.finish_manifest(self.build_manifest)
 

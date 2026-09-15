@@ -6,7 +6,7 @@ async function testSync() {
   btn.disabled = true; btn.textContent = '连接中...'; status.textContent = '';
   await api('save_settings', sync);
   const r = await api('sync_test');
-  btn.disabled = false; btn.textContent = '测试连接';
+  btn.disabled = false; btn.textContent = pluginUILabel('sync_test');
   status.textContent = r === 'ok' ? '连接成功' : '连接失败: ' + r;
 }
 
@@ -149,9 +149,10 @@ async function doSyncWithProgress(method, title, progressSetting, doneSetting, b
     syncPollTimer = setInterval(async () => {
       const s = await api('get_sync_progress');
       if (!s || s.status === 'idle') return;
-      document.getElementById('sync-progress-file').textContent = s.current_file || '';
-      document.getElementById('sync-progress-bar').style.width = (s.progress || 0) + '%';
-      document.getElementById('sync-progress-pct').textContent = (s.progress || 0) + '%';
+      document.getElementById('sync-progress-file').textContent = pluginProgressValue('get_sync_progress', s, 'current_file') || '';
+      const progress = pluginProgressValue('get_sync_progress', s, 'progress');
+      document.getElementById('sync-progress-bar').style.width = (progress || 0) + '%';
+      document.getElementById('sync-progress-pct').textContent = (progress || 0) + '%';
       if (s.speed) {
         document.getElementById('sync-progress-speed').textContent = formatSpeed(s.speed);
       }

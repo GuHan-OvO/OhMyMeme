@@ -51,6 +51,20 @@ CANONICAL_PROVIDERS = (
 CANONICAL_BY_ID = {item[0]: item for item in CANONICAL_PROVIDERS}
 
 
+def canonical_descriptor(provider_id):
+    # Reuse the frozen manifest identity without importing an implementation.
+    _, package_root, capabilities = CANONICAL_BY_ID[provider_id]
+    return PluginDescriptor(
+        provider_id,
+        PLUGIN_API_VERSION,
+        package_root,
+        ENTRY_POINT_GROUP,
+        provider_id,
+        f"{package_root}:create_plugin",
+        PluginCapabilities(capabilities),
+    )
+
+
 class PluginManifestError(ValueError):
     def __init__(self, errors):
         self.errors = tuple(errors)

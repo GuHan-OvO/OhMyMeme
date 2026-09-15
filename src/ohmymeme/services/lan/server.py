@@ -6,8 +6,6 @@ import logging
 import os
 import platform
 import socket
-import struct
-import sys
 import threading
 import time
 
@@ -20,7 +18,16 @@ except ImportError:
     HAS_AESGCM = False
 
 from ohmymeme import __version__
+from ohmymeme.app.operation_coordinator import OperationCoordinator
+from ohmymeme.app.operations import (
+    OperationBusyError,
+    OperationClosedError,
+    ResourceKind,
+)
 from ohmymeme.core.domain import TaskKind
+from ohmymeme.core.plugins.manifest import canonical_descriptor
+from ohmymeme.core.plugins.network_config import LanTransportConfig, validate_lan_config
+from ohmymeme.core.plugins.registry import PluginRegistry
 from ohmymeme.services.lan import protocol as lan_protocol
 from ohmymeme.services.lan.commands import (
     MAX_FILE_SIZE,
@@ -95,6 +102,9 @@ class LanServer:
         database=None,
         build_manifest=None,
         import_service_factory=None,
+        registry=None,
+        enabled=None,
+        mutation_coordinator=None,
     ):
         self._lock = threading.Lock()
         self._running = False
@@ -103,6 +113,7 @@ class LanServer:
         self._tcp_sock = None
         self._threads = []
         self._session_sockets = set()
+        self._session_waits = set()
         self._port = 0
         self._secret = ""
         self._clients = {}
@@ -113,7 +124,15 @@ class LanServer:
         )
         self._pending_confirms = {}
         self._logger = logger
-        self._coordinator = coordinator
+        self._coordinator = coordinator or OperationCoordinator()
+        self._mutation_coordinator = mutation_coordinator
+        self._registry = (
+            registry
+            if registry is not None
+            else PluginRegistry((canonical_descriptor("transport.lan"),))
+        )
+        self._enabled = None if enabled is None else frozenset(enabled)
+        self._transport = None
         self._config = config
         self._database = database
         self._build_manifest = build_manifest
@@ -127,10 +146,20 @@ class LanServer:
 
     def start(self, port: int, secret: str) -> bool:
         """绑定 UDP/TCP listener 并启动服务线程。"""
-        if not HAS_AESGCM:
+        try:
+            validate_lan_config(LanTransportConfig(port=port))
+            if type(secret) is not str:
+                raise ValueError("lan_secret: expected str")
+            if self._confirm_cb is not None and not callable(self._confirm_cb):
+                raise ValueError("lan_approval: expected host callback or None")
+            if type(HAS_AESGCM) is not bool or not HAS_AESGCM:
+                raise ValueError("lan_security: 缺少 cryptography 依赖")
+            provider = self._registry.require("transport.lan", self._enabled)
+            transport = provider.create_transport(LanTransportConfig(port=port))
+        except (ValueError, RuntimeError, TypeError, AttributeError, OSError) as error:
             with _lan_lock:
                 _lan_state["status"] = "error"
-                _lan_state["last_error"] = "缺少 cryptography 依赖"
+                _lan_state["last_error"] = str(error)
             return False
         with self._lock:
             if self._running or self._starting:
@@ -138,50 +167,58 @@ class LanServer:
             self._starting = True
             self._start_ok = False
             self._start_ready.clear()
+            self._transport = transport
         if self._coordinator is not None:
-            self._coordinator.start(
-                TaskKind.LAN_SERVICE,
-                lambda context: self._run_coordinated(context, port, secret),
-            )
+            existing = self._coordinator.query(TaskKind.LAN_SERVICE)
+            if existing is not None and existing.state.value == "running":
+                self._complete_start(False)
+                return False
+            try:
+                self._coordinator.start(
+                    TaskKind.LAN_SERVICE,
+                    lambda context: self._run_coordinated(context, port, secret),
+                )
+            except (OperationBusyError, OperationClosedError) as error:
+                self._complete_start(False)
+                with _lan_lock:
+                    _lan_state["last_error"] = str(error)
+                return False
             if not self._start_ready.wait(timeout=_LAN_START_TIMEOUT):
-                self._coordinator.cancel(TaskKind.LAN_SERVICE)
+                if self._operation_context is not None:
+                    self._coordinator.cancel(TaskKind.LAN_SERVICE)
+                self._complete_start(False)
                 return False
             return self._start_ok
         return self._start_service(port, secret)
 
     def _run_coordinated(self, context, port, secret):
-        if not self._start_service(port, secret, context):
-            return
-        try:
-            _ = context.wait_cancelled()
-        finally:
-            deadline = context.shutdown_deadline
-            self._stop_resources(
-                deadline or self._stop_deadline or time.monotonic() + _LAN_STOP_TIMEOUT
-            )
-            self._operation_context = None
+        # Sessions can still reach host persistence until every child has exited.
+        with context.lease(ResourceKind.DATABASE), context.lease(ResourceKind.CONFIG):
+            try:
+                if not self._start_service(port, secret, context):
+                    return
+                _ = context.wait_cancelled()
+            finally:
+                deadline = context.shutdown_deadline
+                self._stop_resources(
+                    deadline
+                    or self._stop_deadline
+                    or time.monotonic() + _LAN_STOP_TIMEOUT
+                )
+                self._operation_context = None
+                self._secret = ""
 
     def _start_service(self, port, secret, context=None):
-        self._port = int(port)
-        self._secret = secret or ""
+        self._operation_context = context
+        self._port = port
+        self._secret = secret
         try:
-            self._udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self._udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self._udp_sock.bind(("0.0.0.0", self._port))
-            self._udp_sock.settimeout(0.5)
-            self._udp_pktinfo = False
-            try:
-                self._udp_sock.setsockopt(socket.IPPROTO_IP, socket.IP_PKTINFO, 1)
-                self._udp_pktinfo = True
-            except (AttributeError, OSError):
-                pass
-            self._tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self._tcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self._tcp_sock.bind(("0.0.0.0", self._port))
-            self._tcp_sock.listen(8)
-            self._tcp_sock.settimeout(0.5)
-            self._port = self._tcp_sock.getsockname()[1]
-        except OSError as error:
+            self._transport.open(context.register_socket)
+            self._port = self._transport.port
+            self._udp_sock = self._transport.udp
+            self._tcp_sock = self._transport.tcp
+            self._udp_pktinfo = self._transport.pktinfo
+        except (OSError, ValueError) as error:
             self._cleanup_sockets()
             with _lan_lock:
                 _lan_state["status"] = "error"
@@ -193,9 +230,6 @@ class LanServer:
         with self._lock:
             self._running = True
             self._operation_context = context
-        if context is not None:
-            context.register_socket(self._udp_sock)
-            context.register_socket(self._tcp_sock)
         self._spawn_thread(self._udp_loop)
         self._spawn_thread(self._tcp_loop)
         with _lan_lock:
@@ -241,6 +275,8 @@ class LanServer:
             self._starting = False
             sessions = tuple(self._session_sockets)
             self._session_sockets.clear()
+            waits = tuple(self._session_waits)
+            self._session_waits.clear()
             threads = tuple(self._threads)
             self._threads.clear()
         with self._confirm_lock:
@@ -248,6 +284,8 @@ class LanServer:
             self._pending_confirms.clear()
         for entry in pending:
             entry["done"].set()
+        for wait in waits:
+            wait.set()
         with _lan_lock:
             if _lan_state.get("pending_confirm") in pending:
                 _lan_state.pop("pending_confirm", None)
@@ -261,6 +299,10 @@ class LanServer:
         for thread in threads:
             if thread is not current:
                 thread.join(timeout=max(0.0, deadline - time.monotonic()))
+                if thread.is_alive() and self._operation_context is not None:
+                    # Keep the owning operation visible to ShutdownReport until drained.
+                    thread.join()
+        self._secret = ""
         with _lan_lock:
             _lan_state["status"] = "stopped"
             _lan_state["port"] = 0
@@ -269,12 +311,8 @@ class LanServer:
         logger.info("LAN 服务已停止")
 
     def _cleanup_sockets(self):
-        for sock in (self._udp_sock, self._tcp_sock):
-            if sock:
-                try:
-                    sock.close()
-                except OSError:
-                    pass
+        if self._transport is not None:
+            self._transport.close()
         self._udp_sock = None
         self._tcp_sock = None
 
@@ -285,30 +323,22 @@ class LanServer:
             thread = threading.Thread(
                 target=target, daemon=self._operation_context is None
             )
+            if self._operation_context is not None:
+                self._operation_context.register_temp(thread.join)
             thread.start()
             self._threads.append(thread)
 
     def _udp_loop(self):
         while self._running:
             try:
-                if self._udp_pktinfo:
-                    data, ancdata, _, addr = self._udp_sock.recvmsg(2048, 256)
-                else:
-                    data, addr = self._udp_sock.recvfrom(2048)
-                    ancdata = []
+                discovery = self._transport.receive_discovery()
             except socket.timeout:
-                continue
-            except (AttributeError, NotImplementedError):
-                self._udp_pktinfo = False
                 continue
             except OSError:
                 break
-            try:
-                msg = json.loads(data.decode("utf-8", errors="replace"))
-            except Exception:
+            if discovery is None:
                 continue
-            if not isinstance(msg, dict) or msg.get("t") != "discover":
-                continue
+            addr, source = discovery
             reply = {
                 "t": "hello",
                 "name": platform.node(),
@@ -317,75 +347,18 @@ class LanServer:
                 "need_secret": bool(self._secret),
             }
             try:
-                self._send_udp_reply(
+                self._transport.send_discovery(
                     json.dumps(reply, ensure_ascii=False).encode("utf-8"),
                     addr,
-                    self._extract_pktinfo_src(ancdata),
+                    source,
                 )
             except OSError:
                 pass
 
-    def _extract_pktinfo_src(self, ancdata):
-        """提取广播到达的本地接口。"""
-        for level, ctype, cdata in ancdata:
-            if level != socket.IPPROTO_IP or ctype != socket.IP_PKTINFO:
-                continue
-            try:
-                if sys.platform == "win32":
-                    _, ifindex = struct.unpack("4sI", cdata)
-                    if not ifindex:
-                        return None
-                    return ("ifindex", ifindex)
-                _, spec_dst, _ = struct.unpack("i4s4s", cdata)
-                return ("ip", socket.inet_ntoa(spec_dst))
-            except (struct.error, OSError):
-                return None
-        return None
-
-    def _send_udp_reply(self, data, addr, src):
-        """按收到发现报文的接口回发 UDP 响应。"""
-        if self._udp_pktinfo and src:
-            try:
-                kind, value = src
-                pktinfo = None
-                if sys.platform == "win32" and kind == "ifindex":
-                    source_ip = self._win_ifindex_source_ip(value, addr)
-                    if source_ip:
-                        pktinfo = struct.pack("4sI", socket.inet_aton(source_ip), value)
-                elif kind == "ip":
-                    pktinfo = struct.pack(
-                        "i4s4s", 0, socket.inet_aton(value), b"\x00" * 4
-                    )
-                if pktinfo:
-                    self._udp_sock.sendmsg(
-                        [data],
-                        [(socket.IPPROTO_IP, socket.IP_PKTINFO, pktinfo)],
-                        0,
-                        addr,
-                    )
-                    return
-            except (AttributeError, NotImplementedError, struct.error, OSError):
-                logger.debug("LAN UDP 回包 sendmsg 失败，退化为 sendto")
-        self._udp_sock.sendto(data, addr)
-
-    def _win_ifindex_source_ip(self, ifindex, peer):
-        """按 Windows 接口索引解析 UDP 源地址。"""
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            try:
-                option = getattr(socket, "IP_UNICAST_IF", 31)
-                sock.setsockopt(socket.IPPROTO_IP, option, struct.pack("!I", ifindex))
-                sock.connect((peer[0], peer[1]))
-                return sock.getsockname()[0]
-            finally:
-                sock.close()
-        except OSError:
-            return None
-
     def _tcp_loop(self):
         while self._running:
             try:
-                conn, addr = self._tcp_sock.accept()
+                conn, addr = self._transport.accept()
             except socket.timeout:
                 continue
             except OSError:
@@ -409,6 +382,10 @@ class LanServer:
             self._sync_clients()
             confirmed = threading.Event()
             authorized = threading.Event()
+            with self._lock:
+                self._session_waits.add(confirmed)
+            if self._operation_context is not None:
+                self._operation_context.register_temp(confirmed.set)
             if self._confirm_cb is None:
                 confirmed.set()
                 authorized.set()
@@ -416,6 +393,8 @@ class LanServer:
                 session_id = os.urandom(16).hex()
                 self._session_loop(conn, key, confirmed, authorized, session_id)
             finally:
+                with self._lock:
+                    self._session_waits.discard(confirmed)
                 self._clients.pop(addr, None)
                 self._sync_clients()
         except (InvalidTag, OSError, ValueError, json.JSONDecodeError) as error:
@@ -427,6 +406,9 @@ class LanServer:
                 conn.close()
             except OSError:
                 pass
+            if self._database is not None:
+                # SQLite connections are thread-local and must close in this session.
+                self._database.close()
 
     def _register_session_socket(self, conn):
         with self._lock:
@@ -460,7 +442,12 @@ class LanServer:
                 self._send_plain(conn, {"t": "no"})
                 continue
             expected = lan_protocol.proof(self._secret, nonce)
-            if not hmac.compare_digest(msg.get("mac", ""), expected):
+            mac = msg.get("mac", "")
+            if (
+                not isinstance(mac, str)
+                or not mac.isascii()
+                or not hmac.compare_digest(mac, expected)
+            ):
                 self._send_plain(conn, {"t": "no"})
                 continue
             self._send_plain(conn, {"t": "ok"})
@@ -516,6 +503,8 @@ class LanServer:
             "ver": msg.get("ver", ""),
         }
         with self._confirm_lock:
+            if not self._running:
+                return {"ok": False, "error": "设备未授权"}
             confirm_id = os.urandom(16).hex()
             callback_device = dict(device, _confirm_id=confirm_id)
             entry = {
@@ -633,7 +622,10 @@ class LanServer:
 
     def get_lan_ip(self):
         """返回当前 LAN 地址。"""
-        return get_lan_ip()
+        try:
+            return self._registry.require("transport.lan", self._enabled).get_lan_ip()
+        except ValueError:
+            return "127.0.0.1"
 
     def _cmd_get_config(self) -> dict:
         return self._commands._cmd_get_config()
@@ -644,20 +636,20 @@ class LanServer:
     def _recv_exact(self, conn, count: int) -> bytes:
         buffer = b""
         while len(buffer) < count:
-            chunk = conn.recv(count - len(buffer))
+            chunk = conn.receive_bytes(count - len(buffer))
             if not chunk:
                 raise OSError("连接关闭")
             buffer += chunk
         return buffer
 
     def _send_plain(self, conn, obj: dict):
-        conn.sendall(lan_protocol.encode_plain(obj))
+        conn.send_bytes(lan_protocol.encode_plain(obj))
 
     def _recv_plain(self, conn) -> dict:
         return lan_protocol.decode_plain(lambda size: self._recv_exact(conn, size))
 
     def _send_frame(self, conn, key: bytes, obj: dict):
-        conn.sendall(lan_protocol.encode_frame(key, obj))
+        conn.send_bytes(lan_protocol.encode_frame(key, obj))
 
     def _recv_frame(self, conn, key: bytes) -> dict:
         msg, _ = self._recv_frame_with_identity(conn, key)
@@ -730,10 +722,7 @@ def confirm_device(approved: bool, confirm_id: str = ""):
 def get_lan_ip() -> str:
     """获取本机局域网 IP。"""
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.connect(("8.8.8.8", 80))
-        ip = sock.getsockname()[0]
-        sock.close()
-        return ip
-    except Exception:
+        registry = PluginRegistry((canonical_descriptor("transport.lan"),))
+        return registry.require("transport.lan").get_lan_ip()
+    except ValueError:
         return "127.0.0.1"
