@@ -217,6 +217,9 @@ def _download_sticker(url: str, tmp_dir: str, session, sticker_id: str = "") -> 
 
 
 class DouyinProvider(ImportRuntime):
+    provider_id = "source.douyin"
+    api_version = 1
+
     def __init__(self):
         # Isolate state, locks and process inventory for each factory.
         super().__init__(_DOUYIN_STATE, "running", ())

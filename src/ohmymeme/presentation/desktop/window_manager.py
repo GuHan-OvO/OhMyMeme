@@ -70,6 +70,7 @@ from ohmymeme.services import updates as updater
 from ohmymeme.services.sync import service as sync_module
 
 from .api.facades import JsApi, SettingsApi
+from .api.plugin_dispatch import compatibility_registry
 from .api.pywebview_adapter import PyWebViewAdapter
 from .bottle_app import install_security_hooks
 from .import_workers import import_paths
@@ -1160,6 +1161,9 @@ class _LegacySettingsApi:
         if not result:
             return {"ok": False, "cancelled": True}
         path = result[0] if isinstance(result, (tuple, list)) else result
+        from .import_workers import get_import_worker
+
+        get_import_worker(self, "source.telegram")
         if not telegram.is_valid_tdata(path):
             return {
                 "ok": False,
@@ -1268,10 +1272,13 @@ class _LegacySettingsApi:
 
     def qqnt_check_env(self) -> dict:
         """检查 QQNT 提取环境，返回 get_extract_status 结果"""
-        return qqnt.get_extract_status(
+        from .import_workers import get_import_worker
+
+        worker = get_import_worker(self, "source.qqnt")
+        return worker.provider.inspect(
             ini_path=self._cfg.get("qqnt_ini_path") or qqnt.DEFAULT_INI_PATH,
             userdata_save_path=self._cfg.get("qqnt_userdata_path") or None,
-            fetch_nicknames=True,
+            nickname_lookup=qqnt.get_user_nickname,
         )
 
     def qqnt_pick_ini(self) -> dict:
@@ -1406,6 +1413,9 @@ class _LegacySettingsApi:
     def qqnt_default_dir(self, base: str, qq_number: str) -> dict:
         """按账号生成默认输出目录（昵称+QQ号）"""
         try:
+            from .import_workers import get_import_worker
+
+            get_import_worker(self, "source.qqnt")
             d = qqnt.get_default_output_dir(base, qq_number, fetch_nickname=True)
         except Exception:
             return {"ok": False}
@@ -1693,6 +1703,10 @@ class WebUI:
         self._bottle_thread = None
         self._api = JsApi(self, self._library, container.settings)
         self._settings_api = SettingsApi(self, container.settings)
+        self._plugin_action_registry = compatibility_registry(
+            self._settings_api._legacy
+        )
+        self._enabled_import_plugins = None
         self._visible = False
         self._started = False
         self._pending_hide = False

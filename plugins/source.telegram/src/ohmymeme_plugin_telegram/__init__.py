@@ -330,6 +330,9 @@ def dedup_static_against_animated(webp_paths, threshold=0.02):
 
 
 class TelegramProvider(ImportRuntime):
+    provider_id = "source.telegram"
+    api_version = 1
+
     def __init__(self):
         # Isolate state, locks and process inventory for each factory.
         super().__init__(_TG_STATE, "scanning", ("tdata_path", "convert_webm"))

@@ -807,6 +807,9 @@ def _wechat_worker(provider, user_root, download, account_path):
 
 
 class WeChatProvider(ImportRuntime):
+    provider_id = "source.wechat"
+    api_version = 1
+
     def __init__(self):
         # Every factory owns its progress and cancellation state.
         super().__init__(

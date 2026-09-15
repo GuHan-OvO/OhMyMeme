@@ -1,6 +1,5 @@
 from copy import deepcopy
 from functools import partial
-from importlib import import_module
 from math import isfinite
 from types import MappingProxyType
 
@@ -281,8 +280,7 @@ class HostDispatcher:
 
 
 def _legacy_adapter(legacy, provider_id):
-    # Bind host compatibility methods lazily; plugin factories receive no WebUI.
-    import_module(_descriptor(provider_id).package_root)
+    # Bind fixed host compatibility methods; provider loading stays in the registry.
     return HostActionAdapter(
         provider_id,
         {
@@ -293,17 +291,22 @@ def _legacy_adapter(legacy, provider_id):
     )
 
 
+def compatibility_registry(legacy):
+    # Build the bounded host adapter registry once at the composition root.
+    return PluginRegistry(
+        tuple(_descriptor(provider) for provider in IMPORT_IDS),
+        {
+            provider: partial(_legacy_adapter, legacy, provider)
+            for provider in IMPORT_IDS
+        },
+        discovered_entry_points=(),
+    )
+
+
 def compatibility_dispatcher(legacy, surface, registry=None, enabled=None):
     # Keep shipped implementations usable until their individual provider migrations.
     if registry is None:
-        registry = PluginRegistry(
-            tuple(_descriptor(provider) for provider in IMPORT_IDS),
-            {
-                provider: partial(_legacy_adapter, legacy, provider)
-                for provider in IMPORT_IDS
-            },
-            discovered_entry_points=(),
-        )
+        registry = compatibility_registry(legacy)
     return HostDispatcher(
         surface,
         registry,

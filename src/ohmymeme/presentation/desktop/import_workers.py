@@ -4,7 +4,6 @@ import os
 import shutil
 import tempfile
 import threading
-from importlib import import_module
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,6 +16,7 @@ from ohmymeme.core.domain import TaskKind
 from ohmymeme.core.imports import ImportPath, ImportResult
 from ohmymeme.core.plugins.contracts import ImportPluginContext
 from ohmymeme.core.plugins.policy import PluginPolicy
+from ohmymeme.core.plugins.registry import PluginRegistry
 
 _IMPORT_WORKERS_LOCK = threading.Lock()
 
@@ -235,7 +235,12 @@ def get_import_worker(legacy, provider_id):
             webui._import_workers = {}
         if provider_id not in webui._import_workers:
             descriptor = _descriptor(provider_id)
-            provider = import_module(descriptor.package_root).create_plugin()
+            registry = getattr(getattr(webui, "_container", None), "plugins", None)
+            if registry is None:
+                registry = PluginRegistry((descriptor,))
+            provider = registry.require(
+                provider_id, getattr(webui, "_enabled_import_plugins", None)
+            )
             webui._import_workers[provider_id] = HostImportWorker(
                 provider,
                 descriptor,
@@ -268,7 +273,7 @@ class LegacyImportSession:
         from .api.plugin_dispatch import _descriptor
 
         self.descriptor = _descriptor(provider_id)
-        self.provider = import_module(self.descriptor.package_root).create_plugin()
+        self.provider = PluginRegistry((self.descriptor,)).require(provider_id)
         self.coordinator = OperationCoordinator()
         self.worker = None
         self._lock = threading.Lock()

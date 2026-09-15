@@ -382,6 +382,9 @@ _QQNT_STATE = {
 
 
 class QQNTProvider:
+    provider_id = "source.qqnt"
+    api_version = 1
+
     def __init__(self):
         # Each factory owns its own state and cancellation flag.
         self._lock = threading.RLock()

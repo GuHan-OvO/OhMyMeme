@@ -11,8 +11,7 @@ from ohmymeme.core.config import Config
 from ohmymeme.core.database import MemeDB
 from ohmymeme.core.imports import HostImportSink, ImageImportService
 from ohmymeme.core.manifest import build as build_manifest
-from ohmymeme.core.plugins.manifest import canonical_descriptor
-from ohmymeme.core.plugins.network_config import SYNC_CONFIGS
+from ohmymeme.core.plugins.manifest import CANONICAL_PROVIDERS, canonical_descriptor
 from ohmymeme.core.plugins.registry import PluginRegistry
 from ohmymeme.core.recovery import StorageRecovery
 from ohmymeme.integrations.platform.hotkey import GlobalHotkey
@@ -73,7 +72,10 @@ class Container:
         )
         self.settings = Settings(self.config, is_auto_start_enabled, set_auto_start)
         self.plugins = PluginRegistry(
-            tuple(canonical_descriptor(p) for p in (*SYNC_CONFIGS, "transport.lan"))
+            tuple(
+                canonical_descriptor(provider_id)
+                for provider_id, _, _ in CANONICAL_PROVIDERS
+            )
         )
         self.sync = SyncService(
             self.config,
