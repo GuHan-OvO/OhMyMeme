@@ -4,4 +4,6 @@ Version: 0.1.0
 Summary: OhMyMeme Cloudflare R2 sync plugin
 License-Expression: GPL-3.0-only
 Requires-Python: >=3.12
+License-File: LICENSE
 Requires-Dist: ohmymeme-plugin-sync-s3==0.1.0
+Dynamic: license-file

@@ -28,9 +28,15 @@ FROZEN_DATA_TARGETS = (
     "ohmymeme/webui",
     "ohmymeme/resources",
     "ohmymeme/adb-help.txt",
+    "ohmymeme/LICENSE",
+    "ohmymeme/NOTICE",
+    "ohmymeme/LICENSES",
+    "ohmymeme/THIRD-PARTY-NOTICES",
     "ohmymeme/config/offsets.json",
     "ohmymeme/config/plugin-manifest.json",
 )
+FROZEN_OPTIONAL_RUNTIME_EXCLUSIONS = ("gmssl",)
+FROZEN_EXTERNAL_HELPER_GUARD = "_assert_external_helper_not_packaged"
 
 
 class ContractViolation(ValueError):
@@ -230,9 +236,25 @@ def _validate_source_contracts():
         raise ContractViolation("PyInstaller package entrypoint is missing")
     if 'cmd.append(str(PACKAGE_DIR / "__main__.py"))' not in nuitka_build:
         raise ContractViolation("Nuitka package entrypoint is missing")
+    for path in ("NOTICE", "LICENSES/GPL-3.0-only.txt", "LICENSES/README.md"):
+        if not (ROOT / path).is_file():
+            raise ContractViolation("notice source missing: %s" % path)
     for destination in FROZEN_DATA_TARGETS:
         if destination not in build_script or destination not in nuitka_build:
             raise ContractViolation("frozen data target is missing: %s" % destination)
+    for module in FROZEN_OPTIONAL_RUNTIME_EXCLUSIONS:
+        if module not in build_script or module not in nuitka_build:
+            raise ContractViolation(
+                "optional runtime exclusion is missing: %s" % module
+            )
+    for source in (build_script, nuitka_build):
+        if (
+            "def " + FROZEN_EXTERNAL_HELPER_GUARD not in source
+            or FROZEN_EXTERNAL_HELPER_GUARD + "()" not in source
+        ):
+            raise ContractViolation("external helper frozen-input guard is missing")
+        if "--add-binary" in source:
+            raise ContractViolation("external helper binary target is not allowed")
 
 
 def contract_report(target=None, channel="stable"):

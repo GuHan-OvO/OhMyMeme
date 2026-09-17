@@ -9,6 +9,7 @@ description = "OhMyMeme Cloudflare R2 sync plugin"
 requires-python = ">=3.12"
 dependencies = ["ohmymeme-plugin-sync-s3==0.1.0"]
 license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 
 [project.entry-points."ohmymeme.plugins.v1"]
 "sync.r2" = "ohmymeme_plugin_sync_r2:create_plugin"

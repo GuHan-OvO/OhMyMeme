@@ -1,0 +1,66 @@
+{
+  "schema_version": true,
+  "host": {
+    "distribution": "ohmymeme",
+    "spdx": "MIT",
+    "license_files": [],
+    "provenance": {
+      "status": "unknown",
+      "files": []
+    },
+    "notice": {
+      "status": "missing",
+      "files": []
+    },
+    "source_offer": {
+      "status": "missing",
+      "paths": []
+    }
+  },
+  "distributions": [
+    {
+      "id": "source.unknown",
+      "distribution": "ohmymeme-plugin-unknown",
+      "spdx": "NOASSERTION",
+      "license_files": [],
+      "frozen_license_files": [],
+      "dependencies": [],
+      "dependency_approval": {
+        "status": "rejected",
+        "basis": ""
+      },
+      "provenance": {
+        "status": "unknown",
+        "files": []
+      },
+      "notice": {
+        "status": "missing",
+        "files": []
+      },
+      "source_offer": {
+        "status": "missing",
+        "paths": []
+      },
+      "source_hashes": {}
+    }
+  ],
+  "source_components": [],
+  "dependencies": [
+    {
+      "consumer": "source.unknown",
+      "scope": "runtime",
+      "requirement": "unknown>=0",
+      "source": "missing.txt",
+      "approval": "rejected",
+      "basis": ""
+    }
+  ],
+  "frozen_official_set": {
+    "staging_manifest": "missing.json",
+    "frozen_manifest": "missing.json",
+    "source_manifest": "missing.json",
+    "official_ids": ["source.unknown"],
+    "distributions": []
+  },
+  "unexpected": true
+}

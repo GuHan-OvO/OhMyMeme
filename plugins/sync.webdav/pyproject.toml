@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "OhMyMeme WebDAV sync plugin"
 requires-python = ">=3.12"
 license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 
 [project.entry-points."ohmymeme.plugins.v1"]
 "sync.webdav" = "ohmymeme_plugin_sync_webdav:create_plugin"

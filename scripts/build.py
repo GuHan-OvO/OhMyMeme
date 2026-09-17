@@ -45,6 +45,8 @@ OFFICIAL_PLUGIN_IDS = (
     "sync.webdav",
     "transport.lan",
 )
+OPTIONAL_RUNTIME_EXCLUSIONS = ("gmssl",)
+EXTERNAL_HELPER_BINARY_SUFFIXES = {".a", ".dll", ".exe", ".lib", ".obj", ".pdb"}
 
 PYTHON = sys.executable
 IS_WINDOWS = platform.system() == "Windows"
@@ -126,6 +128,22 @@ def _compiler_cleanup_paths():
         PROJECT_ROOT / (APP_NAME + ".build"),
         PROJECT_ROOT / (APP_NAME + ".dist"),
     )
+
+
+def _assert_external_helper_not_packaged():
+    # The runtime-fetched helper and static OpenSSL inputs are never frozen data.
+    helper_root = SRC_DIR / "wechat_keyfinder"
+    payloads = sorted(
+        path
+        for path in helper_root.rglob("*")
+        if path.is_file() and path.suffix.lower() in EXTERNAL_HELPER_BINARY_SUFFIXES
+    )
+    if payloads:
+        names = ", ".join(
+            str(path.relative_to(PROJECT_ROOT)).replace("\\", "/")
+            for path in payloads
+        )
+        raise SystemExit(f"external wechat helper payload is not a frozen input: {names}")
 
 # --- i18n ---
 _MSGS = {
@@ -285,6 +303,7 @@ def stage_official_plugins():
 
 
 def build_pyinstaller(target=None):
+    _assert_external_helper_not_packaged()
     check_pyinstaller()
     ensure_vue_frontend()
     clean()
@@ -305,6 +324,10 @@ def build_pyinstaller(target=None):
             "--add-data", str(SRC_DIR / "webui") + sep + "ohmymeme/webui",
             "--add-data", str(SRC_DIR / "resources") + sep + "ohmymeme/resources",
             "--add-data", str(SRC_DIR / "adb-help.txt") + sep + "ohmymeme/adb-help.txt",
+            "--add-data", str(PROJECT_ROOT / "LICENSE") + sep + "ohmymeme/LICENSE",
+            "--add-data", str(PROJECT_ROOT / "NOTICE") + sep + "ohmymeme/NOTICE",
+            "--add-data", str(PROJECT_ROOT / "LICENSES") + sep + "ohmymeme/LICENSES",
+            "--add-data", str(PROJECT_ROOT / "THIRD-PARTY-NOTICES") + sep + "ohmymeme/THIRD-PARTY-NOTICES",
             "--add-data",
             str(PROJECT_ROOT / "config" / "offsets.json")
             + sep
@@ -314,6 +337,7 @@ def build_pyinstaller(target=None):
             + sep
             + PLUGIN_MANIFEST_TARGET,
             "--hidden-import", "ohmymeme.app.bootstrap",
+            "--collect-all", "curl_cffi",
             str(PROJECT_ROOT / "scripts" / "launcher.py"),
         ]
 
@@ -341,6 +365,8 @@ def build_pyinstaller(target=None):
         ]
         for m in exclude:
             cmd += ["--exclude-module", m]
+        for module in OPTIONAL_RUNTIME_EXCLUSIONS:
+            cmd += ["--exclude-module", module]
 
         if target == "Windows" or (target is None and IS_WINDOWS):
             icon = str(SRC_DIR / "resources" / "icon.ico")

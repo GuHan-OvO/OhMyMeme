@@ -42,6 +42,8 @@ OFFICIAL_PLUGIN_IDS = (
     "sync.webdav",
     "transport.lan",
 )
+OPTIONAL_RUNTIME_EXCLUSIONS = ("gmssl",)
+EXTERNAL_HELPER_BINARY_SUFFIXES = {".a", ".dll", ".exe", ".lib", ".obj", ".pdb"}
 
 PYTHON = sys.executable
 BUILD_TIMEOUT = 1800.0
@@ -123,6 +125,22 @@ def _compiler_cleanup_paths():
     )
 
 
+def _assert_external_helper_not_packaged():
+    # The runtime-fetched helper and static OpenSSL inputs are never frozen data.
+    helper_root = SRC_DIR / "wechat_keyfinder"
+    payloads = sorted(
+        path
+        for path in helper_root.rglob("*")
+        if path.is_file() and path.suffix.lower() in EXTERNAL_HELPER_BINARY_SUFFIXES
+    )
+    if payloads:
+        names = ", ".join(
+            str(path.relative_to(PROJECT_ROOT)).replace("\\", "/")
+            for path in payloads
+        )
+        raise SystemExit(f"external wechat helper payload is not a frozen input: {names}")
+
+
 def get_version():
     init_py = PACKAGE_DIR / "__init__.py"
     m = re.search(r'__version__\s*=\s*"([^"]+)"', init_py.read_text(encoding="utf-8"))
@@ -194,6 +212,7 @@ def stage_official_plugins():
 
 
 def build_nuitka(onefile=False, use_clang=False, target=None):
+    _assert_external_helper_not_packaged()
     check_nuitka()
     clean()
     with _cleanup_owned_on_failure(_compiler_cleanup_paths()):
@@ -233,6 +252,18 @@ def build_nuitka(onefile=False, use_clang=False, target=None):
             + str(SRC_DIR / "adb-help.txt")
             + "=ohmymeme/adb-help.txt",
             "--include-data-files="
+            + str(PROJECT_ROOT / "LICENSE")
+            + "=ohmymeme/LICENSE",
+            "--include-data-files="
+            + str(PROJECT_ROOT / "NOTICE")
+            + "=ohmymeme/NOTICE",
+            "--include-data-dir="
+            + str(PROJECT_ROOT / "LICENSES")
+            + "=ohmymeme/LICENSES",
+            "--include-data-dir="
+            + str(PROJECT_ROOT / "THIRD-PARTY-NOTICES")
+            + "=ohmymeme/THIRD-PARTY-NOTICES",
+            "--include-data-files="
             + str(PROJECT_ROOT / "config" / "offsets.json")
             + "=ohmymeme/config/offsets.json",
             "--include-data-files="
@@ -249,12 +280,17 @@ def build_nuitka(onefile=False, use_clang=False, target=None):
             "--nofollow-import-to=PySide6",
             "--nofollow-import-to=boto3.docs",
         ]
+        nofollow_opts.extend(
+            "--nofollow-import-to=" + module
+            for module in OPTIONAL_RUNTIME_EXCLUSIONS
+        )
 
         pkg_opts = [
             "--include-package=PIL",
             "--include-package=pystray",
             "--include-package=pyperclip",
             "--include-package=cryptography",
+            "--include-package=curl_cffi",
             "--include-package=keyboard",
             "--include-package=bottle",
             "--disable-plugin=pywebview",

@@ -38,10 +38,60 @@ def test_package_smoke_reports_frozen_package_layout():
             "ohmymeme/webui",
             "ohmymeme/resources",
             "ohmymeme/adb-help.txt",
+            "ohmymeme/LICENSE",
+            "ohmymeme/NOTICE",
+            "ohmymeme/LICENSES",
+            "ohmymeme/THIRD-PARTY-NOTICES",
             "ohmymeme/config/offsets.json",
             "ohmymeme/config/plugin-manifest.json",
         ],
     }
+
+
+def test_package_smoke_requires_notice_bundle_and_runtime_exclusions(
+    monkeypatch, tmp_path
+):
+    """Given legal release inputs, reporting rejects a missing target or exclusion."""
+    from scripts import package_smoke
+
+    build_script = package_smoke.BUILD_SCRIPT.read_text(encoding="utf-8")
+    stale_build_script = tmp_path / "build.py"
+    stale_build_script.write_text(
+        build_script.replace("ohmymeme/NOTICE", "ohmymeme/LEGAL-NOTICE", 1),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(package_smoke, "BUILD_SCRIPT", stale_build_script)
+
+    with pytest.raises(ContractViolation, match="frozen data target"):
+        contract_report(target="windows-x64")
+
+
+def test_package_smoke_requires_external_helper_input_guard(monkeypatch, tmp_path):
+    # A frozen source contract must retain the helper payload preflight guard.
+    from scripts import package_smoke
+
+    build_script = package_smoke.BUILD_SCRIPT.read_text(encoding="utf-8")
+    stale_build_script = tmp_path / "build.py"
+    stale_build_script.write_text(
+        build_script.replace("_assert_external_helper_not_packaged", "no_guard", 1),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(package_smoke, "BUILD_SCRIPT", stale_build_script)
+
+    with pytest.raises(ContractViolation, match="external helper"):
+        contract_report(target="windows-x64")
+
+
+def test_frozen_policy_excludes_only_unlicensed_gmssl_and_collects_curl_cffi():
+    # curl-cffi has RECORD-bound distribution evidence; only gmssl stays disabled.
+    from scripts import package_smoke
+
+    pyinstaller = package_smoke.BUILD_SCRIPT.read_text(encoding="utf-8")
+    nuitka = package_smoke.NUITKA_BUILD_SCRIPT.read_text(encoding="utf-8")
+
+    assert package_smoke.FROZEN_OPTIONAL_RUNTIME_EXCLUSIONS == ("gmssl",)
+    assert '"--collect-all", "curl_cffi"' in pyinstaller
+    assert '"--include-package=curl_cffi"' in nuitka
 
 
 def test_flat_source_modules_are_absent_and_legacy_import_fails():

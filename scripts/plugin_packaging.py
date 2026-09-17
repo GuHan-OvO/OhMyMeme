@@ -173,6 +173,8 @@ def _project_data(package_dir, provider_id):
             f"{provider_id}.project.name: expected {expected_distribution}, "
             f"got {project.get('name')!r}"
         )
+    if project.get("license-files") != ["LICENSE"]:
+        errors.append(f"{provider_id}.project.license-files: expected ['LICENSE']")
     build_system = data.get("build-system")
     if not isinstance(build_system, dict):
         errors.append(f"{provider_id}.build-system: missing official metadata")
@@ -438,6 +440,7 @@ def _metadata_values(path):
         else:
             values[field] = value
     values["Requires-Dist"] = tuple(message.get_all("Requires-Dist", []))
+    values["License-File"] = tuple(message.get_all("License-File", []))
     return values, errors
 
 
@@ -678,6 +681,7 @@ def _validate_staging_manifest(staging_manifest_path, infos, staging):
                     "Summary": info["project"]["description"],
                     "Requires-Python": info["project"]["requires-python"],
                     "License-Expression": info["project"]["license"],
+                    "License-File": tuple(info["project"]["license-files"]),
                 }
                 for field, expected in checks.items():
                     if metadata_values.get(field) != expected:
@@ -693,6 +697,36 @@ def _validate_staging_manifest(staging_manifest_path, infos, staging):
                         f"{prefix}.metadata.Requires-Dist: expected "
                         f"{list(info['dependencies'])!r}, "
                         f"got {list(metadata_values.get('Requires-Dist', ()))!r}"
+                    )
+                declared_license_paths = set()
+                for item_index, item in enumerate(
+                    metadata_values.get("License-File", ())
+                ):
+                    try:
+                        relative = _safe_relative_path(
+                            item,
+                            f"{prefix}.metadata.License-File[{item_index}]",
+                        )
+                    except PackagingError as error:
+                        errors.extend(error.errors)
+                        continue
+                    declared_license_paths.add(
+                        metadata_path.parent / "licenses" / relative
+                    )
+                actual_license_paths = {
+                    path
+                    for path in (metadata_path.parent / "licenses").rglob("*")
+                    if path.is_file()
+                }
+                for path in sorted(declared_license_paths - actual_license_paths):
+                    errors.append(
+                        f"{prefix}.metadata.License-File: missing staged license "
+                        f"{_posix_path(path.relative_to(staging))}"
+                    )
+                for path in sorted(actual_license_paths - declared_license_paths):
+                    errors.append(
+                        f"{prefix}.metadata.License-File: unclaimed staged license "
+                        f"{_posix_path(path.relative_to(staging))}"
                     )
         if entry_points_path is not None and entry_points_path.is_file():
             entries, entry_errors = _entry_points_from_file(entry_points_path)

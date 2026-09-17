@@ -1,11 +1,14 @@
 import json
+import os
 import shutil
 import subprocess
 import sys
+from email.parser import Parser
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from setuptools import build_meta
 
 import scripts.plugin_packaging as packaging
 
@@ -47,6 +50,93 @@ def _run_source_cli(staging, source_manifest, report):
         text=True,
     )
     return result, json.loads(report.read_text(encoding="utf-8"))
+
+
+def test_stage_metadata_carries_pep639_license_files(tmp_path):
+    # Real setuptools metadata must retain every plugin's declared GPL file.
+    staging = tmp_path / "staging"
+    staging_manifest = staging / "staging-manifest.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(PACKAGING_SCRIPT),
+            "--stage",
+            "--staging-dir",
+            str(staging),
+            "--staging-manifest",
+            str(staging_manifest),
+            "--source-manifest",
+            str(ROOT / "config/plugin-manifest.json"),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout
+    manifest = json.loads(staging_manifest.read_text(encoding="utf-8"))
+    for row in manifest["packages"]:
+        metadata_name = next(
+            name for name in row["metadata_files"] if name.endswith("/METADATA")
+        )
+        metadata = Parser().parsestr((staging / metadata_name).read_text("utf-8"))
+        assert metadata.get("License-Expression") == "GPL-3.0-only"
+        assert metadata.get_all("License-File") == ["LICENSE"]
+        license_name = metadata_name.rsplit("/", 1)[0] + "/licenses/LICENSE"
+        assert (staging / license_name).read_bytes() == (
+            ROOT / "plugins" / row["id"] / "LICENSE"
+        ).read_bytes()
+
+
+def test_root_metadata_carries_only_owned_pep639_license_file(tmp_path):
+    # Host metadata lists only the actual root GPL file, not third-party notices.
+    project = tmp_path / "host"
+    project.mkdir()
+    for name in ("LICENSE", "README.md", "setup.py"):
+        shutil.copy2(ROOT / name, project / name)
+    shutil.copytree(ROOT / "src/ohmymeme", project / "src/ohmymeme")
+    metadata_root = project / "metadata"
+    metadata_root.mkdir()
+    previous = Path.cwd()
+    try:
+        os.chdir(project)
+        dist_info_name = build_meta.prepare_metadata_for_build_wheel(str(metadata_root))
+    finally:
+        os.chdir(previous)
+    dist_info = metadata_root / dist_info_name
+    metadata = Parser().parsestr((dist_info / "METADATA").read_text("utf-8"))
+
+    assert metadata.get("License-Expression") == "GPL-3.0-only"
+    assert metadata.get_all("License-File") == ["LICENSE"]
+    assert (dist_info / "licenses/LICENSE").read_bytes() == (
+        ROOT / "LICENSE"
+    ).read_bytes()
+    assert sorted(path.name for path in (dist_info / "licenses").iterdir()) == [
+        "LICENSE"
+    ]
+
+
+def test_staging_rejects_unclaimed_pep639_license_file(tmp_path):
+    # A frozen licenses directory cannot carry a file absent from License-File.
+    staging = tmp_path / "unclaimed-license-staging"
+    shutil.copytree(ROOT / "fixtures/plugin-parity/frozen-staging", staging)
+    extra = staging / "ohmymeme_plugin_qqnt-0.1.0.dist-info/licenses/UNDECLARED-NOTICE"
+    extra.write_text("not declared by metadata", encoding="utf-8")
+    manifest_path = staging / "staging-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    row = next(item for item in manifest["packages"] if item["id"] == "source.qqnt")
+    row["metadata_files"].append(
+        "ohmymeme_plugin_qqnt-0.1.0.dist-info/licenses/UNDECLARED-NOTICE"
+    )
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result, report = _run_source_cli(
+        staging, ROOT / "config/plugin-manifest.json", tmp_path / "report.json"
+    )
+
+    assert result.returncode == 1
+    assert report["status"] == "REJECTED"
+    assert any("unclaimed staged license" in error for error in report["errors"])
 
 
 def test_rogue_dist_info_is_rejected(tmp_path):

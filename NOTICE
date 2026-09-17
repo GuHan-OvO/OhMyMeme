@@ -1,0 +1,182 @@
+OhMyMeme NOTICE
+===============
+
+This is an engineering evidence index, not legal advice or a license grant.
+Notice bundle version: todo14-wave5-2026-09-18-r3
+Notice bundle content SHA-256: c1e4bc8f5cc21bc994386fcd17f1976e4401b65f2fd31fbdc30fe868da8e6c9b
+
+Python distribution evidence and frozen scope
+-------------------------------------------
+
+boto3 1.43.94 [approved; evidence_expression: Apache-2.0]
+  source: https://github.com/boto/boto3
+  metadata: THIRD-PARTY-NOTICES/boto3/METADATA sha256=078e2ec9e5fee88345613a80eb555566e675d19351833e583de03e9d5b2a7f6f (License: Apache-2.0)
+  expression basis: The retained full LICENSE is Apache License, Version 2.0; this is release evidence, not a synthesized PEP 639 metadata field.
+  notice: THIRD-PARTY-NOTICES/boto3/LICENSE sha256=0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594
+  notice: THIRD-PARTY-NOTICES/boto3/NOTICE sha256=04fb1e61484a7810f1ba09bb42bc01ca58c9af33927d7c5a21556e4c4d1c7fa4
+
+botocore 1.43.94 [approved; evidence_expression: Apache-2.0]
+  source: https://github.com/boto/botocore
+  metadata: THIRD-PARTY-NOTICES/botocore/METADATA sha256=02b47103e3b6728d16e2c66de3f3063b38867a197311c722f5c9e6b7c74f667a (License: Apache-2.0)
+  expression basis: The retained full LICENSE.txt is Apache License, Version 2.0; this is release evidence, not a synthesized PEP 639 metadata field.
+  notice: THIRD-PARTY-NOTICES/botocore/LICENSE.txt sha256=0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594
+  notice: THIRD-PARTY-NOTICES/botocore/NOTICE sha256=1d1c5a6f3d68cb11f4fad1afa86a7450d0286f15c176ef0ea048f255b46d95b0
+
+bottle 0.13.4 [approved; evidence_expression: MIT]
+  source: https://github.com/bottlepy/bottle
+  metadata: THIRD-PARTY-NOTICES/bottle/METADATA sha256=441619180223f6ae8a92d1e88e4bbd48159c452bedae1e7c9c27f0673fa720d1 (License: MIT)
+  expression basis: The retained full LICENSE contains the MIT permission and notice text.
+  notice: THIRD-PARTY-NOTICES/bottle/LICENSE sha256=af150257b1f7cce92b6207854f2e8f90ea9ae52d7cac758d13a47bd12e2a2443
+
+cryptography 50.0.1 [approved; evidence_expression: Apache-2.0 OR BSD-3-Clause]
+  source: https://github.com/pyca/cryptography
+  metadata: THIRD-PARTY-NOTICES/cryptography/METADATA sha256=8e9b5570da4686848ee5c6bb83fffc224bcddf9793136731dd050ce0c05fffe2 (License-Expression: Apache-2.0 OR BSD-3-Clause)
+  expression basis: The installed PEP 639 License-Expression and all retained license files state this expression.
+  notice: THIRD-PARTY-NOTICES/cryptography/LICENSE sha256=3e0c7c091a948b82533ba98fd7cbb40432d6f1a9acbf85f5922d2f99a93ae6bb
+  notice: THIRD-PARTY-NOTICES/cryptography/LICENSE.APACHE sha256=aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe
+  notice: THIRD-PARTY-NOTICES/cryptography/LICENSE.BSD sha256=602c4c7482de6479dd2e9793cda275e5e63d773dacd1eca689232ab7008fb4fb
+
+curl-cffi 0.16.3 [approved; evidence_expression: MIT]
+  source: https://github.com/lexiforest/curl_cffi
+  metadata: THIRD-PARTY-NOTICES/curl-cffi/METADATA sha256=d9194718d88bef3b8a798962115010edf0c4582d2f5fd70d2a360a80e236d309 (License-Expression: MIT)
+  expression basis: The installed PEP 639 License-Expression and retained distribution LICENSE state MIT; it does not separately license an internal DLL.
+  notice: THIRD-PARTY-NOTICES/curl-cffi/LICENSE sha256=47e6ce96c02170758c16164e66f920620db614523d642eba5000ba0c7aa2be6e
+
+gmssl 3.2.2 [frozen-disabled; evidence_expression: NOASSERTION]
+  source: https://github.com/duanhongyi/gmssl
+  metadata: THIRD-PARTY-NOTICES/gmssl/METADATA sha256=2ad6358f45069de4760f5d56e4368fec05ca23102aacd945d2a661cb183b224d (License: BSD)
+  expression basis: No complete license text establishes a precise evidence expression.
+  notice: none; distribution is not frozen-shipped
+  inspected PyPI archive: gmssl-3.2.2.linux-x86_64.tar.gz sha256=f3d8c8c75dd34cd169f129c017f67fdd80cce2c67a13f9a0e3b1c58f8de6351e
+  archive URL: https://files.pythonhosted.org/packages/06/29/008dc5071656ac522282f87accc837643be1fa9e7d021f890c1cdf390714/gmssl-3.2.2.linux-x86_64.tar.gz
+  archive result: Downloaded via TLS from the PyPI JSON sdist URL during Todo14. The verified archive contains no LICENSE, COPYING, NOTICE, or other full license text; its PKG-INFO only says License: BSD and describes a class BSD license. No precise BSD expression is asserted.
+
+keyboard 0.13.5 [approved; evidence_expression: MIT]
+  source: https://github.com/boppreh/keyboard
+  metadata: THIRD-PARTY-NOTICES/keyboard/METADATA sha256=a9d4d5166669be3803b7ae64ed319a9bbee0de28b0de8d69801af058344bfbac (License: MIT)
+  expression basis: The retained legacy-installed LICENSE.txt contains the MIT text.
+  notice: THIRD-PARTY-NOTICES/keyboard/LICENSE.txt sha256=2bf14a525555d05a801c2d2c28901504fb76abee7c2d7ebfb4cfc7508d7df0f7
+
+pillow 12.3.0 [approved; evidence_expression: MIT-CMU]
+  source: https://github.com/python-pillow/Pillow
+  metadata: THIRD-PARTY-NOTICES/pillow/METADATA sha256=2c4378001803cfac65809a50722d46e0da4ce8061e717f103e5d52734bab30f5 (License-Expression: MIT-CMU)
+  expression basis: The installed PEP 639 License-Expression is MIT-CMU and the complete 1617-line Pillow LICENSE is retained without reduction.
+  notice: THIRD-PARTY-NOTICES/pillow/LICENSE sha256=4f7866a74802c6326f81faff59a56546b6aec2b10b91973e0e9308de95e79857
+
+pydantic 2.11.7 [approved; evidence_expression: MIT]
+  source: https://github.com/pydantic/pydantic
+  metadata: THIRD-PARTY-NOTICES/pydantic/METADATA sha256=f791b40bde997db7ff175b238bff97d50cf9505a8aa307e0bf791d57ed1ae282 (License-Expression: MIT)
+  expression basis: The installed PEP 639 License-Expression and retained LICENSE state MIT.
+  notice: THIRD-PARTY-NOTICES/pydantic/LICENSE sha256=a9e186f3ca16b5eef84318e7a701721351a00cb7b8ae3a4394b67b49e3529ef3
+
+pyinstaller 6.22.3 [approved; evidence_expression: GPL-2.0-or-later WITH Bootloader-exception]
+  source: https://github.com/pyinstaller/pyinstaller
+  metadata: THIRD-PARTY-NOTICES/pyinstaller/METADATA sha256=2991d3dcd53fe9966b8c16586322a7f9bbc564dd4752c190bd4fe8d6747f7046 (License: GPLv2-or-later with a special exception which allows to use PyInstaller to build and distribute non-free programs (including commercial ones))
+  expression basis: The retained COPYING.txt states the Bootloader Exception and its file-specific Apache-2.0 and MIT scopes.
+  notice: THIRD-PARTY-NOTICES/pyinstaller/COPYING.txt sha256=0598064c7d2718e38d7914a7d08343b2fa008e3bea9ebba2aa7a6ffa5900dd64
+
+pyperclip 1.11.0 [approved; evidence_expression: BSD-3-Clause]
+  source: https://github.com/asweigart/pyperclip
+  metadata: THIRD-PARTY-NOTICES/pyperclip/METADATA sha256=2493839e0751761f27d39aa6d5c5dfd1df839c45da8f328aba4ae4102868b825 (License: BSD)
+  expression basis: The retained full LICENSE.txt has the three redistribution clauses, including the no-endorsement clause.
+  notice: THIRD-PARTY-NOTICES/pyperclip/LICENSE.txt sha256=a72b0acc9389e4c17ced890ef1b03455e04978d39e25636099b93efb76b74ead
+  notice: THIRD-PARTY-NOTICES/pyperclip/AUTHORS.txt sha256=df4ed864ae3275816030fadb3c89a3b72a30de0973325f8faea5414bdd8e6ceb
+
+pystray 0.19.5 [approved; evidence_expression: LGPL-3.0-only]
+  source: https://github.com/moses-palmer/pystray
+  metadata: THIRD-PARTY-NOTICES/pystray/METADATA sha256=073b0620fe49a47061d336d7110779e6ca808e8294b0aa5cd9d437b1979d8fb1 (License: LGPLv3)
+  expression basis: The retained COPYING.LGPL is the complete GNU Lesser General Public License Version 3 text. This does not add a PEP 639 field to legacy metadata.
+  notice: THIRD-PARTY-NOTICES/pystray/COPYING sha256=1e4d0c2eb111b851de12d7b2737195b950fae3620d2a23a474ce8d46e1d2e4b6
+  notice: THIRD-PARTY-NOTICES/pystray/COPYING.LGPL sha256=e583ee8a64cd2ae744422bf76a1295838acae3698347f3a2af07462ddfaf0d2d
+
+pywebview 6.2.1 [approved; evidence_expression: BSD-3-Clause]
+  source: https://github.com/r0x0r/pywebview
+  metadata: THIRD-PARTY-NOTICES/pywebview/METADATA sha256=8e7f87b5e50b992bc44d9f1dc03fb5218f0b6da5d6c4b9f21f93916bf44569c7 (License: BSD 3-Clause License)
+  expression basis: The retained full LICENSE is headed BSD 3-Clause License and contains all three clauses.
+  notice: THIRD-PARTY-NOTICES/pywebview/LICENSE sha256=4a988dd3598832cd3653de20dc33cb677d0fb53ab5551c879ca31280ae653675
+
+tgcrypto 1.2.5 [approved; evidence_expression: LGPL-3.0-or-later]
+  source: https://github.com/pyrogram/tgcrypto
+  metadata: THIRD-PARTY-NOTICES/tgcrypto/METADATA sha256=1ab02ee318ffb935e1909d754936a82c93f218c5590c01fa06b4e29ee4f0d2ff (License: LGPLv3+)
+  expression basis: The retained NOTICE says LGPL version 3 or, at the recipient option, any later version; COPYING and COPYING.lesser are retained.
+  notice: THIRD-PARTY-NOTICES/tgcrypto/COPYING sha256=8b1ba204bb69a0ade2bfcf65ef294a920f6bb361b317dba43c7ef29d96332b9b
+  notice: THIRD-PARTY-NOTICES/tgcrypto/COPYING.lesser sha256=a5681bf9b05db14d86776930017c647ad9e6e56ff6bbcfdf21e5848288dfaf1b
+  notice: THIRD-PARTY-NOTICES/tgcrypto/NOTICE sha256=40bde225d79587f66a45965c872aee4227396d8516771df29743a44940b63d07
+
+Shipped native wheel evidence
+----------------------------
+
+cryptography-wheel [shipped_distribution; distribution-covered]
+  distribution: cryptography 50.0.1; evidence_expression: Apache-2.0 OR BSD-3-Clause
+  PyPI wheel: cryptography-50.0.1-cp311-abi3-win_amd64.whl sha256=aed8db4f6d71c51efb89530e12d9464e7bf2923d46c3205dc794a2a93f8c0648
+  PyPI JSON: https://pypi.org/pypi/cryptography/50.0.1/json
+  RECORD: THIRD-PARTY-NOTICES/cryptography/RECORD sha256=8190d6f8072ba1df8308f7390c84b23db40466f30d79287ffa6e0465702986eb
+  WHEEL: THIRD-PARTY-NOTICES/cryptography/WHEEL sha256=9efe56059dbb731c438c822ac4132a2b670e174db90f09059aa246a8bdd2a575; tag=cp311-abi3-win_amd64
+  native artifact: cryptography/hazmat/bindings/_rust.pyd sha256=6a42262974f0e086c1f2defaff4ccd9fb25046cf193422135e2dda5b4b29b2a2
+  wheel evidence: THIRD-PARTY-NOTICES/cryptography/SBOM/sbom.json sha256=3375a1384a4782d4a871ffe6d00d22926c140ab2db7c3671087e15a1ff239234
+  wheel evidence: THIRD-PARTY-NOTICES/cryptography/SBOM/cryptography-rust.cyclonedx.json sha256=ca81fd6162fbb9c39d1c4530c4beb49dd3f938a77cb867f82ce788def949e3ce
+  distribution notice: THIRD-PARTY-NOTICES/cryptography/LICENSE
+  distribution notice: THIRD-PARTY-NOTICES/cryptography/LICENSE.APACHE
+  distribution notice: THIRD-PARTY-NOTICES/cryptography/LICENSE.BSD
+  limitation: This is distribution-level evidence for the shipped cryptography wheel. Its SBOM is retained, but this record does not assert an individual upstream-library link map or apply to wechat_keyfinder.
+
+pillow-wheel [shipped_distribution; distribution-covered]
+  distribution: pillow 12.3.0; evidence_expression: MIT-CMU
+  PyPI wheel: pillow-12.3.0-cp312-cp312-win_amd64.whl sha256=a2b55dd6b2a4c4b7d87ffa56bdb33fdc5fdb9a462173861a7bc097f17d91cb09
+  PyPI JSON: https://pypi.org/pypi/Pillow/12.3.0/json
+  RECORD: THIRD-PARTY-NOTICES/pillow/RECORD sha256=7b196b1c727044decb06abf90984be2a3f99443f0027b1a6ee99307a23b0800e
+  WHEEL: THIRD-PARTY-NOTICES/pillow/WHEEL sha256=ad1e507ec59c665de6adae409920fb15dd1dcd0c59de51c2a43a3bd0891f0cae; tag=cp312-cp312-win_amd64
+  native artifact: PIL/_avif.cp312-win_amd64.pyd sha256=6731dce52baab0b96b0eeb3c664844b5b42c2168ea8668af2430e2fbdd2dfbd8
+  native artifact: PIL/_imaging.cp312-win_amd64.pyd sha256=c8c519ec72bf75b2945b4fc4afa854af2fca8b970a403134f9ddda3e164d85e9
+  native artifact: PIL/_imagingcms.cp312-win_amd64.pyd sha256=c89c633ae1bf3f26a327d14ff688db66628e19c9866ab925479f27dcb60a2d6f
+  native artifact: PIL/_imagingft.cp312-win_amd64.pyd sha256=77c6d37de41733df40fb36d9af47644989ac17da036515e759303969edb22c48
+  native artifact: PIL/_imagingmath.cp312-win_amd64.pyd sha256=82ac45c41a008854d05f67deda298b65a7bed850d0d79a3af861ed583f6e7d62
+  native artifact: PIL/_imagingmorph.cp312-win_amd64.pyd sha256=b8523bbce8b322b4b931863c61b8107156b3f23fe1bbbfe0bc3fa318ea662fb0
+  native artifact: PIL/_imagingtk.cp312-win_amd64.pyd sha256=690cc1cae4a2dc8594a342b9241e691dcc89d81dad4cddcefdf285275365a2b1
+  native artifact: PIL/_webp.cp312-win_amd64.pyd sha256=9823cebb84f425af3ac1e7437259bc176e7ad7e25d7fa829b0e1a3e55c11be70
+  wheel evidence: THIRD-PARTY-NOTICES/pillow/SBOM/pillow-12.3.0.cdx.json sha256=40fa909b0f23405a7b97a6d91671a639a40acea7671b04387da22ba3e9fca50a
+  distribution notice: THIRD-PARTY-NOTICES/pillow/LICENSE
+  limitation: This is distribution-level evidence for the shipped Pillow wheel. The complete Pillow LICENSE and wheel SBOM are retained, but this record does not claim a per-library static or dynamic link map.
+
+curl-cffi-wheel [shipped_distribution; distribution-covered-unmapped]
+  distribution: curl-cffi 0.16.3; evidence_expression: MIT
+  PyPI wheel: curl_cffi-0.16.3-cp310-abi3-win_amd64.whl sha256=fe87b66e324ed7318166698e02169f3208dbda32b872a27d2bc61a9c19b335eb
+  PyPI JSON: https://pypi.org/pypi/curl-cffi/0.16.3/json
+  RECORD: THIRD-PARTY-NOTICES/curl-cffi/RECORD sha256=a8ae7f4581aee9df62397bc6a6793086a26e74506a684572d91bcfb6ac945886
+  WHEEL: THIRD-PARTY-NOTICES/curl-cffi/WHEEL sha256=1517363ea090e5011be1d9d80dafaf4c645b95893f0bbc1eceffba05d3bcfb89; tag=cp310-abi3-win_amd64
+  native artifact: curl_cffi/_wrapper.pyd sha256=d7d354dc1b6b0be4bffa463940e7f81e50f2f5d741a9f4724b8f2fff7341cff7
+  native artifact: curl_cffi.libs/libcurl-impersonate-1172405423dc93b7aeed557f2a2ca325.dll sha256=1172405423dc93b7aeed557f2a2ca325f73d89c4593640a4b775cee3cc1ea048
+  wheel evidence: THIRD-PARTY-NOTICES/curl-cffi/DELVEWHEEL sha256=a8381fc8e9e76af56e4f063aa393b082979637733580be34b28152744a67d937
+  distribution notice: THIRD-PARTY-NOTICES/curl-cffi/LICENSE
+  limitation: The DLL and wrapper are covered by the exact installed curl-cffi wheel RECORD and the retained full distribution LICENSE. No exact curl-impersonate source revision or separate component notice set is bound to this DLL, so it is not asserted to be independently MIT.
+
+Frozen release scope
+--------------------
+PyInstaller and Nuitka include LICENSE, NOTICE, LICENSES/, and
+THIRD-PARTY-NOTICES/ in the ohmymeme application data directory.
+The record-bound curl-cffi wheel remains in scope. gmssl is excluded
+from both frozen targets because no complete license text was found;
+source.douyin therefore keeps its provider_unavailable sentinel.
+
+Non-shipped external runtime and helper boundaries
+--------------------------------------------------
+gmssl-distribution [external_runtime_not_shipped]
+  owner: source.douyin; excluded from: pyinstaller, nuitka
+  evidence: 2ad6358f45069de4760f5d56e4368fec05ca23102aacd945d2a661cb183b224d
+  reason: The installed distribution has only legacy License: BSD metadata, no License-Expression, no License-File, and no installed license file. The official PyPI metadata reports the same legacy label. The upstream v3.2.2, 3.2.2, and master LICENSE raw URL probes returned 404. The upstream master setup.py did return version 3.2.2 with license='BSD', but that does not identify a precise SPDX BSD variant or supply a license text. The exact PyPI source archive was additionally verified and contained no complete license text.
+wechat-helper-openssl [helper_build_input_not_reproducible]
+  owner: source.wechat; excluded from: pyinstaller, nuitka
+  evidence: 3d558e79c3a687160b919be215f9b494a50199974eae68d3ce7080f5e5841c0b
+  reason: CMake requests a static OpenSSL::Crypto target but fixes neither version nor OpenSSL root/source archive/hash. No CMakeCache, static library, helper executable, or build attestation is in the worktree. The cryptography wheel SBOM's OpenSSL 4.0.2 record is intentionally not reused for this independent CMake dependency.
+wechat-keyfinder-downloaded-binary [external_runtime_not_shipped]
+  owner: source.wechat; excluded from: pyinstaller, nuitka
+  evidence: 72f281c6b7638735b13c2c80f8de92034f49ce0e20d75feb6640c8c6e0dd4e31
+  reason: The local helper CMake/CPP files match local tag 0.6.3, but the configured ZE514 v0.6.3 release/tag raw paths returned 404 and GitHub release/tag API calls returned 403. ZE514 dev raw LICENSE/CMake/CPP files were retrievable, yet no signed provenance, build log, artifact manifest, or independently reproducible build output links the configured executable SHA-256 to the source.
+
+Local helper source mapping
+---------------------------
+wechat-keyfinder-local-source [local-source-only; GPL-3.0-only]
+  root LICENSE sha256=230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809; local tag 0.6.3 (287c5127915208e2ca647115de3eb664237d5554)
+  source: src/wechat_keyfinder/CMakeLists.txt sha256=3d558e79c3a687160b919be215f9b494a50199974eae68d3ce7080f5e5841c0b
+  source: src/wechat_keyfinder/wechat_keyfinder.cpp sha256=f05c5a591d146ec9ef328dc52f5c94e76fd8b9a0c7a4d7906677254338c67c48
+  limitation: The root GPL text and local tag map only the repository-local C++ source. They do not attest that the separately fetched helper executable was built from this source or from any particular OpenSSL.

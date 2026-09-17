@@ -248,7 +248,7 @@ python -m ohmymeme
 - 复制后按文件头魔数修正扩展名（QQ 缓存文件常无扩展名或扩展名错误）
 - 无弹窗、无 `sys.exit`，失败以返回值/异常表达
 
-> ⚠️ **许可证**：`ohmymeme.integrations.imports.qqnt` 改编自 GPL-3.0 项目 [QQFavoriteExtract](https://github.com/VanillaNahida/QQFavoriteExtract)（作者：香草味的纳西妲），按 **GPL-3.0** 协议分发，与项目其余部分的 MIT 许可不同。引入该模块后，整体作品在再分发时需以 GPL-3.0 兼容方式处理，请在使用前确认合规性。
+> ⚠️ **许可证**：本项目按 **GPL-3.0-only** 协议分发。`ohmymeme.integrations.imports.qqnt` 改编自 GPL-3.0 项目 [QQFavoriteExtract](https://github.com/VanillaNahida/QQFavoriteExtract)（作者：香草味的纳西妲），其原始署名与 GPL 说明保留在对应插件源码中。
 
 ### 路径说明
 
@@ -408,3 +408,5 @@ Windows 上 GIF 复制同时写入三个剪贴板格式：`CF_DIB`（首帧 BMP�
 ## 许可证
 
 GPL-3.0
+
+`docs/plugin-license-matrix.json` 记录宿主、九个官方分发、QQNT/ABogus 来源、本地微信 helper 源码映射、14 个 Python 分发及发布范围。`scripts/build_notice_bundle.py --check --report <报告路径>` 按 Todo14 两份研究记录逐字节验证 `THIRD-PARTY-NOTICES/`；其 `license-evidence.json` 绑定实际 METADATA、完整许可/NOTICE/署名、RECORD/WHEEL/SBOM、PyPI 轮子摘要和 SHA-256。legacy `License` 元数据保留原样，只有基于完整文本的 `evidence_expression` 用于发布记录。根 `NOTICE` 是人可读索引，`LICENSES/wechat-keyfinder-local-source.json` 仅把根 GPL 和本地 `0.6.3` tag 映射到 C++ 源码，不声称外部 helper 二进制绑定。`scripts/plugin_license_matrix.py --check --schema schemas/plugin/license-matrix.schema.json --matrix docs/plugin-license-matrix.json --report <报告路径>` 不加载 provider 或运行构建；缺失/变更 bundle、RECORD 映射、轮子摘要、未知分发、NOASSERTION 的已交付运行时或错误外部范围均返回 `REJECTED`。冻结构建携带 `ohmymeme/LICENSE`、`NOTICE`、`LICENSES/` 与 `THIRD-PARTY-NOTICES/`；`curl_cffi` 是有完整分发级证据的已交付轮子，`gmssl` 因无完整许可证正文被排除，抖音 provider 因此保留原有 `provider_unavailable` 哨兵。运行时下载的微信 helper 及其 CMake/OpenSSL 输入不随制品交付；helper 二进制需另有来源-二进制证明后才能作为发布内容。

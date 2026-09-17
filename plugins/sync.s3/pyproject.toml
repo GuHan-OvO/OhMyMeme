@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "OhMyMeme S3 sync plugin"
 requires-python = ">=3.12"
 license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 
 [project.entry-points."ohmymeme.plugins.v1"]
 "sync.s3" = "ohmymeme_plugin_sync_s3:create_plugin"

@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "OhMyMeme WeChat source plugin"
 requires-python = ">=3.12"
 license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 
 [project.entry-points."ohmymeme.plugins.v1"]
 "source.wechat" = "ohmymeme_plugin_wechat:create_plugin"

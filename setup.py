@@ -25,6 +25,9 @@ setup(
     long_description_content_type="text/markdown",
     author="OhMyMeme Team",
     url="https://github.com/OhMyMeme/OhMyMeme",
+    license="GPL-3.0-only",
+    license_expression="GPL-3.0-only",
+    license_files=["LICENSE"],
     packages=find_packages(where="src", include=["ohmymeme", "ohmymeme.*"]),
     package_dir={"": "src"},
     python_requires=">=3.10",
@@ -56,7 +59,6 @@ setup(
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: End Users/Desktop",
-        "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.10",

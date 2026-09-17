@@ -1,0 +1,22 @@
+{
+  "binary_binding": "not-reproducible",
+  "id": "wechat-keyfinder-local-source",
+  "license_expression": "GPL-3.0-only",
+  "limitation": "The root GPL text and local tag map only the repository-local C++ source. They do not attest that the separately fetched helper executable was built from this source or from any particular OpenSSL.",
+  "local_tag": "0.6.3",
+  "local_tag_commit": "287c5127915208e2ca647115de3eb664237d5554",
+  "root_license": {
+    "observed_text": "GNU General Public License, Version 3, 29 June 2007",
+    "path": "LICENSE",
+    "sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809"
+  },
+  "scope": "local-source-only",
+  "source_hashes": {
+    "src/wechat_keyfinder/CMakeLists.txt": "3d558e79c3a687160b919be215f9b494a50199974eae68d3ce7080f5e5841c0b",
+    "src/wechat_keyfinder/wechat_keyfinder.cpp": "f05c5a591d146ec9ef328dc52f5c94e76fd8b9a0c7a4d7906677254338c67c48"
+  },
+  "source_paths": [
+    "src/wechat_keyfinder/CMakeLists.txt",
+    "src/wechat_keyfinder/wechat_keyfinder.cpp"
+  ]
+}

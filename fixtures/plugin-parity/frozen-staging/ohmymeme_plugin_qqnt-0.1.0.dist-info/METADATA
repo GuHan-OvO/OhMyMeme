@@ -4,3 +4,5 @@ Version: 0.1.0
 Summary: OhMyMeme QQNT source plugin
 License-Expression: GPL-3.0-only
 Requires-Python: >=3.12
+License-File: LICENSE
+Dynamic: license-file

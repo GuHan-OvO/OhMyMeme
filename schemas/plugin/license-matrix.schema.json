@@ -1,0 +1,281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ohmymeme.local/schemas/plugin/license-matrix.schema.json",
+  "title": "OhMyMeme source-backed license ownership matrix",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "host", "distributions", "source_components", "native_distributions", "owned_source_mapping", "dependencies", "provider_extras", "frozen_official_set", "notice_bundle", "release_scope", "excluded_distributions"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 2},
+    "host": {"$ref": "#/$defs/host"},
+    "distributions": {"type": "array", "minItems": 9, "maxItems": 9, "items": {"$ref": "#/$defs/distribution"}},
+    "source_components": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/component"}},
+    "native_distributions": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/native_distribution"}},
+    "owned_source_mapping": {"$ref": "#/$defs/owned_source_mapping"},
+    "dependencies": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/dependency"}},
+    "provider_extras": {"type": "object", "additionalProperties": {"$ref": "#/$defs/strings"}},
+    "frozen_official_set": {"$ref": "#/$defs/frozen"},
+    "notice_bundle": {"$ref": "#/$defs/notice_bundle"},
+    "release_scope": {"$ref": "#/$defs/release_scope"},
+    "excluded_distributions": {"const": ["adb.qq", "qq.mobile"]}
+  },
+  "$defs": {
+    "strings": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "git_hash": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "hashes": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#/$defs/hash"}},
+    "provenance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "files", "references", "basis"],
+      "properties": {
+        "status": {"enum": ["verified", "rejected"]},
+        "files": {"$ref": "#/$defs/strings"},
+        "references": {"$ref": "#/$defs/strings"},
+        "basis": {"type": "string", "minLength": 1}
+      }
+    },
+    "notice": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "files", "basis"],
+      "properties": {"status": {"enum": ["present", "rejected"]}, "files": {"$ref": "#/$defs/strings"}, "basis": {"type": "string", "minLength": 1}}
+    },
+    "offer": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "paths", "basis"],
+      "properties": {"status": {"enum": ["available", "rejected"]}, "paths": {"$ref": "#/$defs/strings"}, "basis": {"type": "string", "minLength": 1}}
+    },
+    "approval": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "basis"],
+      "properties": {"status": {"enum": ["approved", "rejected"]}, "basis": {"type": "string", "minLength": 1}}
+    },
+    "host": {
+      "type": "object", "additionalProperties": false,
+      "required": ["distribution", "metadata_source", "spdx", "license_files", "metadata_license_expression", "metadata_license_files", "frozen_license_files", "source_hashes", "requirement_includes", "provenance", "notice", "source_offer"],
+      "properties": {
+        "distribution": {"const": "ohmymeme"}, "metadata_source": {"const": "setup.py"},
+        "spdx": {"type": "string", "minLength": 1}, "license_files": {"$ref": "#/$defs/strings"}, "metadata_license_expression": {"type": "string", "minLength": 1}, "metadata_license_files": {"$ref": "#/$defs/strings"}, "frozen_license_files": {"$ref": "#/$defs/strings"},
+        "source_hashes": {"$ref": "#/$defs/hashes"}, "requirement_includes": {"type": "object", "additionalProperties": {"$ref": "#/$defs/strings"}},
+        "provenance": {"$ref": "#/$defs/provenance"}, "notice": {"$ref": "#/$defs/notice"}, "source_offer": {"$ref": "#/$defs/offer"}
+      }
+    },
+    "distribution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "distribution", "version", "pyproject", "module", "factory", "spdx", "license_files", "package_license_files", "frozen_license_files", "dependencies", "source_hashes", "dependency_approval", "provenance", "notice", "source_offer"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1}, "distribution": {"type": "string", "minLength": 1}, "version": {"type": "string", "minLength": 1}, "pyproject": {"type": "string", "minLength": 1},
+        "module": {"type": "string", "minLength": 1}, "factory": {"type": "string", "minLength": 1}, "spdx": {"type": "string", "minLength": 1},
+        "license_files": {"$ref": "#/$defs/strings"}, "package_license_files": {"$ref": "#/$defs/strings"}, "frozen_license_files": {"$ref": "#/$defs/strings"}, "dependencies": {"$ref": "#/$defs/strings"},
+        "source_hashes": {"$ref": "#/$defs/hashes"}, "dependency_approval": {"$ref": "#/$defs/approval"},
+        "provenance": {"$ref": "#/$defs/provenance"}, "notice": {"$ref": "#/$defs/notice"}, "source_offer": {"$ref": "#/$defs/offer"}
+      }
+    },
+    "component": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "spdx", "license_files", "source_hashes", "provenance", "notice", "source_offer"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1}, "kind": {"enum": ["third-party-source", "helper"]}, "spdx": {"type": "string", "minLength": 1},
+        "source_revision": {"type": "object", "additionalProperties": false, "required": ["tag", "commit", "root_license_sha256", "source_binding"], "properties": {"tag": {"type": "string", "minLength": 1}, "commit": {"$ref": "#/$defs/git_hash"}, "root_license_sha256": {"$ref": "#/$defs/hash"}, "source_binding": {"const": "local-source-only"}}},
+        "license_files": {"$ref": "#/$defs/strings"}, "source_hashes": {"$ref": "#/$defs/hashes"}, "provenance": {"$ref": "#/$defs/provenance"}, "notice": {"$ref": "#/$defs/notice"}, "source_offer": {"$ref": "#/$defs/offer"}
+      }
+    },
+    "declaration": {
+      "type": "object", "additionalProperties": false,
+      "required": ["owner", "source", "scope", "requirement"],
+      "properties": {"owner": {"type": "string", "minLength": 1}, "source": {"type": "string", "minLength": 1}, "scope": {"type": "string", "minLength": 1}, "requirement": {"type": "string", "minLength": 1}}
+    },
+    "dependency": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "declarations", "approval", "spdx", "license_files", "provenance_file", "basis"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1}, "declarations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/declaration"}},
+        "approval": {"enum": ["approved", "frozen-disabled", "rejected", "not-shipped"]}, "spdx": {"type": "string", "minLength": 1}, "license_files": {"$ref": "#/$defs/strings"},
+        "provenance_file": {"type": ["string", "null"]}, "evidence": {"$ref": "#/$defs/dependency_evidence"}, "basis": {"type": "string", "minLength": 1}
+      }
+    },
+    "dependency_evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["installed_version", "metadata_path", "metadata_sha256", "project_url", "source_url", "metadata_license_field", "metadata_license", "evidence_expression", "evidence_expression_basis", "spdx", "license_file_hashes", "compatibility_rule"],
+      "properties": {
+        "installed_version": {"type": "string", "minLength": 1}, "metadata_path": {"type": "string", "minLength": 1}, "metadata_sha256": {"$ref": "#/$defs/hash"},
+        "project_url": {"type": "string", "minLength": 1}, "source_url": {"type": "string", "minLength": 1}, "metadata_license_field": {"enum": ["License", "License-Expression"]},
+        "metadata_license": {"type": "string", "minLength": 1}, "evidence_expression": {"type": "string", "minLength": 1}, "evidence_expression_basis": {"type": "string", "minLength": 1}, "spdx": {"type": "string", "minLength": 1}, "license_file_hashes": {"type": "object", "additionalProperties": {"$ref": "#/$defs/hash"}}, "compatibility_rule": {"type": "string", "minLength": 1},
+        "source_archive": {
+          "type": "object", "additionalProperties": false,
+          "required": ["pypi_json_url", "filename", "url", "sha256", "inspection"],
+          "properties": {
+            "pypi_json_url": {"type": "string", "minLength": 1},
+            "filename": {"type": "string", "minLength": 1},
+            "url": {"type": "string", "minLength": 1},
+            "sha256": {"$ref": "#/$defs/hash"},
+            "inspection": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    },
+    "bundle_file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_path", "bundle_path", "sha256"],
+      "properties": {
+        "source_path": {"type": "string", "minLength": 1},
+        "bundle_path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "native_artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_path", "record_path", "sha256"],
+      "properties": {
+        "source_path": {"type": "string", "minLength": 1},
+        "record_path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "source_wheel": {
+      "type": "object", "additionalProperties": false,
+      "required": ["filename", "url", "sha256", "pypi_json_url"],
+      "properties": {
+        "filename": {"type": "string", "pattern": "\\.whl$"},
+        "url": {"type": "string", "pattern": "^https://files\\.pythonhosted\\.org/"},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "pypi_json_url": {"type": "string", "pattern": "^https://pypi\\.org/pypi/"}
+      }
+    },
+    "native_distribution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "scope", "distribution", "version", "evidence_expression", "source_wheel", "record", "wheel_metadata", "artifacts", "sbom_files", "evidence_files", "notice_paths", "component_status", "limitation"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "scope": {"const": "shipped_distribution"},
+        "distribution": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "evidence_expression": {"type": "string", "minLength": 1},
+        "source_wheel": {"$ref": "#/$defs/source_wheel"},
+        "record": {"$ref": "#/$defs/bundle_file"},
+        "wheel_metadata": {
+          "type": "object", "additionalProperties": false,
+          "required": ["source_path", "bundle_path", "sha256", "tag"],
+          "properties": {
+            "source_path": {"type": "string", "minLength": 1},
+            "bundle_path": {"type": "string", "minLength": 1},
+            "sha256": {"$ref": "#/$defs/hash"},
+            "tag": {"type": "string", "minLength": 1}
+          }
+        },
+        "artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/native_artifact"}},
+        "sbom_files": {"type": "array", "items": {"$ref": "#/$defs/bundle_file"}},
+        "evidence_files": {"type": "array", "items": {"$ref": "#/$defs/bundle_file"}},
+        "notice_paths": {"$ref": "#/$defs/strings"},
+        "component_status": {"enum": ["distribution-covered", "distribution-covered-unmapped"]},
+        "limitation": {"type": "string", "minLength": 1}
+      }
+    },
+    "owned_source_mapping": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "scope", "license_expression", "root_license", "source_paths", "source_hashes", "local_tag", "local_tag_commit", "binary_binding", "limitation"],
+      "properties": {
+        "id": {"const": "wechat-keyfinder-local-source"},
+        "scope": {"const": "local-source-only"},
+        "license_expression": {"const": "GPL-3.0-only"},
+        "root_license": {
+          "type": "object", "additionalProperties": false,
+          "required": ["path", "sha256", "observed_text"],
+          "properties": {
+            "path": {"const": "LICENSE"},
+            "sha256": {"$ref": "#/$defs/hash"},
+            "observed_text": {"type": "string", "minLength": 1}
+          }
+        },
+        "source_paths": {"$ref": "#/$defs/strings"},
+        "source_hashes": {"$ref": "#/$defs/hashes"},
+        "local_tag": {"const": "0.6.3"},
+        "local_tag_commit": {"$ref": "#/$defs/git_hash"},
+        "binary_binding": {"const": "not-reproducible"},
+        "limitation": {"type": "string", "minLength": 1}
+      }
+    },
+    "frozen_distribution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "distribution", "version", "spdx", "dependencies", "module_files", "metadata_files", "license_files", "license_files_disabled", "metadata_sha256", "entry_points_sha256"],
+      "properties": {
+        "id": {"type": "string"}, "distribution": {"type": "string"}, "version": {"type": "string"}, "spdx": {"type": "string"}, "dependencies": {"$ref": "#/$defs/strings"},
+        "module_files": {"$ref": "#/$defs/strings"}, "metadata_files": {"$ref": "#/$defs/strings"}, "license_files": {"$ref": "#/$defs/strings"}, "license_files_disabled": {"type": "boolean"},
+        "metadata_sha256": {"$ref": "#/$defs/hash"}, "entry_points_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "frozen": {
+      "type": "object", "additionalProperties": false,
+      "required": ["staging_manifest", "frozen_manifest", "source_manifest", "official_ids", "manifest_sha256", "staging_manifest_sha256", "shared_license_target", "distributions"],
+      "properties": {
+        "staging_manifest": {"type": "string"}, "frozen_manifest": {"type": "string"}, "source_manifest": {"type": "string"}, "official_ids": {"$ref": "#/$defs/strings"},
+        "manifest_sha256": {"$ref": "#/$defs/hash"}, "staging_manifest_sha256": {"$ref": "#/$defs/hash"}, "shared_license_target": {"const": "ohmymeme/LICENSE"},
+        "distributions": {"type": "array", "minItems": 9, "maxItems": 9, "items": {"$ref": "#/$defs/frozen_distribution"}}
+      }
+    },
+    "notice_bundle": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "index_sha256", "content_sha256", "bundle_version"],
+      "properties": {
+        "path": {"const": "THIRD-PARTY-NOTICES/license-evidence.json"},
+        "index_sha256": {"$ref": "#/$defs/hash"},
+        "content_sha256": {"$ref": "#/$defs/hash"},
+        "bundle_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "release_target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "data_targets", "excluded_modules"],
+      "properties": {
+        "id": {"enum": ["pyinstaller", "nuitka"]},
+        "data_targets": {"$ref": "#/$defs/strings"},
+        "excluded_modules": {"$ref": "#/$defs/strings"}
+      }
+    },
+    "release_feature": {
+      "type": "object", "additionalProperties": false,
+      "required": ["provider", "feature", "status", "reason"],
+      "properties": {
+        "provider": {"type": "string", "minLength": 1},
+        "feature": {"type": "string", "minLength": 1},
+        "status": {"enum": ["runtime_unavailable", "external_runtime_not_shipped"]},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "release_component": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "scope", "owner", "excluded_from_targets", "notice_status", "reason", "index_component_sha256"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "scope": {"enum": ["external_runtime_not_shipped", "helper_build_input_not_reproducible", "shipped_distribution"]},
+        "owner": {"type": "string", "minLength": 1},
+        "excluded_from_targets": {"$ref": "#/$defs/strings"},
+        "notice_status": {"type": "string", "minLength": 1}, "index_component_sha256": {"$ref": "#/$defs/hash"},
+        "reason": {"type": "string", "minLength": 1},
+        "source_path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "source_binding": {"type": "string", "minLength": 1},
+        "url": {"type": "string", "minLength": 1},
+        "source_archive": {
+          "type": "object", "additionalProperties": false,
+          "required": ["pypi_json_url", "filename", "url", "sha256", "inspection"],
+          "properties": {
+            "pypi_json_url": {"type": "string", "minLength": 1},
+            "filename": {"type": "string", "minLength": 1},
+            "url": {"type": "string", "minLength": 1},
+            "sha256": {"$ref": "#/$defs/hash"},
+            "inspection": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    },
+    "release_scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["targets", "feature_availability", "components"],
+      "properties": {
+        "targets": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/release_target"}},
+        "feature_availability": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/release_feature"}},
+        "components": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/release_component"}}
+      }
+    }
+  }
+}
