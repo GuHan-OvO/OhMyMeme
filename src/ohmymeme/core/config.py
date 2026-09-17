@@ -164,6 +164,9 @@ class Config:
         "lan_secret": "",  # 互联访问密钥（加密存储）
         # Telegram 导入
         "tg_tdata_path": "",  # 手动指定的 Telegram tdata 目录
+        # QQNT 导入
+        "qqnt_ini_path": "",  # 手动指定的 UserDataInfo.ini
+        "qqnt_userdata_path": "",  # 手动指定的 QQ 用户数据目录
         # UI
         "theme": "dark",
         "window_x": -1,
