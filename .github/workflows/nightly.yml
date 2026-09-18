@@ -117,7 +117,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete nightly --repo OhMyMeme/OhMyMeme --yes 2>/dev/null || true
-          gh release create nightly --repo OhMyMeme/OhMyMeme --prerelease --pin \
+          RELEASE_ID=$(gh release create nightly --repo OhMyMeme/OhMyMeme --prerelease --json databaseId -q .databaseId \
             --title "Nightly Build ($(date -u +'%Y-%m-%d'))" \
             --notes "$(cat <<'EOF'
           # 非正式版（Nightly Build）
@@ -131,4 +131,11 @@ jobs:
           > 正式版请从 [Releases](https://github.com/OhMyMeme/OhMyMeme/releases) 下载。
           EOF
           )"
+          gh api graphql -f query="
+            mutation(\$id: ID!) {
+              pinRelease(input: {releaseId: \$id}) {
+                release { isPinned }
+              }
+            }
+          " -f id="$RELEASE_ID"
           gh release upload nightly --repo OhMyMeme/OhMyMeme artifacts/* --clobber
