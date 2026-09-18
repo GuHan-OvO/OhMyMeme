@@ -3,7 +3,6 @@
 import ast
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
 PACKAGE = SRC / "ohmymeme"
@@ -70,6 +69,18 @@ def test_integrations_do_not_depend_on_presentation() -> None:
     offenders = [
         (path, module)
         for path in _files_in("integrations")
+        for module in _imported_modules(path)
+        if module.startswith("ohmymeme.presentation")
+    ]
+    assert not offenders
+
+
+def test_import_compatibility_shims_do_not_depend_on_presentation() -> None:
+    """Given public import shims, their lazy host session has no UI import."""
+    shims = ("telegram.py", "douyin.py", "wechat.py", "qqnt.py")
+    offenders = [
+        (path, module)
+        for path in (PACKAGE / "integrations" / "imports" / name for name in shims)
         for module in _imported_modules(path)
         if module.startswith("ohmymeme.presentation")
     ]

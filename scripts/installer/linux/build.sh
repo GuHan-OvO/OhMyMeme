@@ -93,8 +93,13 @@ PYEOF
     fi
 
     cd "$DIST_DIR"
-    ARCH=$APPIMAGE_ARCH ./appimagetool --appimage-extract-and-run OhMyMeme.AppDir \
-        "OhMyMeme-v${APP_VERSION}-${ARCH}.AppImage"
+    if [ "$APPIMAGE_ARCH" = "x86_64" ]; then
+        ARCH=x86_64 ./appimagetool --appimage-extract-and-run OhMyMeme.AppDir \
+            "OhMyMeme-v${APP_VERSION}-x86_64.AppImage"
+    else
+        ARCH="$APPIMAGE_ARCH" ./appimagetool --appimage-extract-and-run OhMyMeme.AppDir \
+            "OhMyMeme-v${APP_VERSION}-${ARCH}.AppImage"
+    fi
     echo "AppImage: $DIST_DIR/OhMyMeme-v${APP_VERSION}-${ARCH}.AppImage"
 }
 
@@ -140,8 +145,13 @@ CTRL
     sed -i "s/Architecture: amd64/Architecture: $DEB_ARCH/" "$deb_root/DEBIAN/control"
 
     dpkg-deb --build "$deb_root"
-    mv "$DIST_DIR/ohmymeme_${APP_VERSION}_${DEB_ARCH}.deb" \
-       "$DIST_DIR/OhMyMeme-v${APP_VERSION}-${DEB_ARCH}.deb"
+    if [ "$DEB_ARCH" = "amd64" ]; then
+        mv "$DIST_DIR/ohmymeme_${APP_VERSION}_amd64.deb" \
+           "$DIST_DIR/OhMyMeme-v${APP_VERSION}-amd64.deb"
+    else
+        mv "$DIST_DIR/ohmymeme_${APP_VERSION}_${DEB_ARCH}.deb" \
+           "$DIST_DIR/OhMyMeme-v${APP_VERSION}-${DEB_ARCH}.deb"
+    fi
     echo "deb:  $DIST_DIR/OhMyMeme-v${APP_VERSION}-${DEB_ARCH}.deb"
 }
 
@@ -198,7 +208,11 @@ SPEC
 
     rpmbuild --define "_topdir $rpm_root" -bb "$rpm_root/SPECS/ohmymeme.spec"
     cp "$rpm_root/RPMS/$RPM_ARCH/"*.rpm "$DIST_DIR/"
-    mv "$DIST_DIR"/*.rpm "$DIST_DIR/OhMyMeme-v${APP_VERSION}-${RPM_ARCH}.rpm"
+    if [ "$RPM_ARCH" = "x86_64" ]; then
+        mv "$DIST_DIR"/*.rpm "$DIST_DIR/OhMyMeme-v${APP_VERSION}-x86_64.rpm"
+    else
+        mv "$DIST_DIR"/*.rpm "$DIST_DIR/OhMyMeme-v${APP_VERSION}-${RPM_ARCH}.rpm"
+    fi
     echo "rpm:  $DIST_DIR/OhMyMeme-v${APP_VERSION}-${RPM_ARCH}.rpm"
 }
 

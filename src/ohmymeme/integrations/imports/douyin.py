@@ -28,7 +28,7 @@ def _default():
     # Legacy callers retain one session; official factories are independent.
     global _session
     if _session is None:
-        from ohmymeme.presentation.desktop.import_workers import LegacyImportSession
+        from ohmymeme.app.legacy_imports import LegacyImportSession
 
         _session = LegacyImportSession("source.douyin")
     return _session

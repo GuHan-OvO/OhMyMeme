@@ -82,6 +82,27 @@ def test_package_smoke_requires_external_helper_input_guard(monkeypatch, tmp_pat
         contract_report(target="windows-x64")
 
 
+def test_package_smoke_rejects_missing_appimage_arch_source_metadata(
+    monkeypatch, tmp_path
+):
+    """Given a Linux source script, missing x64 AppImage metadata rejects it."""
+    from scripts import package_smoke
+
+    linux_build = package_smoke.LINUX_BUILD.read_text(encoding="utf-8")
+    stale_linux_build = tmp_path / "build.sh"
+    stale_linux_build.write_text(
+        linux_build.replace("ARCH=x86_64 ./appimagetool", "./appimagetool", 1),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(package_smoke, "LINUX_BUILD", stale_linux_build)
+
+    with pytest.raises(
+        ContractViolation,
+        match="source metadata missing: ARCH=x86_64 ./appimagetool",
+    ):
+        contract_report(target="linux-appimage-x64")
+
+
 def test_frozen_policy_excludes_only_unlicensed_gmssl_and_collects_curl_cffi():
     # curl-cffi has RECORD-bound distribution evidence; only gmssl stays disabled.
     from scripts import package_smoke
