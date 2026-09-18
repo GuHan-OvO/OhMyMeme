@@ -128,12 +128,4 @@ jobs:
           > - 软件内的更新检查 **不会** 提示此版本，请勿将其用于日常更新路径
           >
           > 正式版请从 [Releases](https://github.com/OhMyMeme/OhMyMeme/releases) 下载。"
-          RELEASE_ID=$(gh api repos/OhMyMeme/OhMyMeme/releases/tags/nightly --jq .id)
-          gh api graphql -f query="
-            mutation(\$id: ID!) {
-              pinRelease(input: {releaseId: \$id}) {
-                release { isPinned }
-              }
-            }
-          " -f id="$RELEASE_ID"
           gh release upload nightly --repo OhMyMeme/OhMyMeme artifacts/* --clobber
