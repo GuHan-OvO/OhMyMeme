@@ -21,7 +21,9 @@ def main():
     """Freeze current public contracts into an external evidence root."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", default=".")
-    parser.add_argument("--plan", default=".omo/plans/full-project-modular-refactor.md")
+    parser.add_argument(
+        "--plan", default=".omo/plans/pluginized-recomposition-parity.md"
+    )
     parser.add_argument("--evidence-root", default="")
     parser.add_argument("--temp-root", required=True)
     args = parser.parse_args()
@@ -52,11 +54,23 @@ def main():
         methods = public_methods(manager, "JsApi")
         routes = route_ids(manager)
         method_names = {item["id"].split(".", 1)[1] for item in methods}
+        method_signatures = {
+            item["id"].split(".", 1)[1]: item["signature"] for item in methods
+        }
         fixture = contract_fixture(repo_root)
         required = set(fixture["required_bridge_methods"])
         required_routes = set(fixture["required_http_routes"])
+        required_signatures = fixture["required_bridge_signatures"]
         legacy_paths = {entry[0] for entry in __import__("baseline_contracts").MAPPINGS}
-        if not required <= method_names or not required_routes <= set(routes) or not set(fixture["required_legacy_paths"]) <= legacy_paths:
+        if (
+            not required <= method_names
+            or not required_routes <= set(routes)
+            or any(
+                method_signatures.get(name) != signature
+                for name, signature in required_signatures.items()
+            )
+            or not set(fixture["required_legacy_paths"]) <= legacy_paths
+        ):
             return fail("BLOCKED_PUBLIC_CONTRACT_DRIFT")
         if not baseline:
             return fail("BLOCKED_BASELINE_COMMIT")

@@ -214,6 +214,10 @@ def test_bridge_schema_and_generated_files_are_present_and_deterministic():
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
     assert main_dto.is_file()
     assert settings_dto.is_file()
+    attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+    for dto in (main_dto, settings_dto):
+        assert b"\r\n" not in dto.read_bytes()
+        assert f"{dto.relative_to(ROOT).as_posix()} text eol=lf" in attributes
     assert main_dto.read_bytes() == settings_dto.read_bytes()
     result = subprocess.run(
         ["mise", "run", "generate-schemas", "--", "--check"],

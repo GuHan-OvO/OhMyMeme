@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "freeze_baseline.py"
 RESOLVER = ROOT / "scripts" / "resolve_plan_refs.py"
-PLAN = ROOT / ".omo" / "plans" / "full-project-modular-refactor.md"
+PLAN = ROOT / ".omo" / "plans" / "pluginized-recomposition-parity.md"
 
 
 def _freeze(tmp_path, repository=ROOT):
@@ -79,13 +79,23 @@ def test_freeze_baseline_rejects_missing_copy_meme_and_changed_upload_route(tmp_
     shutil.copytree(source_root, target_root)
     fixture_root = repository / "tests" / "fixtures"
     fixture_root.mkdir(parents=True)
-    shutil.copy2(ROOT / "tests" / "fixtures" / "public_surface_contract.json", fixture_root)
-    manager = target_root / "ohmymeme" / "presentation" / "desktop" / "window_manager.py"
+    shutil.copy2(
+        ROOT / "tests" / "fixtures" / "public_surface_contract.json", fixture_root
+    )
+    facade = (
+        target_root / "ohmymeme" / "presentation" / "desktop" / "api" / "main_facade.py"
+    )
+    source = facade.read_text(encoding="utf-8")
+    facade.write_text(
+        source.replace("def copy_meme(", "def copy_meme_removed(", 1),
+        encoding="utf-8",
+    )
+    manager = (
+        target_root / "ohmymeme" / "presentation" / "desktop" / "window_manager.py"
+    )
     source = manager.read_text(encoding="utf-8")
     manager.write_text(
-        source.replace("def copy_meme(", "def copy_meme_removed(", 1).replace(
-            '"/api/upload/"', '"/api/upload-changed/"', 1
-        ),
+        source.replace('"/api/upload/"', '"/api/upload-changed/"', 1),
         encoding="utf-8",
     )
 
@@ -93,6 +103,41 @@ def test_freeze_baseline_rejects_missing_copy_meme_and_changed_upload_route(tmp_
     result = _freeze(tmp_path, repository)
 
     # Then: the freeze fails rather than recording a misleading baseline
+    assert result.returncode != 0
+    assert "BLOCKED_PUBLIC_CONTRACT_DRIFT" in result.stderr
+
+
+def test_freeze_baseline_rejects_changed_frozen_bridge_signature(tmp_path):
+    # Given: an isolated source copy whose public bridge signature changed
+    repository = tmp_path / "repository"
+    source_root = ROOT / "src"
+    target_root = repository / "src"
+    target_root.parent.mkdir()
+    import shutil
+
+    shutil.copytree(source_root, target_root)
+    fixture_root = repository / "tests" / "fixtures"
+    fixture_root.mkdir(parents=True)
+    shutil.copy2(
+        ROOT / "tests" / "fixtures" / "public_surface_contract.json", fixture_root
+    )
+    facade = (
+        target_root / "ohmymeme" / "presentation" / "desktop" / "api" / "main_facade.py"
+    )
+    source = facade.read_text(encoding="utf-8")
+    facade.write_text(
+        source.replace(
+            "def copy_meme(self, meme_id):",
+            "def copy_meme(self, meme_id, unsupported):",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    # When: the changed bridge is frozen
+    result = _freeze(tmp_path, repository)
+
+    # Then: an unsupported signature cannot be recorded as a baseline
     assert result.returncode != 0
     assert "BLOCKED_PUBLIC_CONTRACT_DRIFT" in result.stderr
 

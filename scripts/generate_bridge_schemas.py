@@ -57,7 +57,9 @@ def _render_dto(schema_path: Path, main_path: Path) -> bytes:
         cwd=ROOT,
         check=True,
     )
-    return main_path.read_bytes()
+    dto_bytes = main_path.read_bytes().replace(b"\r\n", b"\n")
+    main_path.write_bytes(dto_bytes)
+    return dto_bytes
 
 
 def _write_outputs() -> None:

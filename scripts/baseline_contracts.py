@@ -124,8 +124,21 @@ def public_methods(path, class_name):
                 ):
                     continue
                 if isinstance(node.value, ast.Name):
-                    tree = facade_tree
                     target_name = node.value.id
+                    for imported in facade_tree.body:
+                        if (
+                            isinstance(imported, ast.ImportFrom)
+                            and imported.module
+                            and any(item.name == target_name for item in imported.names)
+                        ):
+                            implementation = (
+                                facade_path.parent / imported.module.replace(".", "/")
+                            ).with_suffix(".py")
+                            if implementation.is_file():
+                                tree = ast.parse(
+                                    implementation.read_text(encoding="utf-8")
+                                )
+                            break
                     break
     results = []
     for node in tree.body:
