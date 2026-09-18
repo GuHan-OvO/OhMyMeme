@@ -88,6 +88,9 @@ scripts/
   build.py        # PyInstaller + InnoSetup 构建脚本 (i18n zh/en)
   plugin_docs_check.py # Todo16 固定插件文档/入口/边界离线校验
   plugin_packaging.py # 九个官方插件的元数据、staging 与 source/frozen parity 校验
+  offline_fixture_runner.py # Todo17 DNS/HTTP/进程/路径离线拦截与 trace
+  plugin_parity.py # Todo17 九 provider baseline/recomposed 实际捕获与精确比较
+  plugin_ui_parity.py # Todo17 固定 Chromium 设置页 DOM/区域截图 parity
   launcher.py     # PyInstaller 入口
   hooks/          # 自定义 PyInstaller hooks（Linux GTK: WebKit2/Soup typelib 收集，内置无对应 hook）
     hook-gi.repository.WebKit2.py
@@ -128,6 +131,7 @@ tests/
 - 宿主拥有 SQLite、缓存、manifest、Config、UI、原生能力与 LAN 安全边界。插件仅接收窄配置、限域密钥和 operation 临时目录，不接收持久 Config、缓存或存储路径；持久配置、数据库、图片存储、manifest 提交、Bridge/UI、原生窗口/剪贴板/拖拽、LAN 密钥协商/审批/加密/命令均不得移入插件。
 - OperationCoordinator 管理 provider 的启动、取消和资源回收。宿主先注册线程、helper 子进程、socket 和临时资源，再允许阻塞；operation drain 后才释放宿主 lease 和临时目录。passcode、Cookie 与同步凭据是 transient operation secret，不进入持久 Config 或日志。
 - `scripts/plugin_packaging.py` 校验官方 source/frozen staging 的模块、入口元数据、manifest 和许可证文件；source/frozen staging 一致性只覆盖源码、入口元数据与 staging，不等同于对最终冻结可执行文件的实际构建验证。`docs/plugin-license-matrix.json`、`NOTICE`、`LICENSES/`、`THIRD-PARTY-NOTICES/` 是许可证和发布范围的证据入口。
+- Todo17 的 `plugin_parity.py`/`plugin_ui_parity.py` 仅用于固定九 provider 和现有设置页的离线证据：provider baseline 必须来自 editable source，recomposed 必须来自 `fixtures/plugin-parity/frozen-staging`，两侧均经真实 manifest/registry/factory/context；UI 必须用本地 Chromium `960x640` dark 和 `load_ui_projection()`，不能以静态 DOM 或最终 F3 输出替代。`offline_fixture_runner.py` 仅放行策略精确声明的本地 Node capture，拒绝并记录 DNS/socket/HTTP/curl、其他 subprocess、helper/ffmpeg/ADB；允许差异仅 ids、timestamps、temporary paths、thread ordering。`fixtures/plugin-parity/providers-failure/`、`ui-failure/` 是闭合 F3 失败输入，不构成动态 DSL，`.omo/evidence/` 是忽略的本地输出。
 - 九个 provider 的 parity 基线只允许 ids、timestamps、temporary paths、thread ordering 差异。`scripts/plugin_docs_check.py` 消费 Todo1 inventory、`config/plugin-manifest.json` 和 `README.md`/`AGENTS.md`/`docs/project-structure.md`；其无效输入为 `fixtures/plugin-parity/inventory-invalid.json`、`fixtures/plugin-parity/docs-invalid/README.md` 与 `fixtures/plugin-parity/docs-conflicting-nonfeatures/README.md`。
 - 外部下载的微信 helper 及其 CMake/OpenSSL 输入不随制品交付；本地 helper 源码映射不构成外部 helper EXE 的来源到二进制可复现性证明。不得把 source/frozen staging 或许可证证据表述为最终 helper 或最终冻结可执行文件的实际构建证明。
 - 不提供 marketplace、热重载、运行时卸载、不受信任插件沙箱或第三方插件安装接口；不增加动态 provider 发现、任意执行、动态 Bridge、HTML/JS UI 贡献或通用插件 DSL。

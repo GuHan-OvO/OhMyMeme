@@ -148,6 +148,10 @@ npx vite build     # 构建 Vue 前端 → src/webui/dist/ohmymeme.js
 
 `docs/plugin-abi-matrix.json` 与 `docs/plugin-action-matrix.json` 固定现有契约及调用方，可用 `mise exec -- python scripts/plugin_abi_matrix.py --check --abi docs/plugin-abi-matrix.json --actions docs/plugin-action-matrix.json --report <报告路径>` 离线核对。适配器属于宿主，不作为插件上下文传递；官方插件为可信进程内代码，只接收对应操作参数和窄端口，不接收完整 Config、WebUI、数据库或宿主持久目录。此边界不支持任意命令、动态 Bridge 方法、HTML/脚本贡献、市场、热重载或沙箱。
 
+### Todo17 离线重组 parity
+
+`scripts/plugin_parity.py` 分别从当前 canonical manifest、真实 `PluginRegistry`、entry-point factory 和窄 context 捕获九个 provider 的 baseline（editable source）与 recomposed（frozen staging）输出；仅 `ids`、`timestamps`、`temporary paths`、`thread ordering` 可以归一。`scripts/plugin_ui_parity.py` 用固定 Chromium `960x640` dark 运行真实设置页与 `load_ui_projection()` 的本地投影，记录归一化 DOM、区域截图和重复截图稳定性。两者必须带 `--offline --no-network --intercept-external`；运行器会拒绝 DNS/socket/HTTP/curl、通用子进程、helper、ffmpeg 和 ADB，唯一例外是策略中精确声明的本地 Node Chromium 捕获。`fixtures/plugin-parity/providers-failure/` 与 `ui-failure/` 是独立 F3 失败输入，不能由最终绿色输出派生；证据输出保存在忽略的 `.omo/evidence/pluginized-recomposition-parity/`。
+
 ### 源码目录与依赖方向
 
 ```text

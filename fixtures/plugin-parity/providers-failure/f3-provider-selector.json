@@ -1,0 +1,1 @@
+{"schema_version":1,"kind":"provider_failure_input","provider":"source.telegram","field":"factory.provider_id","selector":"factory.provider_id","expected":"source.qqnt","policy":"offline.dns"}
