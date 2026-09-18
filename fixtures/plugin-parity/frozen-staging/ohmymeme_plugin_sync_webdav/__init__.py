@@ -3,6 +3,7 @@ import logging
 import os
 import shutil
 import ssl
+import threading
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -11,6 +12,13 @@ from urllib.parse import quote, unquote, urlparse
 from ohmymeme.core.plugins.network_config import SyncError, validate_sync_config
 
 logger = logging.getLogger(__name__)
+_dav_dirs = set()
+_dav_dirs_lock = threading.Lock()
+
+
+def clear_directory_cache():
+    with _dav_dirs_lock:
+        _dav_dirs.clear()
 
 
 def quote_path(path):
@@ -66,23 +74,35 @@ class WebDAVBackend:
             request, timeout=self.timeout, context=self.ssl_context
         )
 
+    def clear_directory_cache(self):
+        clear_directory_cache()
+
     def ensure_remote_dir(self, path):
-        # MKCOL remains idempotent only after confirming redirects/existing paths.
+        # Cache checks and MKCOL share one lock so concurrent workers issue it once.
         relative = ""
         for part in filter(None, path.strip("/").split("/")):
             relative += "/" + part
             url = self._url(relative)
-            try:
-                with self._request("MKCOL", url):
-                    pass
-            except urllib.error.HTTPError as error:
-                if error.code == 405:
+            with _dav_dirs_lock:
+                if url in _dav_dirs:
                     continue
-                if 300 <= error.code < 400 and self.file_exists(relative):
+                try:
+                    with self._request("MKCOL", url):
+                        pass
+                    _dav_dirs.add(url)
                     continue
-                raise SyncError("MKCOL %s 失败: HTTP %d" % (url, error.code)) from error
-            except Exception as error:
-                raise SyncError("MKCOL %s 失败: %s" % (url, error)) from error
+                except urllib.error.HTTPError as error:
+                    if error.code == 405:
+                        _dav_dirs.add(url)
+                        continue
+                    if 300 <= error.code < 400 and self.file_exists(relative):
+                        _dav_dirs.add(url)
+                        continue
+                    raise SyncError(
+                        "MKCOL %s 失败: HTTP %d" % (url, error.code)
+                    ) from error
+                except Exception as error:
+                    raise SyncError("MKCOL %s 失败: %s" % (url, error)) from error
         return True
 
     def upload_file(self, local_path, remote_path):

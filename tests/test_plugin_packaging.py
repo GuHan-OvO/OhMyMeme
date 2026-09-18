@@ -212,6 +212,32 @@ def test_bad_staging_is_rejected_before_provider_probe(monkeypatch):
     assert called == []
 
 
+def test_stale_staged_module_is_rejected_before_provider_probe(monkeypatch, tmp_path):
+    # A stale staged module must fail hash verification before any factory import.
+    staging = tmp_path / "stale-staging"
+    shutil.copytree(ROOT / "fixtures/plugin-parity/frozen-staging", staging)
+    staged_module = staging / "ohmymeme_plugin_sync_webdav/__init__.py"
+    staged_module.write_bytes(staged_module.read_bytes() + b"\n# stale staging probe\n")
+    called = []
+
+    def probe(*args):
+        called.append(args)
+        return [], []
+
+    monkeypatch.setattr(packaging, "_probe_factories", probe)
+    args = SimpleNamespace(
+        source_manifest="config/plugin-manifest.json",
+        frozen_staging=str(staging),
+        staging_manifest=str(staging / "staging-manifest.json"),
+        frozen_manifest="ohmymeme/config/plugin-manifest.json",
+    )
+    report = packaging._run_source(args)
+
+    assert report["status"] == "REJECTED"
+    assert any("hash mismatch for staged" in error for error in report["errors"])
+    assert called == []
+
+
 def test_outside_direct_url_is_rejected_before_provider_probe(monkeypatch):
     # Valid metadata cannot override a direct_url source tree outside this worktree.
     class FakeDistribution:
