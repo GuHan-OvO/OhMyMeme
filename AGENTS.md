@@ -86,6 +86,7 @@ config/
   plugin-manifest.json # 九个官方插件的 canonical 分发清单
 scripts/
   build.py        # PyInstaller + InnoSetup 构建脚本 (i18n zh/en)
+  plugin_docs_check.py # Todo16 固定插件文档/入口/边界离线校验
   plugin_packaging.py # 九个官方插件的元数据、staging 与 source/frozen parity 校验
   launcher.py     # PyInstaller 入口
   hooks/          # 自定义 PyInstaller hooks（Linux GTK: WebKit2/Soup typelib 收集，内置无对应 hook）
@@ -119,6 +120,17 @@ tests/
 - 固定插件动作边界位于 `presentation/desktop/api/plugin_dispatch.py`：四个导入 provider 通过宿主 `HostActionAdapter` 和 registry 调度，sync/LAN 仍由宿主固定映射处理；ADB/手机版 QQ 不进入该边界。公开方法/默认值/返回对象/取消/进度/固定 UI 必须保持兼容。`pick_wechat_root` 是零参数方法。
 - `HostActionAdapter` 是宿主兼容层，不是传给插件的 SDK/context；后续宿主 factory 可将已限定的 provider/context 调用绑定到其固定 action 集合。禁止把完整 Config、WebUI、DB 或宿主持久路径传给插件，禁止任意 execute、动态 Bridge 注册或 HTML/脚本/UI DSL。官方插件为 trusted in-process，不构造内省防御 IPC。
 - ABI/action 矩阵由 `scripts/plugin_abi_matrix.py --write` 从固定动作、Bridge/facade 和实际调用方生成至 `docs/plugin-{abi,action}-matrix.json`，`--check` 校验 `schemas/plugin/abi-matrix.schema.json` 并执行离线 facade/dispatcher 探针；未知 action、错参数、无效结果及 provider 缺失/禁用/不兼容必须拒绝或返回原哨兵，不得调用其他 provider。
+
+## 官方插件文档与重组边界
+
+- `config/plugin-manifest.json` 是唯一的 canonical 清单。固定 provider/入口点为 `ohmymeme.plugins.v1:source.qqnt = ohmymeme_plugin_qqnt:create_plugin`、`ohmymeme.plugins.v1:source.telegram = ohmymeme_plugin_telegram:create_plugin`、`ohmymeme.plugins.v1:source.douyin = ohmymeme_plugin_douyin:create_plugin`、`ohmymeme.plugins.v1:source.wechat = ohmymeme_plugin_wechat:create_plugin`、`ohmymeme.plugins.v1:sync.ftp = ohmymeme_plugin_sync_ftp:create_plugin`、`ohmymeme.plugins.v1:sync.s3 = ohmymeme_plugin_sync_s3:create_plugin`、`ohmymeme.plugins.v1:sync.r2 = ohmymeme_plugin_sync_r2:create_plugin`、`ohmymeme.plugins.v1:sync.webdav = ohmymeme_plugin_sync_webdav:create_plugin`、`ohmymeme.plugins.v1:transport.lan = ohmymeme_plugin_lan:create_plugin`。
+- 零参数 `create_plugin()` 每次都返回独立状态实例。registry 在加载前核验 ID、入口点和 API；缺失、禁用或不兼容只返回该固定动作的旧失败哨兵，绝不回退或替换其他 provider。
+- 宿主拥有 SQLite、缓存、manifest、Config、UI、原生能力与 LAN 安全边界。插件仅接收窄配置、限域密钥和 operation 临时目录，不接收持久 Config、缓存或存储路径；持久配置、数据库、图片存储、manifest 提交、Bridge/UI、原生窗口/剪贴板/拖拽、LAN 密钥协商/审批/加密/命令均不得移入插件。
+- OperationCoordinator 管理 provider 的启动、取消和资源回收。宿主先注册线程、helper 子进程、socket 和临时资源，再允许阻塞；operation drain 后才释放宿主 lease 和临时目录。passcode、Cookie 与同步凭据是 transient operation secret，不进入持久 Config 或日志。
+- `scripts/plugin_packaging.py` 校验官方 source/frozen staging 的模块、入口元数据、manifest 和许可证文件；source/frozen staging 一致性只覆盖源码、入口元数据与 staging，不等同于对最终冻结可执行文件的实际构建验证。`docs/plugin-license-matrix.json`、`NOTICE`、`LICENSES/`、`THIRD-PARTY-NOTICES/` 是许可证和发布范围的证据入口。
+- 九个 provider 的 parity 基线只允许 ids、timestamps、temporary paths、thread ordering 差异。`scripts/plugin_docs_check.py` 消费 Todo1 inventory、`config/plugin-manifest.json` 和 `README.md`/`AGENTS.md`/`docs/project-structure.md`；其无效输入为 `fixtures/plugin-parity/inventory-invalid.json`、`fixtures/plugin-parity/docs-invalid/README.md` 与 `fixtures/plugin-parity/docs-conflicting-nonfeatures/README.md`。
+- 外部下载的微信 helper 及其 CMake/OpenSSL 输入不随制品交付；本地 helper 源码映射不构成外部 helper EXE 的来源到二进制可复现性证明。不得把 source/frozen staging 或许可证证据表述为最终 helper 或最终冻结可执行文件的实际构建证明。
+- 不提供 marketplace、热重载、运行时卸载、不受信任插件沙箱或第三方插件安装接口；不增加动态 provider 发现、任意执行、动态 Bridge、HTML/JS UI 贡献或通用插件 DSL。
 
 ## 关键实现细节
 

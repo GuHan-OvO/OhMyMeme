@@ -34,6 +34,11 @@ OhMyMeme/
 ├── docs/                                         [source]
 │   ├── project-structure.md                       本项目结构地图
 │   └── wechat_keyfinder_protocol.md               Python 与微信 C++ 辅助程序协议
+├── fixtures/                                     [test]
+│   └── plugin-parity/                             插件边界与 parity 离线 fixture
+│       ├── inventory-invalid.json                  Todo1 inventory 失效样例
+│       ├── docs-invalid/                           Todo16 固定文档失效样例
+│       └── docs-conflicting-nonfeatures/           Todo16 矛盾非功能声明样例
 ├── resource/                                     [source]
 │   └── picture.gif                                README 展示图片
 ├── scripts/                                      [source]
@@ -43,6 +48,7 @@ OhMyMeme/
 │   ├── merge-dev-to-main.bat                      Windows 分支合并辅助脚本
 │   ├── package_lifecycle.py                       构建产物生命周期验证
 │   ├── package_smoke.py                           打包布局和发布契约验证
+│   ├── plugin_docs_check.py                        固定插件文档/入口/边界离线校验
 │   ├── plugin_packaging.py                        九包 source/frozen staging 与元数据验证
 │   ├── hooks/                                    PyInstaller GTK 自定义 hook
 │   │   ├── hook-gi.repository.Soup.py
@@ -293,6 +299,16 @@ app/container.py
 ```
 
 主窗口 Vue 代码只能通过 `frontend/main/shared/bridge.ts` 调用 Python API；设置窗口由模块化 Vanilla JS 源码构建为 `src/webui/settings.js`。`src/webui/` 和 `src/resources/` 是运行时静态资源，不是 Python 包。
+
+## 官方插件重组边界
+
+`config/plugin-manifest.json` 是唯一的 canonical 清单，固定九个 provider 的顺序和 `ohmymeme.plugins.v1` 入口点：`source.qqnt`/`ohmymeme_plugin_qqnt:create_plugin`、`source.telegram`/`ohmymeme_plugin_telegram:create_plugin`、`source.douyin`/`ohmymeme_plugin_douyin:create_plugin`、`source.wechat`/`ohmymeme_plugin_wechat:create_plugin`、`sync.ftp`/`ohmymeme_plugin_sync_ftp:create_plugin`、`sync.s3`/`ohmymeme_plugin_sync_s3:create_plugin`、`sync.r2`/`ohmymeme_plugin_sync_r2:create_plugin`、`sync.webdav`/`ohmymeme_plugin_sync_webdav:create_plugin`、`transport.lan`/`ohmymeme_plugin_lan:create_plugin`。完整可复制的入口点见 [README 的官方插件扩展边界](../README.md#官方插件扩展边界)。
+
+零参数 `create_plugin()` 每次都返回独立状态实例。宿主拥有 SQLite、缓存、manifest、Config、UI、原生能力与 LAN 安全边界；插件仅接收窄配置、限域密钥和 operation 临时目录，不接收持久 Config、缓存或存储路径。`OperationCoordinator 管理 provider 的启动、取消和资源回收`，所以线程、子进程、socket、临时目录、数据库连接和持久写入仍由宿主创建、登记、drain 和关闭。
+
+九包源码位于 `plugins/`，`scripts/plugin_packaging.py` 比较 source/frozen staging 的模块、入口元数据、manifest 与许可证文件。source/frozen staging 一致性只覆盖源码、入口元数据与 staging，不等同于对最终冻结可执行文件的实际构建验证。九个 provider 的 parity 基线只允许 ids、timestamps、temporary paths、thread ordering 差异；`scripts/plugin_docs_check.py` 使用 Todo1 inventory 和固定文档事实检查这些声明，负例位于 `fixtures/plugin-parity/inventory-invalid.json`、`fixtures/plugin-parity/docs-invalid/README.md` 与 `fixtures/plugin-parity/docs-conflicting-nonfeatures/README.md`。
+
+许可证和发布范围由 `docs/plugin-license-matrix.json`、`NOTICE`、`LICENSES/` 与 `THIRD-PARTY-NOTICES/` 记录。外部下载的微信 helper 及其 CMake/OpenSSL 输入不随制品交付；本地 helper 源码映射不构成外部 helper EXE 的来源到二进制可复现性证明。不提供 marketplace、热重载、运行时卸载、不受信任插件沙箱或第三方插件安装接口，亦不支持动态 provider、动态 Bridge 或 HTML/JS UI 贡献。
 
 ## 推荐阅读顺序
 

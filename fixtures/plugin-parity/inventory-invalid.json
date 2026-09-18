@@ -1,0 +1,1 @@
+{"errors":[],"input_hashes":{},"input_sha256":"0000000000000000000000000000000000000000000000000000000000000000","provider_count":8,"provider_ids":["source.qqnt","source.telegram","source.douyin","sync.ftp","sync.s3","sync.r2","sync.webdav","transport.lan"],"schema_version":1,"verdict":"pass"}

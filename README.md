@@ -43,7 +43,29 @@
 
 ## 快速开始
 
-### 独立导入包
+### 官方插件扩展边界
+
+`config/plugin-manifest.json` 是唯一的 canonical 清单，registry 只接受其中按固定顺序声明的九个官方 provider。每个条目使用 `ohmymeme.plugins.v1` 的标准入口点；零参数 `create_plugin()` 每次都返回独立状态实例，缺失、禁用或不兼容的 provider 保留原失败哨兵而不回退到其他 provider。
+
+| 提供方标识 | 入口点 |
+| --- | --- |
+| `source.qqnt` | `ohmymeme.plugins.v1:source.qqnt = ohmymeme_plugin_qqnt:create_plugin` |
+| `source.telegram` | `ohmymeme.plugins.v1:source.telegram = ohmymeme_plugin_telegram:create_plugin` |
+| `source.douyin` | `ohmymeme.plugins.v1:source.douyin = ohmymeme_plugin_douyin:create_plugin` |
+| `source.wechat` | `ohmymeme.plugins.v1:source.wechat = ohmymeme_plugin_wechat:create_plugin` |
+| `sync.ftp` | `ohmymeme.plugins.v1:sync.ftp = ohmymeme_plugin_sync_ftp:create_plugin` |
+| `sync.s3` | `ohmymeme.plugins.v1:sync.s3 = ohmymeme_plugin_sync_s3:create_plugin` |
+| `sync.r2` | `ohmymeme.plugins.v1:sync.r2 = ohmymeme_plugin_sync_r2:create_plugin` |
+| `sync.webdav` | `ohmymeme.plugins.v1:sync.webdav = ohmymeme_plugin_sync_webdav:create_plugin` |
+| `transport.lan` | `ohmymeme.plugins.v1:transport.lan = ohmymeme_plugin_lan:create_plugin` |
+
+- 宿主拥有 SQLite、缓存、manifest、Config、UI、原生能力与 LAN 安全边界；这包括数据库写入、缩略图/缓存、manifest 提交、WebView/Bridge、剪贴板/拖拽/窗口，以及 LAN 认证、审批、加密和命令白名单。
+- 插件仅接收窄配置、限域密钥和 operation 临时目录，不接收持久 Config、缓存或存储路径。Telegram passcode、抖音 Cookie 和同步凭据仅在本次 operation 内可用，输出先由宿主脱敏后再交给 UI。
+- OperationCoordinator 管理 provider 的启动、取消和资源回收；宿主创建 operation、注册线程/进程/socket，并在 drain 后清理临时目录，插件只通过窄端口提交结果或执行网络/导入职责。
+- `scripts/plugin_packaging.py` 负责官方包的 source/frozen staging 一致性。source/frozen staging 一致性只覆盖源码、入口元数据与 staging，不等同于对最终冻结可执行文件的实际构建验证；可核查的范围以打包与许可证证据报告为准。
+- 九个 provider 的 parity 基线只允许 ids、timestamps、temporary paths、thread ordering 差异；`scripts/plugin_docs_check.py` 读取 Todo1 inventory、canonical manifest 和三份架构文档，防止文档脱离当前入口和边界；`fixtures/plugin-parity/docs-invalid/` 与 `fixtures/plugin-parity/docs-conflicting-nonfeatures/` 分别覆盖缺失事实和矛盾非功能声明。
+- 许可证、来源和发布范围见 `docs/plugin-license-matrix.json`、`NOTICE`、`LICENSES/` 与 `THIRD-PARTY-NOTICES/`。外部下载的微信 helper 及其 CMake/OpenSSL 输入不随制品交付；本地 helper 源码映射不构成外部 helper EXE 的来源到二进制可复现性证明。
+- 这是固定官方包的重组边界，不提供 marketplace、热重载、运行时卸载、不受信任插件沙箱或第三方插件安装接口；也不接收动态 Bridge、HTML/JS UI 或任意执行能力。
 
 `plugins/source.qqnt` 是实际 QQNT 算法包，入口为 `ohmymeme_plugin_qqnt:create_plugin`（`ohmymeme.plugins.v1`）。实例通过 operation 临时目录和 `ImportSink` 工作；昵称缓存、用户输出路径、外部导出覆盖校验、线程和数据库生命周期均属于宿主。旧 `ohmymeme.integrations.imports.qqnt` 保留兼容接口。完整九包源码安装与 frozen 收集由 `scripts/plugin_packaging.py` 统一校验。
 
