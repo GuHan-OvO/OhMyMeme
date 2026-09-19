@@ -12,6 +12,27 @@ APP_VERSION="$(python3 -c "import re; print(re.search(r'__version__\s*=\s*\"([^\
 # deb/rpm 的 Version 字段要求数字开头；nightly 时用构建脚本传入的基础版本号
 PKG_VERSION="${OHMYMEME_PKG_VERSION:-$APP_VERSION}"
 
+# 检测架构
+ARCH="${OHMYMEME_ARCH:-$(uname -m)}"
+case "$ARCH" in
+    x86_64|amd64)
+        ARCH="x86_64"
+        DEB_ARCH="amd64"
+        RPM_ARCH="x86_64"
+        APPIMAGE_ARCH="x86_64"
+        ;;
+    aarch64|arm64)
+        ARCH="aarch64"
+        DEB_ARCH="arm64"
+        RPM_ARCH="aarch64"
+        APPIMAGE_ARCH="aarch64"
+        ;;
+    *)
+        echo "不支持的架构: $ARCH"
+        exit 1
+        ;;
+esac
+
 clean() {
     rm -rf "$DIST_DIR/OhMyMeme.AppDir" "$DIST_DIR/*.AppImage" \
            "$DIST_DIR/*.deb" "$DIST_DIR/*.rpm"
@@ -66,20 +87,20 @@ PYEOF
 
     # 下载 appimagetool
     if [ ! -f "$DIST_DIR/appimagetool" ]; then
-        wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
+        wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${APPIMAGE_ARCH}.AppImage" \
             -O "$DIST_DIR/appimagetool"
         chmod +x "$DIST_DIR/appimagetool"
     fi
 
     cd "$DIST_DIR"
-    ARCH=x86_64 ./appimagetool --appimage-extract-and-run OhMyMeme.AppDir \
-        "OhMyMeme-v${APP_VERSION}-x86_64.AppImage"
-    echo "AppImage: $DIST_DIR/OhMyMeme-v${APP_VERSION}-x86_64.AppImage"
+    ARCH=$APPIMAGE_ARCH ./appimagetool --appimage-extract-and-run OhMyMeme.AppDir \
+        "OhMyMeme-v${APP_VERSION}-${ARCH}.AppImage"
+    echo "AppImage: $DIST_DIR/OhMyMeme-v${APP_VERSION}-${ARCH}.AppImage"
 }
 
 # 3. 构建 .deb
 build_deb() {
-    local deb_root="$DIST_DIR/ohmymeme_${APP_VERSION}_amd64"
+    local deb_root="$DIST_DIR/ohmymeme_${APP_VERSION}_${DEB_ARCH}"
     mkdir -p "$deb_root/DEBIAN"
     mkdir -p "$deb_root/usr/bin"
     mkdir -p "$deb_root/usr/share/applications"
@@ -114,13 +135,14 @@ Description: 轻量化跨平台表情包管理系统
  轻量化表情包管理器，支持快捷键呼出、搜索、一键复制到剪贴板。
 CTRL
 
-    # 替换版本号（deb 要求数字开头，nightly 用 PKG_VERSION）
+    # 替换版本号和架构（deb 要求数字开头，nightly 用 PKG_VERSION）
     sed -i "s/Version: 0.1.0/Version: $PKG_VERSION/" "$deb_root/DEBIAN/control"
+    sed -i "s/Architecture: amd64/Architecture: $DEB_ARCH/" "$deb_root/DEBIAN/control"
 
     dpkg-deb --build "$deb_root"
-    mv "$DIST_DIR/ohmymeme_${APP_VERSION}_amd64.deb" \
-       "$DIST_DIR/OhMyMeme-v${APP_VERSION}-amd64.deb"
-    echo "deb:  $DIST_DIR/OhMyMeme-v${APP_VERSION}-amd64.deb"
+    mv "$DIST_DIR/ohmymeme_${APP_VERSION}_${DEB_ARCH}.deb" \
+       "$DIST_DIR/OhMyMeme-v${APP_VERSION}-${DEB_ARCH}.deb"
+    echo "deb:  $DIST_DIR/OhMyMeme-v${APP_VERSION}-${DEB_ARCH}.deb"
 }
 
 # 4. 构建 .rpm
@@ -175,9 +197,9 @@ SPEC
     sed -i "s/Source0: ohmymeme-0.1.0.tar.gz/Source0: ohmymeme-${PKG_VERSION}.tar.gz/" "$rpm_root/SPECS/ohmymeme.spec"
 
     rpmbuild --define "_topdir $rpm_root" -bb "$rpm_root/SPECS/ohmymeme.spec"
-    cp "$rpm_root/RPMS/x86_64/"*.rpm "$DIST_DIR/"
-    mv "$DIST_DIR"/*.rpm "$DIST_DIR/OhMyMeme-v${APP_VERSION}-x86_64.rpm"
-    echo "rpm:  $DIST_DIR/OhMyMeme-v${APP_VERSION}-x86_64.rpm"
+    cp "$rpm_root/RPMS/$RPM_ARCH/"*.rpm "$DIST_DIR/"
+    mv "$DIST_DIR"/*.rpm "$DIST_DIR/OhMyMeme-v${APP_VERSION}-${RPM_ARCH}.rpm"
+    echo "rpm:  $DIST_DIR/OhMyMeme-v${APP_VERSION}-${RPM_ARCH}.rpm"
 }
 
 main() {
@@ -204,9 +226,9 @@ main() {
             build_rpm
             echo ""
             echo "=== 构建完成 ==="
-            echo "AppImage: $DIST_DIR/OhMyMeme-v${APP_VERSION}-x86_64.AppImage"
-            echo "deb:      $DIST_DIR/OhMyMeme-v${APP_VERSION}-amd64.deb"
-            echo "rpm:      $DIST_DIR/OhMyMeme-v${APP_VERSION}-x86_64.rpm"
+            echo "AppImage: $DIST_DIR/OhMyMeme-v${APP_VERSION}-${ARCH}.AppImage"
+            echo "deb:      $DIST_DIR/OhMyMeme-v${APP_VERSION}-${DEB_ARCH}.deb"
+            echo "rpm:      $DIST_DIR/OhMyMeme-v${APP_VERSION}-${RPM_ARCH}.rpm"
             ;;
     esac
 }

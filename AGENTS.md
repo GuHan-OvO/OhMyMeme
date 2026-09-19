@@ -58,12 +58,13 @@ src/              # 主代码
   native_drag.py   # Windows 原生文件拖拽 (WinForms DoDragDrop + CF_HDROP, 惰性加载 pythonnet)
   crypto_util.py  # 加密 (Fernet + PBKDF2, 降级 XOR)
   manifest.py     # meme-index.json 构建/加载
-  platform_util.py # 平台工具 (WSL检测, 开机自启)
+  platform_util.py # 平台工具 (WSL检测, 开机自启, 单实例互斥)
   adb_util.py      # ADB 自动检测/下载 + QQ 表情包缓存导入（ADB 拉取 + 魔数识别扩展名 + ZIP 打包）
   qqnt_extract.py  # QQNT 本地收藏表情提取（GPL-3.0 衍生模块，纯函数 + 回调接口，无 UI 依赖）
   tg_stickers.py   # Telegram Desktop 缓存表情包提取（tdata 解密 + webm 转 webp + 入库）
   douyin.py        # 抖音表情包下载导入（ABogus 签名 + curl_cffi TLS 指纹 + WebP 原格式入库）
   abogus.py        # ABogus 签名算法（纯 Python，GPL-3.0，源自 TikTokDownloader）
+  backup.py        # 本地备份（ZIP 导出/恢复，仅 PC 间整库迁移，仅允许恢复到空库）
   douyin_dl.py     # 抖音下载 CLI 测试入口（独立运行，不依赖 GUI）
   wechat_probe.py  # 微信收藏表情导入（helper 二进制提取密钥 + AES-CBC 解密 DB + CDN 下载，仅 Windows）
   wechat_keyfinder/ # 微信密钥提取 C++ 辅助二进制源码（CMake 构建）
@@ -120,13 +121,15 @@ tests/
 
 ### 全局快捷键
 - 三级降级: `keyboard` → `pynput` → 200ms 轮询 (`keyboard.is_pressed`)
+- **运行期失效自愈**：`keyboard` 0.13.5 的 `GenericListener` 处理线程（`processing_thread`）一旦因未捕获异常崩溃即永久失效（进程存活、界面正常但热键无响应，需重启软件才恢复）。`GlobalHotkey` 两道防线：①`_try_keyboard` 用 `make_safe` 把回调包成 `_safe_callback`，吞掉回调异常，防止其杀死 `processing_thread`；②注册后启动 daemon 守护线程（`_start_keyboard_watchdog`，`KEYBOARD_WATCH_INTERVAL`=5s）周期检查 `keyboard._listener` 的 `listening_thread`/`processing_thread` 是否存活，任一死亡即 `_reregister_keyboard`（`remove_hotkey` → 置 `listener.listening=False` → `start_if_necessary()` → 重新 `add_hotkey`）自动重挂；③（Windows）**钩子心跳探针**：WH_KEYBOARD_LL 会被系统静默摘除（睡眠恢复/回调超时/显示切换），此时线程仍在泵消息、存活检查不可见——`_hook_health_check` 每 `KEYBOARD_PROBE_INTERVAL`(30s) 经 `keybd_event` 注入一次无害 F15 探针，`KEYBOARD_PROBE_TIMEOUT`(15s) 内钩子未上报任何键盘事件（`keyboard.hook` 观察者刷新 `_hook_last_seen`，用户自身按键也算）即判定钩子失效，`_restart_keyboard_listener` 以 `PostThreadMessageW(WM_QUIT)` 结束旧监听线程（其钩子随线程退出被系统移除；线程拒不退出则中止重启避免双钩子导致热键触发两次）→ `start_if_necessary()` 重装钩子 → 重挂热键，约 45s 内自愈。**热键事件日志**：`_get_file_logger` 惰性创建独立 logger，把注册/回调异常/线程死亡/自愈重挂等事件追加到 `data_dir/hotkey.log`（`_log_hotkey_event` 同步写文件+控制台，初始化失败降级为常规 logger 不阻塞）。**pytest 下禁用文件日志**（`PYTEST_CURRENT_TEST` 环境变量守卫）——TestHotkeyWatchdog/test_startup 会触发注册/重注册日志，夹具错误（如 inject-fail）曾污染真实 hotkey.log 被误读为运行期自愈失败（真实自愈必先记录「监听/处理线程已退出」，日志中无此行即无真实失效）。**重注册与注销的正确性**：`_reregister_keyboard` 返回 bool 且与 `unregister` 持同一 `_reregister_lock` 串行化——`add_hotkey` 失败时置 `_reregister_pending=True` 并返回 False（不记录成功、守护下轮继续重试），成功才清 pending 并记成功事件；注销已开始（回调已清空或停止事件已置位）时重注册直接返回 False 不重新挂热键。**生命周期代次 token**：`_watchdog_gen` 仅在 `unregister` 递增（`register`/`_try_keyboard` 不递增——同一实例重复 register 时旧 watchdog 仍受 `unregister` 已递增的代次约束），`_start_keyboard_watchdog` 捕获当前代次并由 `_reregister_keyboard(listener, gen)`/`_restart_keyboard_listener(listener, gen)` 在锁内校验 `gen == _watchdog_gen`，旧 watchdog（旧代次）的重注册操作直接返回 False，杜绝注销后立即重新注册时旧线程对新热键的误操作。
 - macOS 跳过 `keyboard` 库（darwin 后端需 root 权限，报 `Error 13` 且 root 下会段错误），直接走 `pynput`（CGEventTap，需辅助功能权限）
 - WSL 无法捕获全局快捷键
 - 配置 `hotkey_show_at_mouse` 默认 `false`；仅 Windows 生效。开启后仅在全局热键将隐藏主面板显示时，按鼠标所在显示器工作区依次尝试 `(cursor_x, cursor_y)`、`(right-width, cursor_y)`、`(cursor_x, bottom-height)`、`(right-width, bottom-height)`，仅使用首个完整容纳窗口的候选位置；出错或没有可用位置时不移动。托盘保持普通切换，热键回调仍为零参数。
 - WebUI 维护非持久的快捷键显示会话状态：仅隐藏主窗口被全局快捷键显示后，成功复制或成功原生向外文件拖拽才会自动隐藏；任意 hide、普通/托盘显示、LAN/其他 show、内部排序拖拽及失败交互均不会触发该自动隐藏。
 
 ### 窗口
-- 主窗口 ~960×640 frameless, 设置窗口 460×560 frameless
+- 主窗口 ~960×640 frameless, 设置窗口 720×560 frameless（每次 `_create_settings_window` 以主窗口当前位置居中创建——`x = 主窗口x + (宽-720)//2`，主窗口坐标不可用时交由系统摆放）
+- 设置窗口是独立 webview：`open_settings` 每次销毁重建，`focus_settings_window` 仅做 z-order 提升
 - Windows 全局热键显示位置仅在隐藏到显示的转换时计算，使用鼠标所在显示器工作区；不改变托盘激活或其他窗口显示路径
 - 自定义 JS 拖拽: 鼠标事件 → `pywebview.api.move_window(dx, dy)`
 - 增量回退（Windows/macOS）用 `screenX/screenY`（**勿改 `clientX/clientY`** — clientX 是相对窗口坐标，窗口自身滞后位移会被下一次 mousemove 当作反向增量回传，形成反馈振荡导致高频抖动）；Linux 走合成器原生拖动不经过此路径
@@ -138,7 +141,9 @@ tests/
 - 7 表: `memes`, `tags`, `meme_tags`, `collections`, `meme_collections`, `favorites`, `recent_uses`
   - `tags`/`meme_tags`：DB 层方法（`get_all_tags`/`set_meme_tags`/`get_meme_tags`/`search` 标签筛选），已启用；右键表情「打标签」弹出标签编辑器（`showTagEditor`：点选已有标签/搜索过滤/输入新建，回车添加），`_set_tags` 覆盖式写入；`_prune_orphan_tags` 在 `_set_tags` 与 `delete_meme` 中清理无任何表情使用的孤儿标签（tagbar 不残留幽灵标签）
 - `PRAGMA journal_mode=WAL`, `PRAGMA foreign_keys=ON`
-- `MemeDB.search()`: 动态 WHERE, 多标签交集用 `HAVING COUNT = len(tags)`
+- `MemeDB.search()`: 动态 WHERE, 多标签交集用 `HAVING COUNT = len(tags)`；keyword 除 `filename`/`original_name` LIKE 外同时匹配标签名（`meme_tags` JOIN `tags` 子查询 LIKE），`count()` 同步该逻辑
+- `MemeDB.add_tags_to_memes(meme_ids, tags)`: 批量合并追加标签（get-or-create + `INSERT OR IGNORE`，不清空各表情已有标签），返回实际存在的表情数；先过滤出实际存在的 meme id（外键开启时对缺失 id 写 `meme_tags` 会整批失败），批量写包 try/rollback/re-raise；供 JsApi `batch_add_tags` 使用
+- `MemeDB.add_memes_to_collection(meme_ids, collection_id)` / `MemeDB.move_memes_to_collection(meme_ids, from_ids, to_id)`: 批量加组/移动的单事务实现（先校验表情 id 与目标分组存在，写入失败 rollback 后抛出）；按 `INSERT OR IGNORE` 实际新增关联计数（重复加入目标不计）；move 仅纳入实际属于 `from_ids` 子树的成员（非成员不受删除或移动影响），从子树删除后再加入目标，提交前级联清理源子树内变空的分组（迭代删除无成员且无子分组的叶子空组直到不动点，支持子组先空父组后空；仅限 from_ids 范围，子树外空分组保留；两处 FK 均 ON DELETE CASCADE，故只删叶子防波及）；供 JsApi `batch_add_to_collection`/`batch_move_to_collection` 使用（JsApi 负责目标解析/创建与「不能移入源分组自身或其子分组」校验——`create_collection` 会复用同名顶层分组，故该校验在目标解析后统一执行；move 成功后无条件重建 manifest——`moved==0` 时成员关系仍可能变化，如成员已在目标、仅从源移除）
 - `memes.sort_order`: 自定义排序（拖拽更新），默认 0，查询 `ORDER BY sort_order ASC, updated_at DESC`
 - `collections.parent_id`: 多级分组支持（最多 3 层），`NULL` 为顶层分组
 - `meme_collections.sort_order`: 分组内成员自定义排序
@@ -149,7 +154,7 @@ tests/
 - 密钥字段 (ftp_password, s3_secret_key 等) 用 Fernet 加密存储
 - 全局单例: `get_config()`, `get_db()`
 - `hotkey_show_at_mouse` 默认 `false`，控制 Windows 上全局热键显示隐藏主面板时是否按鼠标位置放置
-- `cache_dir`（表情包图片目录）可自定义：配置键 `cache_dir` 非空时 `Config.cache_dir` 返回该路径，否则默认 `data_dir/cache`；设置页「存储位置」通过 `SettingsApi.pick_storage_dir`/`apply_storage_dir` 切换，`apply_storage_dir` 可选把旧目录文件递归迁移（`os.walk`+`shutil.move`，两阶段：先预检目标同名冲突整体中止、移动中出错回滚，跳过 `thumbnails`）；**切换后旧文件不再可见**，故未迁移时必须确保文件已存在于新目录；`_storage_dir_validation` 拒绝相对/相同/上下级目录以及 `data_dir`/`thumbnail_dir` 及其上下级（受保护路径）；DB/缩略图/manifest 仍留在 `data_dir`，数据库只存文件名，文件在新目录时按 basename 自动解析；`reset_settings` 恢复默认时保留 `cache_dir`
+- `cache_dir`（表情包图片目录）可自定义：配置键 `cache_dir` 非空时 `Config.cache_dir` 返回该路径，否则默认 `data_dir/cache`；设置页「存储位置」通过 `SettingsApi.pick_storage_dir`/`apply_storage_dir` 切换，`apply_storage_dir` 可选把旧目录文件递归迁移（跳过 `thumbnails`）；**切换后旧文件不再可见**，故未迁移时必须确保文件已存在于新目录；`_storage_dir_validation` 拒绝相对/相同/上下级目录以及 `data_dir`/`thumbnail_dir` 及其上下级（受保护路径）；DB/缩略图/manifest 仍留在 `data_dir`，数据库只存文件名，文件在新目录时按 basename 自动解析；`reset_settings` 恢复默认时保留 `cache_dir`。迁移为**后台三阶段幂等**设计（避免跨盘长拷贝时进程被杀导致分裂状态）：①复制阶段源只读（`O_EXCL` 排他写入，dst 已存在且大小一致视为已复制跳过——幂等；失败/取消仅清理本次新副本，源完好无分裂，不回滚）；②写配置（唯一切换点，此后新目录已完整）；③删源（失败仅残留旧目录冗余，不阻断）。迁移开始写 `data_dir/storage_migration.json` 清单、完成后删除；`main.py` 启动时若检测到未完成清单则后台幂等续跑（强杀/断电后重启自愈）。取消由 move 回滚改为删新副本，消除回滚自身失败风险
 
 ### 同步
 - manifest 文件: `meme-index.json`
@@ -162,6 +167,7 @@ tests/
 - **多线程传输**: `push()`/`pull()` 使用 `ThreadPoolExecutor`，每个线程创建独立后端连接
 - 并发数: 配置项 `sync_threads`（默认 3，范围 1-8），通过 `config.json` 或 `SettingsApi` 修改
 - `_push_worker`/`_pull_worker`: 接收文件子列表，操作独立后端连接，原子递增 `_sync_state`
+- **WebDAV 目录创建去重**: `_push_worker` 同一批次所有文件都上传到 `memes/`，只在循环前 `ensure_remote_dir` 一次；`_WebDAVBackend.ensure_remote_dir` 对**每个目录 URL**在 `_dav_dirs_lock` 内原子执行「缓存检查 + MKCOL + 缓存写入」，成功/405/复核命中均写 `_dav_dirs` 缓存，多 worker 并发对同一目录也只发一次 MKCOL——避免重复 MKCOL 触发远端锁。**`push()` 每次在拿到 `_sync_run_lock` 后先清空 `_dav_dirs`**，避免命中上一次同步缓存、跳过已被删除远端目录的 MKCOL。
 - `_sync_lock` (`threading.Lock`) 保护 `_sync_state` 写操作；`_increment_sync_progress()` 提供原子递增
 - `_chunk_list(lst, n)` 将文件列表均匀切分给各线程
 - **push 动态 manifest 维护**: `push()` 上传过程中每 `_HEARTBEAT_INTERVAL`（5s）用「远端已有 + 本次已确认上传」快照增量更新远端 manifest（`_build_push_manifest` + `_upload_manifest_data`，失败仅告警不中断）；部分失败中断前也上传该快照（避免远端有文件却无有效 manifest）；成功路径在合并远端独有项后补入已上传但不在本地清单的项（去重 guard），保本地被清空等边角。manifest 只列确认上传成功的文件，不产生幻影条目
@@ -192,6 +198,8 @@ tests/
 
 ### 本地 HTTP 安全加固
 - Bottle 只绑 `127.0.0.1` 随机端口；`before_request` 校验 `Host` 必须为本机回环（`_host_allowed`），POST 额外校验 `Origin` 同源且 `Sec-Fetch-Site` 非 `cross-site`，拒绝则 403（阻断 DNS rebinding / 跨站注入）
+- **多线程服务器**：`bottle.run` 通过 `server_class=_ThreadedWSGIServer`（`ThreadingMixIn + WSGIServer`，`daemon_threads=True`）启用多线程——Bottle 默认 wsgiref 单线程串行处理，慢请求（`/api/contributors` 外网抓取、`/api/thumb` 现场生成缩略图）会阻塞其他路由投递，导致设置页 `settings.js`/`settings.css` 排队、JS 监听未注册期间窗口可见但拖动/点击全部无效
+- `/api/contributors` 结果带 1h TTL 缓存（模块级 `_CONTRIBUTORS_CACHE`，刷新在 `_CONTRIBUTORS_LOCK` 内单飞：**取锁后刷新时间并重查退避期**，等待中的并发请求不再重复抓取；刷新失败一律退避 60s 重试——有旧缓存回退旧缓存，无缓存冷启动失败返回 502，不再每个请求都反复触发 10s 慢抓取），设置页该图片加 `loading="lazy"`（位于默认隐藏的「关于」section，仅切换到该分组时才发起请求）；缩略图生成写盘为先写临时文件再 `os.replace` 原子替换（多线程下并发请求同一未缓存缩略图不再交错写产生永久损坏的缓存文件）
 - `after_request` 统一加 `X-Content-Type-Options: nosniff` / `Referrer-Policy: no-referrer` / `X-Frame-Options: DENY`，`/api/` 路由 `Cache-Control: no-store`
 - 文件名安全：`_safe_serve_filename`（webui）与 `_safe_remote_fname`（sync）拒绝含 `/` `\`、以 `.` `/` `\` `~` `..` 开头的名字；`_find_meme_file` 入口校验，远端 manifest 文件名在 `_fetch_remote_memes` 过滤 + `_pull_worker` 写盘前再防御
 - 前端 XSS：`utils/api.ts` 的 `esc()`/`renderMarkdown()` 转义所有拼入 innerHTML 的外部/动态数据（远端分组名、GitHub 版本号、QQ 昵称、输出目录、弹窗标题/正文等）；设置窗口 `settings.js` 同理
@@ -206,6 +214,7 @@ tests/
 - WSL 时设置 `MESA_LOADER_DRIVER_OVERRIDE=llvmpipe`, `LIBGL_ALWAYS_SOFTWARE=1` 等软渲染环境变量
 
 ### 启动流程 (关键时序)
+- **单实例互斥（防多开）**：`main()` 在 logging 配置后、`OhMyMemeApp()` 创建前调 `platform_util.acquire_single_instance()`——Windows 用 `CreateMutexW("OhMyMeme_SingleInstance")`（`GetLastError()==ERROR_ALREADY_EXISTS` 即已有实例，句柄存模块级 `_single_instance_handle` 防 GC，进程退出内核自动释放，崩溃安全），POSIX（Linux/macOS/WSL）对 `tempdir/ohmymeme-<uid>.lock` `fcntl.flock(LOCK_EX|LOCK_NB)`（fd 保持打开）；已有实例运行时 Windows 弹 MessageBoxW「OhMyMeme 已在运行」后 `sys.exit(0)`，其余平台仅日志退出；互斥机制自身异常一律返回 True 不阻塞正常启动。Bottle 端口随机分配不构成冲突防线，故必须显式互斥
 - **源码运行自动编译前端**：`main.py` 启动时 `_ensure_vue_frontend()` 检查 `src/webui/dist/ohmymeme.js`，缺失（打包 `frozen` 或已有产物时跳过）则用 `npx.cmd`(Windows)/`npx`(其他) 跑 `vite build` 一次，失败仅告警不阻断启动
 - **启动动画**：`App.vue` 挂载时播放 `src/resources/OhMyMeme.mp4`（通过 Bottle 路由 `/resources/<filepath:path>` 提供，`webui.py` 的 `RESOURCES_DIR`，basename 校验防路径穿越，路由须在兜底 `/` 之前注册；PyInstaller 以 `--add-data src/resources` 打包）；`onMounted` 设置 6s 兜底定时器 + `<video>` `@ended` 移除遮罩，`#startup-anim` 全屏遮罩 z-index 2000，`.startup-fade` 0.4s 淡出。**仅启动时播放**：快捷键/托盘仅 toggle 窗口显隐不重载页面，故不会重复播放。设置页「显示启动动画」开关（配置键 `show_startup_animation`，默认开，`useMemes` state 同步）控制：开启时 `loadInitData` 后立即 `startupVideoReady=true` 挂载视频并**并行加载**（无 300ms 延时，动画天然覆盖桥接稳定时间）；关闭时 `dismissStartupAnim()` + `setTimeout(..., 300)` 降级为 300ms 延时。`get_init_data`/`reset_settings`/`get_settings` 均透传该键。**遮罩背景贴合视频边框**：OhMyMeme.mp4 边框为纯黑，`webui.py` 写死 `_STARTUP_BG_COLOR = "#000000"`（不做运行时 ffmpeg 采样，避免影响启动速度），经 `get_init_data` 的 `startup_bg_color` 传给前端，`App.vue` 把该色同时应用到 `#startup-anim` 与 html/body 背景。**可跳过**：点击遮罩立即 `dismissStartupAnim()`；系统 `prefers-reduced-motion: reduce` 时直接跳过动画走 300ms 降级路径（`window.matchMedia` 检测）
 - Vue `App.vue` 挂载后:
@@ -228,6 +237,15 @@ tests/
 - **导入限制**：`config.py` 常量 `_IMPORT_MAX_PX=2560`（最长边）/`_IMPORT_MAX_BYTES=20MiB`，超过即拒绝接收；覆盖 `_do_import`、`scan_cache`、同步 `_pull_worker`、LAN `_import_bytes` 四类接收路径，跳过超限文件并计数（前端 toast 提示）
 - **文件夹导入** (`JsApi.import_folder`)：FOLDER 对话框 → `os.walk` 递归收集图片（扩展名过滤）→ **后台线程导入**（`start_import_job` + `_IMPORT_JOB_STATE`，前端 `ImportProgressOverlay` 300ms 轮询进度条 + 取消，取消时 `progress_cb` 返回 False 中断 `_do_import`，保留实际进度）→ `make_collection`（前端导入菜单「自动创建分组」勾选，默认开）时以文件夹名 `create_collection` + 批量 `add_to_collection`（同名分组复用，重复导入并入）。`import_memes`（文件对话框）同样后台化，走同一 job；`import_from_clipboard`（剪贴板，通常单张瞬时）保持同步返回 id。`_do_import` 提供可选 `progress_cb`（逐文件回调，返回 False 中断）
 - **渠道自动分组**：3 个入库渠道导入后调 `WebUI.ensure_import_collection(ids, 固定名)` 自动归入固定名分组——TG→「Telegram」、抖音→「抖音」、微信→「微信」；同一渠道不同时间导入复用同名分组。QQ（导出 ZIP 到外部）、QQNT（提取到输出文件夹）不入库故不建组。`create_collection` 现为「先按 name+parent_id 查已存在→返回既有 id，否则 INSERT」——**不再产生重复空分组**（仓库同名字段多次导入只一个分组，成员靠 meme_collections 的 PRIMARY KEY 去重），测试 `test_ensure_collection_same_name_reused`/`empty_args`
+
+### 本地备份与恢复 (backup.py)
+- **定位**: 仅 PC 间整库迁移（导出 ZIP → 拷贝 → 恢复），手动触发，不做增量/自动清理/加密包；不碰手机 LAN 端
+- **备份** (`create_backup`): 打包 cache_dir 全部原图（跳过 thumbnails，文件名即 hash 前缀跨机稳定）+ memes.db（`MemeDB.backup_to`，sqlite backup API 保证 WAL 一致快照）+ meme-index.json + backup.json 清单（app 版本/导出时间/文件数）；ZIP_STORED 不压缩（图片已是压缩格式）；先写 .tmp 再 os.replace 原子落盘。包结构：`db/memes.db`、`files/<文件名>`、`meme-index.json`、`backup.json`
+- **恢复** (`restore_backup`): 仅允许空库（`has_any_data()`——memes/collections/tags/favorites 任一有数据即非空，含 stego 载体行与空分组；SettingsApi 前置校验，落库前 `restore_from` 锁内复查）；恢复 worker 全程持有 `_IMPORT_LOCK`（与 `_do_import`/同步 pull 同锁），恢复期间导入请求阻塞等待；`create_backup` 与 `apply_storage_dir` 均校验备份目录与 cache_dir 不得相同/互为嵌套（防备份递归自包含）；ZIP 安全限制（成员数 ≤100k 且不得重名、单成员解压 ≤64MB、总解压 ≤20GB、仅 STORED/DEFLATED）；解包到 `data_dir/backup_restore_tmp` staging，成员名安全校验（防路径穿越，只取 files/ 下 basename）+ 文件数与 backup.json 核对（防不完整包）→ **候选库先在隔离连接上 `MemeDB.prepare_restore_source`（integrity_check + 必需表存在性 + `_migrate` 预迁移），通过后才移动缓存文件**（记录本次新增文件，`restore_from` 失败即回滚删除；同名覆盖文件内容一致无需还原）→ `MemeDB.restore_from` 经 backup API 原子替换库内容 + `_migrate` 补齐旧版本缺失列 + 重设 WAL → `build_manifest()`；staging 任一步失败自动清理，不留半成品
+- **备份目录**: config `backup_dir`（空=默认 data_dir/backups），设置页选择立即生效（校验可创建/可写）
+- **SettingsApi**: `backup_get_info`/`backup_pick_dir`/`backup_create`/`backup_delete`（文件名白名单校验防穿越）/`backup_pick_zip`/`backup_restore`/`backup_progress`；后台线程 + 前端 300ms 轮询进度（`_BACKUP_STATE`，与存储迁移同模式），恢复成功后自动 build_manifest
+- **设置页 UI**: 独立「备份与恢复」导航分组（日志与关于之间）：备份目录选择、立即备份、备份列表（文件名/大小/删除，删除走 showConfirm 危险确认）、从 ZIP 恢复（pick_zip → showConfirm → 恢复）；`backup-progress-overlay` 进度弹窗（运行中不可关闭，完成后"关闭"按钮 + Esc）；列入 _SETTINGS_OVERLAY_IDS 做 Tab 焦点陷阱
+- **测试**: TestBackup 覆盖创建/列表/删除（thumbnails 排除、路径穿越拒绝）、恢复元数据保真（tags/收藏/分组）、孤儿保留与同名覆盖、非空库拒绝（零落盘 + staging 清理）、非法包/非 ZIP（BadZipFile 上抛由 worker 捕获）/文件数不符
 
 ### 剪贴板 (GIF/WebP 直接传送)
 - `_copy_gif_windows` 同时写入三个剪贴板格式:
@@ -271,7 +289,7 @@ tests/
 - **FLIP 让位动画**：跨槽时对被挤开卡片记录 First/Last rect，invert 后靠 `#meme-grid.drag-active .meme-card` 的 `transition: transform 200ms` 归位，实时显示空位跟随指针
 - 落点持久化：前端可拖拽排序仅在正 ID 分组/子分组内调用 `reorder_collection_members(collection_id, id[])` 更新 `meme_collections.sort_order`；`reorder_memes(id[])` 仍用于维护全局 `sort_order`；API 失败回滚 `originalOrder` 并重渲染 + toast
 - `canReorderMemes()`: 搜索或标签筛选时禁用；**全局开关 `dragSortEnabled`（标题栏「拖拽排序」图标按钮，位于上传/下载左侧，图标蓝色高亮=开，灰色=关）关闭时禁用排序**；仅正 ID 分组（含子分组）、全部（null）与未分类（-4）视图可排序，收藏夹/最近使用等特殊集合（-2/-3）不可排
-- **整理/多选模式拆分（互斥）**：`sortEnabled`（拖拽排序）与 `selectMode`（多选）为两个独立标题栏按钮状态，开启一个自动关闭另一个（`toggleSort`/`toggleSelect` 用 `drag.enable()/drag.disable()` 而非 `drag.toggle()`）。排序模式：drag-select `:click-option-to-select=false`，点击卡不复制不勾选，仅拖拽换位；多选模式：drag-select `:click-option-to-select=true` 支持点选/框选，`#batch-bar`（`v-if="selectMode"`：全选当前页/取消选择/批量删除）显示，`#meme-grid.select-enabled` 生效。ESC 顺序：右键菜单 → 多选 → 整理 → 隐藏窗口；`handleCopy`/`onCardPointerDown`/`onDocPointerMove` 均以 `sortEnabled || selectMode` 守卫（多选/整理中不复制、不走原生拖拽）
+- **整理/多选模式拆分（互斥）**：`sortEnabled`（拖拽排序）与 `selectMode`（多选）为两个独立标题栏按钮状态，开启一个自动关闭另一个（`toggleSort`/`toggleSelect` 用 `drag.enable()/drag.disable()` 而非 `drag.toggle()`）。排序模式：drag-select `:click-option-to-select=false`，点击卡不复制不勾选，仅拖拽换位；多选模式：drag-select `:click-option-to-select=true` 支持点选/框选，`#batch-bar`（`v-if="selectMode"`：全选当前页/取消选择/加入分组/打标签/移动到分组（仅正 ID 分组视图显示）/批量删除）显示，`#meme-grid.select-enabled` 生效。批量操作作用于 `selectedIds`：`batchAddToCollection`/`batchMoveToCollection` 复用 CollectionBuilder 选择模式（`cb.openPick(mode, ids, fromId)`，仅显示可搜索分组下拉 + 新建分组，无双栏表情列表）调 JsApi `batch_add_to_collection`/`batch_move_to_collection`（追加/移出+加入语义，`collection_id<=0` 时按 name 创建/复用顶层分组；move 模式下拉排除源分组及其整棵子树，后端同样拒绝后代分组作目标——移入后代等于移出后又加回递归视图；批量移动后原分组移空且无子分组时自动删除）；`batchTag` 用 TagEditor 批量模式（`openBatch()`，不加载单图已有标签）调 JsApi `batch_add_tags` 合并追加。ESC 顺序：右键菜单 → 多选 → 整理 → 隐藏窗口；`handleCopy`/`onCardPointerDown`/`onDocPointerMove` 均以 `sortEnabled || selectMode` 守卫（多选/整理中不复制、不走原生拖拽）
 - **排序视觉反馈**：`renderGrid()` 按 `canReorderMemes()` 切换 `sort-enabled`；启用时仅普通 meme 卡（排除 `.folder-card` 和 `.dragging`）最终显示 `scale(0.95)`、3px `var(--border-light)` 描边及 3px 偏移。稳定卡使用独立 `rotate` 属性作轻微快速晃动，且必须排除 `.drag-active`、`.sort-enter`、`.folder-card` 和 `.dragging`；`prefers-reduced-motion: reduce` 时禁用晃动。不得用 `transform` 实现晃动，避免覆盖拖拽和 FLIP 的变换。正在拖拽的卡内联变换固定为最终 `translate(...) scale(0.90)`，与现有透明度、阴影和 FLIP 效果并存，CSS 与内联变换不得叠加。多选模式选中态独立：`#meme-grid.select-enabled .meme-card.selected` 为 `2px solid var(--primary-strong)` outline（与整理模式选中态规则并存，后者仅作用于 `sort-enabled`）。开启工具栏排序开关时沿用现有入场反馈，只有明确关闭该开关才保留当前卡片播放退场动画。搜索、标签、分组或虚拟分组导致的资格变化均按普通刷新处理，不播放退场动画；文件夹卡不显示排序反馈
 - **拖拽到外部应用**：关闭拖拽排序后 meme 卡**不用 HTML5 拖拽**（WebView2 http 源的 `text/uri-list`/`DownloadURL` 不生成 CF_HDROP，QQ/微信会报"图片拖拽失败"或资源管理器无反应）；改用 **WinForms 原生文件拖拽**（`native_drag.py`）：`pointerdown` 记录起点 → `pointermove` 位移 >8px 时 `JsApi.start_native_drag(id)` → 后端用 `webview.windows[0].native`（主 Form）`Invoke` 在 UI 线程执行 `DoDragDrop`（`DataObject` + `DataFormats.FileDrop` → CF_HDROP）→ 拖到 QQ/微信/桌面是真实本地文件；`DoDragDrop` 返回 `DragDropEffects.None`（拖回取消）时 `start_native_drag` 返回 False，不触发 `schedule_hide`；`native_drag.py` 懒加载 pythonnet/WinForms，非 Windows 或无 .NET 时返回 False，JS 端 toast 提示；**原生拖拽进行中回拖到窗口**用全局 `nativeDragActive` 标志抑制 drop 导入处理器（dragenter/dragover/dragleave/drop 均忽略，视为取消，不弹导入浮层）；`nativeDragActive` 在 `pointermove` 位移 >8px 触发原生拖拽**前**置 true，`start_native_drag` Promise `.then/.catch` 中重置，拖拽期间（后端 `DoDragDrop` 阻塞 UI 线程）保持 true，确保拖回窗口不会误触发导入
 - 排序拖拽与原生拖拽共用 `onCardPointerDown`/`onDocPointerMove` pointer 事件：`onCardPointerDown` 按 `sortEnabled && canReorder()` 决定走 `drag.onPointerDown`（排序）还是记录 `nativeDragStart`（原生拖拽），`onDocPointerMove` 按 `drag.dragState.memeId` 是否存在分支，`onDocPointerUp`/`onDocPointerCancel` 对原生拖拽仅清 `nativeDragStart` 跳过排序回滚
@@ -281,6 +299,7 @@ tests/
 ### 多级分组（最多 3 层）
 - `collections.parent_id` 自引用实现嵌套
 - `create_subcollection(name, parent_id)` 自动检查深度（`get_collection_depth`），超出 2 层拒绝
+- **分组名自然排序回退**：`MemeDB.get_collections`/`get_child_collections` 仅按 `sort_order ASC` 查询后用 Python `_name_sort_key` 稳定排序——`sort_order` 相同（未拖拽）时数字段按整数（1,2,10 而非 1,10,2）、中文按拼音（`pypinyin` 惰性导入，缺失时退回原名小写码点序），替代原 SQL `ORDER BY name` 的二进制码点序
 - 顶层分组在 `#colbar` 渲染为 tab，选中后展开子分组
 - `#tagbar`/`#colbar` 横向溢出：细滚动条可见（`scrollbar-width: thin` + 5px webkit 样式），`initHScroll(barId)` 把滚轮竖向增量转成 `scrollLeft`（按 `deltaMode` 归一化），`DOMContentLoaded` 时对两个栏各绑定一次
 - 分组内右键空白区域 → 新建子分组
@@ -293,7 +312,9 @@ tests/
 - **搜索清除**：搜索框右侧 `.search-clear`「×」按钮（`v-if="state.searchQuery"`，点击 `clearSearch()` 清空并 `search()`），输入框 `padding-right:32px` 防文字被按钮遮挡
 - **垂直空间压缩**：titlebar 38px、`#search-wrap` padding 6px 12px、`#search` padding 7px 12px、`#tagbar` padding 4px 12px + max-height 52px、`#breadcrumb` padding 2px 12px、`#grid-wrap` padding 10px、pager padding 5px 10px
 - **标题栏统一**：主/设置窗口关闭按钮均为 `×`；拖拽排序图标为上下箭头（非汉堡线）
-- **右键子菜单点击展开**：`ContextMenu.vue` 的「加入小分组/新建子分组」从 hover 触发改为 click 切换（`onItemClick`，展开时锚定点击项右缘 `getBoundingClientRect().right + 4`，再次点击 `hide-submenu` 收起），保留越界 clamp，`has-submenu` 项显示 `▸` 指示符
+- **右键子菜单点击展开**：`ContextMenu.vue` 的「加入分组/新建子分组」从 hover 触发改为 click 切换（`onItemClick`，展开时锚定点击项右缘 `getBoundingClientRect().right + 4`，再次点击 `hide-submenu` 收起），保留越界 clamp，`has-submenu` 项显示 `▸` 指示符
+- **加入分组任意视图可用**：表情右键「加入分组」不再要求处于分组视图，`onShowSubmenu` 列出全部分组树（顶层直显、子分组带「父/子」路径扁平列表，子菜单仅一层故扁平化），顶部保留「新建分组/新建小分组」（分组视图内在当前分组下创建，其他视图创建顶层分组）；文件夹右键分支仅保留「新建子分组」单项，在**右键的分组**（`trigger.folderId`）下创建（不再依赖 `t.memeId` 的 `subgroup-*` 项与 `activeCollection` 目标）
+- **CollectionBuilder 分组下拉搜索**：`collectionOptions` 由分组树扁平化（含子分组，label 带「父/子」路径），`filteredCollectionOptions` computed 按 `#cb-name` 输入词过滤（匹配组名或父路径），无匹配显示「无匹配分组」；`createNew` 点击「创建新分组」后保留已输入名称不再清空；`selectCollection` 的 `selectedName` 与输入框显示值保持一致避免 watch 误判手动改名
 
 ### 未分类（虚拟分组）
 - **`collection_id = -4`** 标识「未分类」虚拟分组：展示未加入任何分组的表情包（`meme_collections` 无记录），**不写入 DB/manifest，动态生成**
@@ -365,9 +386,10 @@ tests/
 ### 微信导入 (wechat_probe.py + wechat_keyfinder)
 - **架构**: 独立 C++ 二进制 `wechat_keyfinder` 处理 Windows 进程内存取证（读取微信进程内存提取密钥），Python 侧通过 subprocess + JSON 协议协调完成 DB 解密/SQLite 查询/CDN 下载/入库；仅 Windows
 - **目录层级**: 微信文件目录（root，默认 `%USERPROFILE%\Documents\xwechat_files` 或 `\WeChat Files`）→ 账号目录（root 下 `wxid_*` 文件夹，每个微信账号一个）→ `db_storage/emoticon/emoticon.db`（表情库，加密）+ `db_storage/favorite/favorite.db`（收藏库）
-- **环境检测** (`inspect_wechat_environment`): 传入路径 basename 以 `wxid_` 开头则视为单账号，否则扫描子目录收集所有 `wxid_*`；每账号 `_inspect_account` 检查 DB 是否存在且为 SQLite header（否则 `encrypted_index`）；返回 `{status, reason, root, root_exists, account_directory_count, accounts: [{id, path, status, reason, db_path}]}`
+- **环境检测** (`inspect_wechat_environment`): 传入路径 basename 以 `wxid_` 开头或 `_find_emoticon_db` 命中则视为单账号，否则扫描子目录收集 `wxid_*` 前缀或含表情库的账号目录；每账号 `_inspect_account` 检查 DB 是否存在且为 SQLite header（否则 `encrypted_index`）；返回 `{status, reason, root, root_exists, account_directory_count, accounts: [{id, path, status, reason, db_path}]}`
 - **账号选择**: `_pick_account` 未指定且多账号时返回 None，调用方报 `multiple_accounts` 引导前端选择；`list_wechat_stickers`/`start_wechat_import`/`_wechat_worker` 支持 `account_path` 参数指定账号
-- **密钥提取**: 二进制扫描微信进程内存，通过特征码定位密钥对象（RVA 偏移在 `config/offsets.json` 配置），XOR 解码 + salt 比对 + HMAC-SHA512 校验。**掩码恢复为主路径**（`find_wechat_key_masked`）：利用 DB 前 16 字节 salt 反推 32 字节 XOR 掩码，按 `x'<96hex>'` 格式识别被掩码的 99 字节密钥缓冲，**无需 RVA**，微信升级不易失效；旧 RVA 特征码扫描仅作回退；`--key <hex64>` 可注入已验证密钥绕开取证。**多进程**：未指定 `--pid` 时枚举所有 `Weixin.exe` 逐个尝试，掩码恢复天然命中运行目标账号的进程（`key_not_found` 表示均未命中）
+- **密钥提取**: 二进制扫描微信进程内存，通过特征码定位密钥对象（RVA 偏移在 `config/offsets.json` 配置），XOR 解码 + salt 比对 + HMAC-SHA512 校验。`offsets.json` 由 `build.py` `--add-data` 打包进产物 `config/` 目录（冻结后 `_offsets_path` 解析到 `_internal/config/offsets.json`，缺失时 helper 报 `config_invalid`）。**掩码恢复为主路径**（`find_wechat_key_masked`）：利用 DB 前 16 字节 salt 反推 32 字节 XOR 掩码，按 `x'<96hex>'` 格式识别被掩码的 99 字节密钥缓冲，**无需 RVA**，微信升级不易失效；旧 RVA 特征码扫描仅作回退；`--key <hex64>` 可注入已验证密钥绕开取证。**多进程**：未指定 `--pid` 时枚举所有 `Weixin.exe` 逐个尝试，掩码恢复天然命中运行目标账号的进程（`key_not_found` 表示均未命中）
+- **账号目录识别不依赖 `wxid_` 前缀**：`_find_account_dirs` 收集「`wxid_` 前缀子目录 ∪ `_find_emoticon_db` 命中（`db_storage/emoticon/emoticon.db` 或 `Msg/emoticon.db` 存在）的子目录」；`_find_emoticon_db` 两个固定候选未命中时在 `db_storage` 一层内兜底查 `emoticon.db`（`db_storage/emoticon.db` 或 `db_storage/*/emoticon.db`，覆盖布局差异）；`inspect_wechat_environment` 对用户所选目录本身同理放宽（前缀或含表情库即视为单账号目录）。`_inspect_account` 在 db 缺失时附带 `db_files`（`db_storage` 内实际存在的 `.db` 清单，有界 30 条），前端 `no_database` 时翻译为中文提示并展示该清单用于诊断真实布局；检测到微信 3.x 旧版布局（账号目录含 `Msg/Multi` 或 `Msg/MicroMsg.db`，表情库为 `Msg/Emotion.db`）时返回 `unsupported_version`/`wechat_3x_unsupported`，前端引导升级微信 4.x（Emotion.db 的 `CustomEmotion` 表、3.x SQLCipher 页布局与密钥内存格式均与 4.x 不同，整条链路不支持）。测试 `tests/test_wechat_env.py`
 - **DB 解密** (`_decrypt_database`): AES-256-CBC 逐页解密（每页 4096 字节，页 1 带 16 字节偏移，IV 取页尾 80 字节偏移处），首页替换为 "SQLite format 3" header；**合并 WAL**（`_apply_wal`）：微信运行中表结构与记录在 `emoticon.db-wal` 里，按 WAL 帧（24B 头 + 4096B 加密页）解密并回写到对应页，主文件旧快照 + WAL 帧 = 完整数据
 - **元数据查询** (`_query_sticker_metadata`): SQLite 查询 `kNonStoreEmoticonTable`（type/md5/aes_key/cdn_url/encrypt_url/extern_url），返回 md5+url+aes_key 列表
 - **下载校验** (`_download_sticker`): urllib 下载 → 魔数识别扩展名（PNG/JPG/GIF/WebP/BMP）→ 带 `aes_key` 时 AES-128-CBC 解密（IV=key）；`_detect_image_ext` 校验合法才返回。**防 SSRF**：仅允许白名单 CDN 主机（`vweixinf.tc.qq.com`/`wxapp.tc.qq.com`），解析后拒绝回环/私网/链路本地地址，重定向逐目标复检

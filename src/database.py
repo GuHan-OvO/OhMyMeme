@@ -1,11 +1,89 @@
 """SQLite元数据管理 - 零依赖"""
 
+import re
 import sqlite3
 import threading
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 from .config import get_config
+
+_lazy_pinyin = None
+
+# 备份恢复候选库预校验所需的表与列（backup.prepare_restore_source 使用）
+_RESTORE_REQUIRED_TABLES = (
+    "memes",
+    "tags",
+    "meme_tags",
+    "collections",
+    "meme_collections",
+    "favorites",
+    "recent_uses",
+)
+# 恢复候选库必需的外键定义：(子表列, 父表, 父表列, ON DELETE 行为)，
+# 缺失会导致恢复后级联删除失效、产生孤儿记录
+_RESTORE_REQUIRED_FOREIGN_KEYS = {
+    "meme_tags": {
+        ("meme_id", "memes", "id", "CASCADE"),
+        ("tag_id", "tags", "id", "CASCADE"),
+    },
+    "meme_collections": {
+        ("meme_id", "memes", "id", "CASCADE"),
+        ("collection_id", "collections", "id", "CASCADE"),
+    },
+    "favorites": {("meme_id", "memes", "id", "CASCADE")},
+    "recent_uses": {("meme_id", "memes", "id", "CASCADE")},
+    "collections": {("parent_id", "collections", "id", "CASCADE")},
+}
+_RESTORE_REQUIRED_COLUMNS = {
+    "memes": {
+        "id",
+        "filename",
+        "file_hash",
+        "original_name",
+        "width",
+        "height",
+        "file_size",
+        "mime_type",
+        "sort_order",
+        "stego_of_hash",
+        "from_stego",
+        "perceptual_hash",
+        "created_at",
+        "updated_at",
+    },
+    "tags": {"id", "name"},
+    "meme_tags": {"meme_id", "tag_id"},
+    "collections": {"id", "name", "parent_id", "sort_order"},
+    "meme_collections": {"meme_id", "collection_id", "sort_order"},
+    "favorites": {"meme_id", "added_at"},
+    "recent_uses": {"meme_id", "used_at"},
+}
+
+
+# 名称自然排序键：数字段按整数（1,2,10），其余段按拼音（pypinyin 缺失时退回原串小写）
+def _name_sort_key(name):
+    global _lazy_pinyin
+    key = []
+    for part in re.split(r"(\d+)", str(name)):
+        if not part:
+            continue
+        if part.isdigit():
+            key.append((0, int(part)))
+            continue
+        if _lazy_pinyin is None:
+            try:
+                from pypinyin import lazy_pinyin as _lp
+
+                _lazy_pinyin = _lp
+            except Exception:
+                _lazy_pinyin = False
+        if _lazy_pinyin:
+            text = "".join(_lazy_pinyin(part)).lower()
+        else:
+            text = part.lower()
+        key.append((1, text))
+    return key
 
 
 class MemeDB:
@@ -92,7 +170,10 @@ class MemeDB:
             CREATE INDEX IF NOT EXISTS idx_memes_name ON memes(filename);
             CREATE INDEX IF NOT EXISTS idx_recent_uses_at ON recent_uses(used_at);
         """)
-        # 迁移旧表：添加可能缺失的列
+        self._migrate(conn)
+
+    def _migrate(self, conn):
+        """迁移旧表：添加可能缺失的列并补建依赖新列的索引（幂等，可重复执行）"""
         migrates = [
             ("memes", "sort_order", "INTEGER DEFAULT 0"),
             ("memes", "stego_of_hash", "TEXT DEFAULT NULL"),
@@ -122,6 +203,107 @@ class MemeDB:
         if hasattr(self._local, "conn") and self._local.conn:
             self._local.conn.close()
             self._local.conn = None
+
+    def backup_to(self, path: str):
+        """WAL 一致快照：经 sqlite backup API 把当前库导出到目标文件"""
+        with self._lock:
+            dest = sqlite3.connect(path)
+            try:
+                self._get_conn().backup(dest)
+                dest.commit()
+            finally:
+                dest.close()
+
+    def has_any_data(self) -> bool:
+        """是否存在任何业务数据（memes/分组/标签/收藏，含 stego 载体行）
+
+        供备份恢复的空库判定。
+        """
+        conn = self._get_conn()
+        for tbl in ("memes", "collections", "tags", "favorites"):
+            if conn.execute(f"SELECT 1 FROM {tbl} LIMIT 1").fetchone():
+                return True
+        return False
+
+    def prepare_restore_source(self, path: str):
+        """候选备份库预校验：integrity_check + 全部表/必需列存在性 + 隔离连接上
+        预迁移 + 孤儿外键检查。
+
+        在 staging 文件的独立连接上操作，不触碰活动库；失败抛 ValueError。
+        """
+        conn = sqlite3.connect(path)
+        # Row 按列名取值：foreign_key_list 的 on_delete 列序存在版本歧义
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute("PRAGMA integrity_check").fetchone()
+            if not row or row[0] != "ok":
+                raise ValueError(f"integrity_check: {row[0] if row else 'unknown'}")
+            tables = {
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            missing_tables = [t for t in _RESTORE_REQUIRED_TABLES if t not in tables]
+            if missing_tables:
+                raise ValueError("缺少必需的数据表: " + ", ".join(missing_tables))
+            self._migrate(conn)
+            for tbl, cols in _RESTORE_REQUIRED_COLUMNS.items():
+                have = {
+                    r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()
+                }
+                missing_cols = cols - have
+                if missing_cols:
+                    raise ValueError(
+                        f"表 {tbl} 缺少必需列: " + ", ".join(sorted(missing_cols))
+                    )
+            # 外键定义必须存在且带 ON DELETE CASCADE（缺失则级联删除失效）
+            for tbl, required in _RESTORE_REQUIRED_FOREIGN_KEYS.items():
+                actual = set()
+                for r in conn.execute(f"PRAGMA foreign_key_list({tbl})").fetchall():
+                    parent = r["table"]
+                    col_from = r["from"]
+                    col_to = r["to"]
+                    on_delete = r["on_delete"]
+                    if col_to is None:  # 隐式引用父表主键
+                        pk = [
+                            c[1]
+                            for c in conn.execute(
+                                f"PRAGMA table_info({parent})"
+                            ).fetchall()
+                            if c[5] > 0
+                        ]
+                        col_to = pk[0] if pk else None
+                    actual.add((col_from, parent, col_to, on_delete))
+                missing_fks = required - actual
+                if missing_fks:
+                    raise ValueError(f"表 {tbl} 缺少必需的外键定义")
+            fk_issues = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if fk_issues:
+                raise ValueError(f"存在 {len(fk_issues)} 条孤儿外键记录")
+            conn.commit()
+        finally:
+            conn.close()
+
+    def restore_from(self, path: str):
+        """用备份库原子替换当前库内容（backup API，绕过 SQL 层），并补齐旧版本缺失列
+
+        获取 _lock 后、替换前复查空库：所有 MemeDB 写入（含未走 _IMPORT_LOCK 的
+        rescan）都在同一把锁上串行，检查与替换因此原子，绕过前置检查的竞态窗口
+        不可能得手；非空时抛 ValueError 交由 restore_backup 回滚缓存文件。
+        """
+        with self._lock:
+            if self.has_any_data():
+                raise ValueError("恢复期间检测到新数据写入，已中止")
+            src = sqlite3.connect(path)
+            try:
+                src.backup(self._get_conn())
+            finally:
+                src.close()
+            conn = self._get_conn()
+            self._migrate(conn)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.commit()
 
     # --- 增删改 ---
 
@@ -264,6 +446,48 @@ class MemeDB:
             r[0] for r in conn.execute("SELECT name FROM tags ORDER BY name").fetchall()
         ]
 
+    def _existing_meme_ids(self, conn, ids: List[int]) -> List[int]:
+        """过滤出实际存在的表情 id（外键开启时对缺失 id 写子表会整批失败）"""
+        placeholders = ",".join("?" for _ in ids)
+        return [
+            r[0]
+            for r in conn.execute(
+                f"SELECT id FROM memes WHERE id IN ({placeholders})", ids
+            ).fetchall()
+        ]
+
+    def add_tags_to_memes(self, meme_ids: List[int], tags: List[str]) -> int:
+        """批量合并追加标签（不清空各表情已有标签），返回实际存在的表情数"""
+        names = [t.strip() for t in (tags or []) if t.strip()]
+        ids = list(dict.fromkeys(int(x) for x in (meme_ids or [])))
+        if not names or not ids:
+            return 0
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                valid_ids = self._existing_meme_ids(conn, ids)
+                if not valid_ids:
+                    return 0
+                for tag in names:
+                    # INSERT OR IGNORE 后 lastrowid 不可靠（同 _set_tags）
+                    conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?)", (tag,))
+                    row = conn.execute(
+                        "SELECT id FROM tags WHERE name=?", (tag,)
+                    ).fetchone()
+                    if row is None:
+                        continue
+                    for mid in valid_ids:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO meme_tags "
+                            "(meme_id, tag_id) VALUES (?, ?)",
+                            (mid, row[0]),
+                        )
+                conn.commit()
+                return len(valid_ids)
+            except Exception:
+                conn.rollback()
+                raise
+
     # --- 收藏 ---
 
     def toggle_favorite(self, meme_id: int) -> bool:
@@ -330,6 +554,109 @@ class MemeDB:
             )
             conn.commit()
 
+    def add_memes_to_collection(self, meme_ids: List[int], collection_id: int) -> int:
+        """批量加入分组（追加语义，单事务），返回实际新增的关联数（重复加入不计）"""
+        ids = list(dict.fromkeys(int(x) for x in (meme_ids or [])))
+        if not ids:
+            return 0
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                valid_ids = self._existing_meme_ids(conn, ids)
+                if not valid_ids:
+                    return 0
+                if (
+                    conn.execute(
+                        "SELECT 1 FROM collections WHERE id=?", (collection_id,)
+                    ).fetchone()
+                    is None
+                ):
+                    raise ValueError(f"collection {collection_id} not found")
+                added = 0
+                for mid in valid_ids:
+                    cur = conn.execute(
+                        "INSERT OR IGNORE INTO meme_collections "
+                        "(meme_id, collection_id) VALUES (?, ?)",
+                        (mid, collection_id),
+                    )
+                    added += max(cur.rowcount, 0)
+                conn.commit()
+                return added
+            except Exception:
+                conn.rollback()
+                raise
+
+    def move_memes_to_collection(
+        self, meme_ids: List[int], from_ids: List[int], to_id: int
+    ) -> int:
+        """批量把实际属于 from_ids（源分组子树）成员的表情移入 to_id（单事务）
+
+        返回实际新增的目标关联数（已在目标分组的重复关联不计）；
+        不属于源子树的表情不受删除或移动影响
+        """
+        ids = list(dict.fromkeys(int(x) for x in (meme_ids or [])))
+        froms = list(dict.fromkeys(int(x) for x in (from_ids or [])))
+        if not ids or not froms:
+            return 0
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                valid_ids = self._existing_meme_ids(conn, ids)
+                if not valid_ids:
+                    return 0
+                if (
+                    conn.execute(
+                        "SELECT 1 FROM collections WHERE id=?", (to_id,)
+                    ).fetchone()
+                    is None
+                ):
+                    raise ValueError(f"collection {to_id} not found")
+                # 仅纳入实际属于源子树的成员
+                ph_from = ",".join("?" for _ in froms)
+                ph_mid = ",".join("?" for _ in valid_ids)
+                member_rows = conn.execute(
+                    f"SELECT DISTINCT meme_id FROM meme_collections "
+                    f"WHERE collection_id IN ({ph_from}) AND meme_id IN ({ph_mid})",
+                    [*froms, *valid_ids],
+                ).fetchall()
+                members = [r[0] for r in member_rows]
+                if not members:
+                    return 0
+                ph_members = ",".join("?" for _ in members)
+                conn.execute(
+                    f"DELETE FROM meme_collections WHERE collection_id IN ({ph_from}) "
+                    f"AND meme_id IN ({ph_members})",
+                    [*froms, *members],
+                )
+                moved = 0
+                for mid in members:
+                    cur = conn.execute(
+                        "INSERT OR IGNORE INTO meme_collections "
+                        "(meme_id, collection_id) VALUES (?, ?)",
+                        (mid, to_id),
+                    )
+                    moved += max(cur.rowcount, 0)
+                # 级联清理源子树内变空的分组：只删无成员且无子分组的叶子空组，
+                # 逐层迭代直到无删除（支持子组先空、父组后空）；仅限 from_ids 范围，
+                # 子树外分组不受影响
+                while True:
+                    deleted = conn.execute(
+                        f"DELETE FROM collections WHERE id IN ({ph_from}) "
+                        "AND id NOT IN ("
+                        "SELECT DISTINCT collection_id FROM meme_collections) "
+                        "AND id NOT IN ("
+                        "SELECT DISTINCT parent_id FROM collections "
+                        "WHERE parent_id IS NOT NULL)",
+                        froms,
+                    ).rowcount
+                    if deleted == 0:
+                        break
+                conn.commit()
+                return moved
+            except Exception:
+                conn.rollback()
+                raise
+
     def collection_exists(self, name: str, parent_id: int = None) -> bool:
         """检查同名分组是否已存在"""
         conn = self._get_conn()
@@ -371,22 +698,27 @@ class MemeDB:
 
     def get_collections(self) -> List[Tuple[int, str, int, int]]:
         conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT id, name, parent_id, sort_order FROM collections "
+            "ORDER BY sort_order ASC"
+        ).fetchall()
+        # 自然排序回退：sort_order 相同（未拖拽）时数字按数值、中文按拼音
         return [
             (r[0], r[1], r[2], r[3])
-            for r in conn.execute(
-                "SELECT id, name, parent_id, sort_order FROM collections "
-                "ORDER BY sort_order ASC, name"
-            ).fetchall()
+            for r in sorted(rows, key=lambda r: (r[3], _name_sort_key(r[1])))
         ]
 
     def get_child_collections(self, parent_id: int) -> List[dict]:
         conn = self._get_conn()
         rows = conn.execute(
-            "SELECT id, name FROM collections WHERE parent_id=? "
-            "ORDER BY sort_order ASC, name",
+            "SELECT id, name, sort_order FROM collections WHERE parent_id=? "
+            "ORDER BY sort_order ASC",
             (parent_id,),
         ).fetchall()
-        return [{"id": r[0], "name": r[1]} for r in rows]
+        return [
+            {"id": r[0], "name": r[1]}
+            for r in sorted(rows, key=lambda r: (r[2], _name_sort_key(r[1])))
+        ]
 
     def get_collection_depth(self, cid: int) -> int:
         depth = 0
@@ -448,9 +780,13 @@ class MemeDB:
         params = []
 
         if keyword:
-            where.append("(m.filename LIKE ? OR m.original_name LIKE ?)")
             kw = f"%{keyword}%"
-            params.extend([kw, kw])
+            where.append(
+                "(m.filename LIKE ? OR m.original_name LIKE ? OR m.id IN ("
+                "SELECT mt.meme_id FROM meme_tags mt "
+                "JOIN tags t ON t.id = mt.tag_id WHERE t.name LIKE ?))"
+            )
+            params.extend([kw, kw, kw])
 
         if tags:
             placeholders = ",".join("?" for _ in tags)
@@ -520,9 +856,13 @@ class MemeDB:
         where = ["(stego_of_hash IS NULL OR stego_of_hash = '')"]
         params = []
         if keyword:
-            where.append("(filename LIKE ? OR original_name LIKE ?)")
             kw = f"%{keyword}%"
-            params.extend([kw, kw])
+            where.append(
+                "(filename LIKE ? OR original_name LIKE ? OR memes.id IN ("
+                "SELECT mt.meme_id FROM meme_tags mt "
+                "JOIN tags t ON t.id = mt.tag_id WHERE t.name LIKE ?))"
+            )
+            params.extend([kw, kw, kw])
         if tags:
             placeholders = ",".join("?" for _ in tags)
             where.append(f"""id IN (

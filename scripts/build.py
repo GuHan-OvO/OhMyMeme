@@ -181,6 +181,7 @@ def build_pyinstaller(target=None):
         "--add-data", str(SRC_DIR / "webui") + sep + "src/webui",
         "--add-data", str(SRC_DIR / "resources") + sep + "src/resources",
         "--add-data", str(SRC_DIR / "adb-help.txt") + sep + "src/adb-help.txt",
+        "--add-data", str(PROJECT_ROOT / "config" / "offsets.json") + sep + "config",
         "--hidden-import", "src.main",
         str(PROJECT_ROOT / "scripts" / "launcher.py"),
     ]
@@ -328,7 +329,7 @@ def build_installer(version, target=None, filename_version=None):
         print(L("installer_not_found"), installer)
 
 
-def build_linux_packages(version, package="all", pkg_version=None):
+def build_linux_packages(version, package="all", pkg_version=None, arch=None):
     build_sh = PROJECT_ROOT / "scripts" / "installer" / "linux" / "build.sh"
     if not build_sh.exists():
         print(L("linux_sh_not_found", build_sh))
@@ -339,6 +340,10 @@ def build_linux_packages(version, package="all", pkg_version=None):
     # deb/rpm 的 Version 字段必须是数字开头；nightly 时回退到基础版本号
     if pkg_version:
         env["OHMYMEME_PKG_VERSION"] = pkg_version
+    # 传递架构参数给 build.sh
+    if arch:
+        # 统一架构名称：aarch64 -> aarch64, arm64 -> aarch64
+        env["OHMYMEME_ARCH"] = "aarch64" if arch in ("arm64", "aarch64") else arch
     print(L("building_linux"))
     result = subprocess.run(
         ["bash", str(build_sh), package],
@@ -483,8 +488,8 @@ if __name__ == "__main__":
                         help="Only run PyInstaller, skip installer")
     parser.add_argument("--package", choices=["all", "appimage", "deb", "rpm"], default="all",
                         help="Linux package type to build (default: all)")
-    parser.add_argument("--arch", choices=["arm64", "x86_64"], default=None,
-                        help="macOS architecture (default: auto-detect from machine)")
+    parser.add_argument("--arch", choices=["arm64", "x86_64", "aarch64"], default=None,
+                        help="Architecture (macOS: arm64/x86_64, Linux: aarch64/x86_64, default: auto-detect)")
     target_group = parser.add_mutually_exclusive_group()
     target_group.add_argument("--windows", action="store_true", dest="target_windows",
                               help="Build for Windows")
@@ -537,7 +542,7 @@ if __name__ == "__main__":
             if target == "Windows":
                 build_installer(app_version, target=target, filename_version=build_version)
             elif target == "Linux":
-                build_linux_packages(build_version, args.package, pkg_version=app_version)
+                build_linux_packages(build_version, args.package, pkg_version=app_version, arch=args.arch)
             elif target == "Darwin":
                 build_macos_packages(build_version, filename_version=build_version, arch=args.arch)
             else:
@@ -550,7 +555,7 @@ if __name__ == "__main__":
             elif target == "Windows":
                 build_installer(app_version, target=target, filename_version=build_version)
             elif target == "Linux":
-                build_linux_packages(version, args.package, pkg_version=app_version)
+                build_linux_packages(version, args.package, pkg_version=app_version, arch=args.arch)
             elif target == "Darwin":
                 build_macos_packages(version, filename_version=build_version, arch=args.arch)
     finally:

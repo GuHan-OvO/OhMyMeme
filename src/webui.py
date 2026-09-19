@@ -6,6 +6,7 @@ import math
 import os
 import platform
 import socket
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -56,7 +57,7 @@ try:
 except ImportError:
     HAS_BOTTLE = False
 
-from . import adb_util, qqnt_extract, tg_stickers, updater
+from . import adb_util, backup, qqnt_extract, tg_stickers, updater
 from . import sync as sync_module
 from .clipboard_util import (
     _is_animated,
@@ -78,6 +79,13 @@ _LOG_MAX = 5000
 
 # 分页：主窗口单页展示的表情包数量（与前端 index.js MEME_PAGE 保持一致）
 MEME_PAGE = 200
+
+# 贡献者 SVG 缓存：TTL 1 小时，避免每次打开设置页都请求外网；刷新失败退避
+# 重试，避免上游不可用时每个请求都反复触发 10s 慢抓取
+_CONTRIBUTORS_TTL = 3600
+_CONTRIBUTORS_RETRY_INTERVAL = 60
+_CONTRIBUTORS_LOCK = threading.Lock()
+_CONTRIBUTORS_CACHE = {"svg": None, "at": 0.0, "next_retry": 0.0}
 
 
 class _LogBufferHandler(logging.Handler):
@@ -109,6 +117,15 @@ install_log_buffer()
 
 HTML_DIR = Path(__file__).resolve().parent / "webui"
 RESOURCES_DIR = Path(__file__).resolve().parent / "resources"
+
+
+def _contributors_svg():
+    """剥离缓存 SVG 的白色背景矩形，适配深色主题后返回"""
+    white_rect = '<rect width="100%" height="100%" fill="#ffffff"/>'
+    svg = _CONTRIBUTORS_CACHE["svg"].replace(white_rect, "")
+    bottle.response.content_type = "image/svg+xml; charset=utf-8"
+    return svg
+
 
 # 启动动画视频边缘主色（OhMyMeme.mp4 边框纯黑，写死避免运行时 ffmpeg 抽帧采样）
 _STARTUP_BG_COLOR = "#000000"
@@ -255,6 +272,16 @@ class JsApi:
         self._db = get_db()
         self._drag_origin = None
         self._drag_last_move = 0.0
+
+    def _dialog(self, kind, **kw):
+        """主窗口上下文打开文件对话框（owner 为主窗口，无需焦点恢复）"""
+        win = webview.windows[0] if webview.windows else None
+        if win is None:
+            return None
+        try:
+            return win.create_file_dialog(kind, **kw)
+        except Exception:
+            return None
 
     def search_memes(
         self, keyword="", tags=None, collection_id=None, offset=0, limit=200
@@ -650,6 +677,64 @@ class JsApi:
         except Exception:
             return False
 
+    def batch_add_to_collection(
+        self, meme_ids: list, collection_id: int = 0, name: str = ""
+    ) -> dict:
+        """批量加入分组（追加语义）；collection_id<=0 时按 name 创建/复用顶层分组"""
+        ids = list(dict.fromkeys(int(x) for x in (meme_ids or [])))
+        try:
+            cid = int(collection_id or 0)
+            if cid <= 0:
+                name = (name or "").strip()
+                if not name:
+                    return {"ok": False, "error": "分组名为空"}
+                cid = self._db.create_collection(name)
+                if cid < 0:
+                    return {"ok": False}
+            added = self._db.add_memes_to_collection(ids, cid)
+            if added:
+                build_manifest()
+            return {"ok": True, "added": added}
+        except Exception:
+            return {"ok": False}
+
+    def batch_move_to_collection(
+        self, meme_ids: list, from_id: int, to_id: int = 0, name: str = ""
+    ) -> dict:
+        """批量从 from 分组（含子分组）移动到 to 分组；to_id<=0 时按 name 建目标"""
+        ids = list(dict.fromkeys(int(x) for x in (meme_ids or [])))
+        try:
+            # 分组视图递归展示子分组成员，移出时需从整棵子树移除才算真正"移走"
+            from_ids = self._get_collection_ids_recursive(int(from_id))
+            cid = int(to_id or 0)
+            if cid <= 0:
+                name = (name or "").strip()
+                if not name:
+                    return {"ok": False, "error": "分组名为空"}
+                cid = self._db.create_collection(name)
+                if cid < 0:
+                    return {"ok": False}
+            # create_collection 会复用同名顶层分组（可能是源分组自身），解析后统一校验：
+            # 移入源分组自身或其子分组 = 移出后又加回递归视图，等于没移动，拒绝
+            if cid in from_ids:
+                return {"ok": False, "error": "不能移动到当前分组自身或其子分组"}
+            moved = self._db.move_memes_to_collection(ids, from_ids, cid)
+            # moved==0 时成员关系仍可能变化（成员已在目标、仅从源移除），manifest 需重建
+            if ids:
+                build_manifest()
+            return {"ok": True, "moved": moved}
+        except Exception:
+            return {"ok": False}
+
+    def batch_add_tags(self, meme_ids: list, tags: list) -> dict:
+        """批量合并追加标签（不清空各表情已有标签），返回 {ok, count}"""
+        try:
+            ids = list(dict.fromkeys(int(x) for x in (meme_ids or [])))
+            count = self._db.add_tags_to_memes(ids, list(tags or []))
+            return {"ok": True, "count": count}
+        except Exception:
+            return {"ok": False}
+
     def set_collection_members(self, collection_id: int, meme_ids: list) -> bool:
         """批量设置分组内成员（先清空再写入），供添加分组弹窗确定时保存右侧列表"""
         try:
@@ -985,14 +1070,11 @@ class JsApi:
 
     def import_memes(self) -> bool:
         # 通过系统文件对话框选择导入（后台执行，避免大数量导入阻塞界面）
-        try:
-            result = webview.windows[0].create_file_dialog(
-                webview.FileDialog.OPEN,
-                allow_multiple=True,
-                file_types=("图片文件 (*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp)",),
-            )
-        except Exception:
-            return {"ok": False}
+        result = self._dialog(
+            webview.FileDialog.OPEN,
+            allow_multiple=True,
+            file_types=("图片文件 (*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp)",),
+        )
         if not result:
             return {"ok": False, "cancelled": True}
         paths = list(result)
@@ -1002,12 +1084,7 @@ class JsApi:
 
     def import_folder(self, make_collection=True) -> dict:
         """选择文件夹并导入其中全部图片；make_collection 时以文件夹名创建分组"""
-        try:
-            result = webview.windows[0].create_file_dialog(
-                webview.FileDialog.FOLDER, allow_multiple=False
-            )
-        except Exception:
-            return {"ok": False, "error": "无法打开目录选择对话框"}
+        result = self._dialog(webview.FileDialog.FOLDER)
         if not result:
             return {"ok": False, "cancelled": True}
         folder = result[0] if isinstance(result, (tuple, list)) else result
@@ -1386,6 +1463,75 @@ _STORAGE_MIGRATE_STATE = {
 _STORAGE_MIGRATE_LOCK = threading.Lock()
 _STORAGE_MIGRATE_THREAD = None
 
+# ─── 本地备份/恢复进度（后台线程 + 轮询） ───
+_BACKUP_STATE = {
+    "kind": "",  # create|restore
+    "status": "idle",  # idle|running|done|error
+    "done": 0,
+    "total": 0,
+    "error": "",
+    "result": None,
+}
+_BACKUP_LOCK = threading.Lock()
+
+
+def _set_backup_state(**kw):
+    with _BACKUP_LOCK:
+        _BACKUP_STATE.update(**kw)
+
+
+def get_backup_progress() -> dict:
+    import copy
+
+    with _BACKUP_LOCK:
+        return copy.deepcopy(_BACKUP_STATE)
+
+
+def start_backup_thread(kind: str, zip_path: str = "") -> bool:
+    """启动备份/恢复后台线程；已有任务运行时返回 False"""
+    if kind not in ("create", "restore"):
+        return False
+    with _BACKUP_LOCK:
+        if _BACKUP_STATE["status"] == "running":
+            return False
+        _BACKUP_STATE.update(
+            kind=kind, status="running", done=0, total=0, error="", result=None
+        )
+    threading.Thread(target=_backup_worker, args=(kind, zip_path), daemon=True).start()
+    return True
+
+
+def _backup_worker(kind: str, zip_path: str):
+    cfg = get_config()
+    db = get_db()
+    cb = _backup_progress_tick
+    try:
+        if kind == "create":
+            result = backup.create_backup(
+                backup.get_backup_dir(cfg), cfg.data_dir, cfg.cache_dir, db, cb
+            )  # create_backup 内部校验 backup_dir 与 cache_dir 的嵌套关系
+        else:
+            # 恢复全程持有导入互斥锁：_do_import/同步 pull 走同一把锁，
+            # 恢复期间的写入请求阻塞等待，避免 add_meme 与整库替换并发
+            with _IMPORT_LOCK:
+                result = backup.restore_backup(
+                    zip_path, cfg.data_dir, cfg.cache_dir, db, cb
+                )
+                if result.get("ok"):
+                    build_manifest()
+    except Exception as e:
+        logger.warning(f"备份任务({kind})失败: {e}")
+        _set_backup_state(status="error", error=str(e))
+        return
+    if result.get("ok"):
+        _set_backup_state(status="done", result=result)
+    else:
+        _set_backup_state(status="error", error=result.get("error", "恢复失败"))
+
+
+def _backup_progress_tick(done, total):
+    _set_backup_state(done=done, total=total)
+
 
 def _set_storage_migrate(**kw):
     with _STORAGE_MIGRATE_LOCK:
@@ -1406,10 +1552,63 @@ def cancel_storage_migration():
     return {"ok": True}
 
 
-def start_storage_migration_thread(new_dir: Path):
+def _storage_migrate_manifest_path() -> Path:
+    """迁移清单文件路径（崩溃后续跑依据）"""
+    return get_config().data_dir / "storage_migration.json"
+
+
+def _write_storage_migration_manifest(old: Path, new: Path):
+    import json
+
+    try:
+        with open(_storage_migrate_manifest_path(), "w", encoding="utf-8") as f:
+            json.dump({"old": str(old), "new": str(new)}, f)
+    except OSError:
+        pass
+
+
+def _clear_storage_migration_manifest():
+    try:
+        _storage_migrate_manifest_path().unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def resume_pending_storage_migration():
+    """启动自愈：存在未完成迁移清单则后台幂等续迁，成功前不阻塞启动"""
+    import json
+
+    manifest = _storage_migrate_manifest_path()
+    try:
+        if not manifest.is_file():
+            return
+        with open(manifest, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        old, new = Path(data["old"]), Path(data["new"])
+    except (OSError, ValueError, KeyError) as e:
+        logger.warning("storage migration manifest invalid: %s", e)
+        _clear_storage_migration_manifest()
+        return
+    if not start_storage_migration_thread(new, old_override=old):
+        return
+
+    def _watch():
+        global _STORAGE_MIGRATE_THREAD
+        thread = _STORAGE_MIGRATE_THREAD
+        if thread is not None:
+            thread.join()
+        if _STORAGE_MIGRATE_STATE["status"] != "done":
+            # 目标盘不可用等：放弃自愈并清除清单，保持旧配置
+            logger.warning("storage migration resume failed, keeping old cache_dir")
+            _clear_storage_migration_manifest()
+
+    threading.Thread(target=_watch, daemon=True).start()
+
+
+def start_storage_migration_thread(new_dir: Path, old_override: Path = None):
     """后台迁移 cache_dir 文件到 new_dir，避免阻塞桥接与 UI"""
     global _STORAGE_MIGRATE_THREAD
-    old = get_config().cache_dir
+    old = old_override or get_config().cache_dir
     with _STORAGE_MIGRATE_LOCK:
         if _STORAGE_MIGRATE_STATE["status"] == "running":
             return False
@@ -1424,6 +1623,7 @@ def start_storage_migration_thread(new_dir: Path):
             error="",
             cancel_requested=False,
         )
+    _write_storage_migration_manifest(old, new_dir)
     _STORAGE_MIGRATE_THREAD = threading.Thread(
         target=_storage_migrate_worker,
         args=(old, new_dir),
@@ -1434,12 +1634,24 @@ def start_storage_migration_thread(new_dir: Path):
 
 
 def _storage_migrate_worker(old: Path, new: Path):
-    """两阶段迁移：预检冲突 → 逐文件移动（含取消支持）"""
+    """三阶段迁移：复制（源只读）→ 切换配置 → 清理源；全程幂等可续跑
+
+    阶段1 只写新目录，崩溃/取消只需清理本次新副本（源完好无分裂）；
+    阶段2 写配置是唯一切换点，此后新目录已完整；阶段3 删源失败仅残留
+    旧目录冗余文件（rescan 只扫 cache_dir，无害）。
+
+    文件复制采用"迁移临时文件 + 原子提交"：先写入 dst 同目录的
+    .migrating 临时文件，完成后 os.replace 原子提交到 dst，避免写入中途
+    崩溃在最终路径留下半写文件（恢复时只需删除临时文件，不回滚已提交文件）。
+    """
     import shutil
 
-    moved_pairs = []
+    copied_pairs = []
+    created_dsts = []  # 本次运行实际新建的目标（取消/失败时清理，不动既有文件）
+    config_switched = False  # 阶段2 配置已切换时禁止清理新目录文件
+    migrating_suffix = ".migrating"
     try:
-        # 阶段一：扫描 + 预检冲突
+        # 阶段一：扫描 + 复制（幂等：dst 已存在且内容一致视为已复制）
         plan = []
         for root, dirs, files in os.walk(str(old)):
             rel = os.path.relpath(root, str(old))
@@ -1451,82 +1663,140 @@ def _storage_migrate_worker(old: Path, new: Path):
                 dst = (new if rel == "." else new / rel) / name
                 plan.append((src, dst))
         total = len(plan)
-        _set_storage_migrate(total=total, message="预检目标目录...")
-        if plan:
-            collisions = [
-                {
-                    "name": os.path.basename(src),
-                    "path": os.path.relpath(src, str(old)),
-                }
-                for src, dst in plan
-                if dst.exists()
-            ]
-            if collisions:
-                _set_storage_migrate(
-                    status="error",
-                    message="目标目录已存在同名文件，未迁移",
-                    error="目标目录已存在 %d 个同名文件" % len(collisions),
-                    failed=[],
-                )
-                return
-        moved = 0
+        _set_storage_migrate(total=total, message="复制文件到新目录...")
+        conflicts = []
         for src, dst in plan:
             with _STORAGE_MIGRATE_LOCK:
                 cancel_requested = _STORAGE_MIGRATE_STATE["cancel_requested"]
             if cancel_requested:
-                for s, d in reversed(moved_pairs):
-                    try:
-                        shutil.move(str(d), s)
-                    except OSError:
-                        pass
-                _set_storage_migrate(
-                    status="cancelled", message="已取消，已回滚已移动文件"
-                )
-                return
+                break
+            try:
+                src_size = os.path.getsize(src)
+            except OSError:
+                continue
             dst.parent.mkdir(parents=True, exist_ok=True)
-            # 排他创建目标（O_EXCL：目标已存在则抛 FileExistsError，
-            # 防 precheck→write 期间并发覆盖既有文件），O_WRONLY 确保 fd 可写
+            tmp_dst = dst.parent / (dst.name + migrating_suffix)
+            # 清理上次中断留下的同路径临时文件（恢复入口）
+            if tmp_dst.exists():
+                tmp_dst.unlink()
+            if dst.exists():
+                if dst.stat().st_size == src_size and _file_sha256(src) == _file_sha256(
+                    str(dst)
+                ):
+                    copied_pairs.append((src, dst))
+                    _set_storage_migrate(
+                        progress=int(len(copied_pairs) * 100 / total) if total else 100,
+                        moved=len(copied_pairs),
+                        current=os.path.basename(src),
+                    )
+                    continue
+                conflicts.append(dst)
+                continue
             try:
-                fd = os.open(str(dst), os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o644)
-            except FileExistsError:
-                # 迁移期间目标被其他进程新建：并发冲突，整批回滚并报清晰错误
-                for s, d in reversed(moved_pairs):
-                    try:
-                        shutil.move(str(d), s)
-                    except OSError:
-                        pass
-                _set_storage_migrate(
-                    status="error",
-                    message="迁移失败：目标目录出现同名文件（与进程冲突），已回滚",
-                    error=f"目标已存在: {dst}",
-                )
-                return
-            try:
-                with os.fdopen(fd, "wb") as out_f, open(src, "rb") as in_f:
+                with open(src, "rb") as in_f, open(tmp_dst, "wb") as out_f:
                     shutil.copyfileobj(in_f, out_f)
             except Exception:
-                try:
-                    os.unlink(str(dst))  # 清理复制中途失败留下的半写孤儿目标
-                except OSError:
-                    pass
+                # 写入中途失败：仅删除本次临时文件，最终路径未触及
+                if tmp_dst.exists():
+                    tmp_dst.unlink()
                 raise
+            # 原子提交到最终路径（os.replace 同文件系统原子；不覆盖既有目标）
+            if dst.exists():
+                # 提交瞬间目标出现：校验内容，一致则视为已复制否则冲突
+                tmp_dst.unlink()
+                if dst.stat().st_size == src_size and _file_sha256(src) == _file_sha256(
+                    str(dst)
+                ):
+                    copied_pairs.append((src, dst))
+                    _set_storage_migrate(
+                        progress=int(len(copied_pairs) * 100 / total) if total else 100,
+                        moved=len(copied_pairs),
+                        current=os.path.basename(src),
+                    )
+                    continue
+                conflicts.append(dst)
+                continue
             try:
-                os.unlink(src)
+                os.replace(str(tmp_dst), str(dst))
             except OSError:
-                pass  # 源删除失败不阻断（目标已排他写入成功）
-            moved_pairs.append((src, dst))
-            moved += 1
+                # 提交瞬间目标出现（极小窗口）：回退到内容校验
+                if (
+                    dst.exists()
+                    and dst.stat().st_size == src_size
+                    and _file_sha256(src) == _file_sha256(str(dst))
+                ):
+                    tmp_dst.unlink()
+                    copied_pairs.append((src, dst))
+                    _set_storage_migrate(
+                        progress=int(len(copied_pairs) * 100 / total) if total else 100,
+                        moved=len(copied_pairs),
+                        current=os.path.basename(src),
+                    )
+                    continue
+                tmp_dst.unlink()
+                conflicts.append(dst)
+                continue
+            copied_pairs.append((src, dst))
+            created_dsts.append(dst)
             _set_storage_migrate(
-                progress=int(moved * 100 / total) if total else 100,
-                moved=moved,
+                progress=int(len(copied_pairs) * 100 / total) if total else 100,
+                moved=len(copied_pairs),
                 current=os.path.basename(src),
             )
-        # 迁移成功后写入新配置（回滚场景不写入，保持旧目录）
+        with _STORAGE_MIGRATE_LOCK:
+            cancel_requested = _STORAGE_MIGRATE_STATE["cancel_requested"]
+        if conflicts:
+            for d in created_dsts:
+                try:
+                    d.unlink()
+                except OSError:
+                    pass
+            _set_storage_migrate(
+                status="error",
+                message="目标目录已存在同名但内容不同的文件，未迁移",
+                error=f"目标已存在内容不同的同名文件: {conflicts[0]} 等 "
+                f"{len(conflicts)} 个",
+            )
+            _clear_storage_migration_manifest()
+            return
+        if cancel_requested:
+            for d in created_dsts:
+                try:
+                    d.unlink()
+                except OSError:
+                    pass
+            _set_storage_migrate(status="cancelled", message="已取消，目录保持原状")
+            _clear_storage_migration_manifest()
+            return
+        # 阶段二：切换配置（唯一危险点，此后新目录已完整）
         get_config().set("cache_dir", str(new))
         get_config().save()
+        # 依据磁盘上实际持久化的 cache_dir 判断是否已切换（原子保存保证一致，
+        # 但异常路径下以磁盘为准，避免误判为未切换而删除新目录）
+        try:
+            import json as _json
+
+            on_disk = _json.loads(get_config()._path.read_text(encoding="utf-8"))
+            config_switched = on_disk.get("cache_dir") == str(new)
+        except Exception:
+            config_switched = False
+        # 阶段三：清理源文件（失败仅残留，不阻断不回滚）
+        failed = []
+        for src, _dst in copied_pairs:
+            try:
+                os.unlink(src)
+            except OSError as e:
+                failed.append(
+                    {"name": os.path.basename(src), "path": src, "error": str(e)}
+                )
         _set_storage_migrate(
-            status="done", progress=100, message="迁移完成", current=""
+            status="done",
+            progress=100,
+            message="迁移完成",
+            current="",
+            failed=failed,
         )
+        _clear_storage_migration_manifest()
         try:
             if len(webview.windows) > 0:
                 webview.windows[0].evaluate_js("refreshMemes();")
@@ -1534,13 +1804,16 @@ def _storage_migrate_worker(old: Path, new: Path):
             pass
     except Exception as e:
         logger.error("storage migrate error: %s", e)
-        # 回滚已移动文件，保持旧目录完整
-        for s, d in reversed(moved_pairs):
-            try:
-                shutil.move(str(d), s)
-            except OSError:
-                pass
+        # 配置未切换时源未动，仅清理本次新建副本即回到原状（既有文件不动）；
+        # 配置已切换则新目录已完整，禁止删除新目录文件
+        if not config_switched:
+            for d in created_dsts:
+                try:
+                    d.unlink()
+                except OSError:
+                    pass
         _set_storage_migrate(status="error", message="迁移失败", error=str(e))
+        _clear_storage_migration_manifest()
 
 
 class SettingsApi:
@@ -1788,14 +2061,11 @@ class SettingsApi:
         st = adb_util.get_qq_progress()
         if st["status"] != "done" or not st["zip_path"]:
             return {"ok": False, "error": "no zip ready"}
-        try:
-            result = webview.windows[0].create_file_dialog(
-                webview.FileDialog.SAVE,
-                allow_multiple=False,
-                file_types=("ZIP 文件 (*.zip)",),
-            )
-        except Exception:
-            return {"ok": False, "error": "dialog failed"}
+        result = self._dialog(
+            webview.FileDialog.SAVE,
+            allow_multiple=False,
+            file_types=("ZIP 文件 (*.zip)",),
+        )
         if not result:
             return {"ok": False, "error": "cancelled"}
         import shutil
@@ -1821,21 +2091,12 @@ class SettingsApi:
 
     def export_logs(self) -> dict:
         """导出本次运行收集的日志（DEBUG 级）到用户选择的位置"""
-        win = self._webui._settings_window or (
-            webview.windows[0] if webview.windows else None
+        result = self._dialog(
+            webview.FileDialog.SAVE,
+            allow_multiple=False,
+            save_filename="OhMyMeme-logs.txt",
+            file_types=("文本文件 (*.txt)",),
         )
-        if not win:
-            return {"ok": False, "error": "no window"}
-        try:
-            result = win.create_file_dialog(
-                webview.FileDialog.SAVE,
-                allow_multiple=False,
-                save_filename="OhMyMeme-logs.txt",
-                file_types=("文本文件 (*.txt)",),
-            )
-        except Exception as e:
-            logger.warning(f"export_logs dialog error: {e!r}")
-            return {"ok": False, "error": "dialog failed"}
         if not result:
             return {"ok": False, "error": "cancelled"}
         dst = result[0] if isinstance(result, (tuple, list)) else result
@@ -1864,12 +2125,7 @@ class SettingsApi:
 
     def pick_tg_tdata(self) -> dict:
         """手动选择 Telegram Desktop tdata 目录（校验并持久化）"""
-        try:
-            result = webview.windows[0].create_file_dialog(
-                webview.FileDialog.FOLDER, allow_multiple=False
-            )
-        except Exception:
-            return {"ok": False, "error": "无法打开目录选择对话框"}
+        result = self._dialog(webview.FileDialog.FOLDER)
         if not result:
             return {"ok": False, "cancelled": True}
         path = result[0] if isinstance(result, (tuple, list)) else result
@@ -1923,12 +2179,7 @@ class SettingsApi:
 
     def pick_wechat_root(self):
         """手动选择微信文件根目录"""
-        try:
-            result = webview.windows[0].create_file_dialog(
-                webview.FileDialog.FOLDER, allow_multiple=False
-            )
-        except Exception:
-            return {"ok": False, "error": "无法打开目录选择对话框"}
+        result = self._dialog(webview.FileDialog.FOLDER)
         if not result:
             return {"ok": False, "cancelled": True}
         path = result[0] if isinstance(result, (tuple, list)) else result
@@ -1981,14 +2232,11 @@ class SettingsApi:
 
     def qqnt_pick_ini(self) -> dict:
         """选择 UserDataInfo.ini，保存到配置并返回环境状态"""
-        try:
-            result = webview.windows[0].create_file_dialog(
-                webview.FileDialog.OPEN,
-                allow_multiple=False,
-                file_types=("INI Files (*.ini);;All Files (*)",),
-            )
-        except Exception:
-            return {"ok": False}
+        result = self._dialog(
+            webview.FileDialog.OPEN,
+            allow_multiple=False,
+            file_types=("INI Files (*.ini);;All Files (*)",),
+        )
         if not result:
             return {"ok": False, "cancelled": True}
         path = result[0] if isinstance(result, (tuple, list)) else result
@@ -1999,12 +2247,7 @@ class SettingsApi:
 
     def qqnt_pick_userdata(self) -> dict:
         """选择用户数据目录，保存到配置并返回环境状态"""
-        try:
-            result = webview.windows[0].create_file_dialog(
-                webview.FileDialog.FOLDER, allow_multiple=False
-            )
-        except Exception:
-            return {"ok": False}
+        result = self._dialog(webview.FileDialog.FOLDER)
         if not result:
             return {"ok": False, "cancelled": True}
         path = result[0] if isinstance(result, (tuple, list)) else result
@@ -2014,12 +2257,7 @@ class SettingsApi:
 
     def qqnt_pick_base(self) -> dict:
         """选择保存基础目录"""
-        try:
-            result = webview.windows[0].create_file_dialog(
-                webview.FileDialog.FOLDER, allow_multiple=False
-            )
-        except Exception:
-            return {"ok": False}
+        result = self._dialog(webview.FileDialog.FOLDER)
         if not result:
             return {"ok": False, "cancelled": True}
         path = result[0] if isinstance(result, (tuple, list)) else result
@@ -2053,14 +2291,32 @@ class SettingsApi:
             "total_size": total,
         }
 
+    def _dialog(self, kind, **kw):
+        """以设置窗口为 owner 打开文件对话框，返回原始 result（None 表示取消/失败）。
+
+        对话框关闭后自动恢复设置窗口前台焦点，避免主窗口抢焦遮挡设置页。
+        kind: webview.FileDialog.FOLDER / OPEN / SAVE
+        其余关键字透传给 create_file_dialog。
+        """
+        win = self._webui._settings_window
+        if win is None:
+            win = webview.windows[0] if webview.windows else None
+        if win is None:
+            return None
+        try:
+            result = win.create_file_dialog(kind, **kw)
+        except Exception:
+            return None
+        # 对话框关闭后焦点可能回到主窗口，恢复设置窗口到前台
+        try:
+            self._webui.focus_settings_window()
+        except Exception:
+            pass
+        return result
+
     def pick_storage_dir(self):
         """选择新的表情包存储目录（只返回路径，不立即生效）"""
-        try:
-            result = webview.windows[0].create_file_dialog(
-                webview.FileDialog.FOLDER, allow_multiple=False
-            )
-        except Exception:
-            return {"ok": False, "error": "dialog failed"}
+        result = self._dialog(webview.FileDialog.FOLDER)
         if not result:
             return {"ok": False, "cancelled": True}
         path = result[0] if isinstance(result, (tuple, list)) else result
@@ -2073,6 +2329,9 @@ class SettingsApi:
         ok, err = _storage_dir_validation(path, str(old), protected)
         if not ok:
             return {"ok": False, "error": err}
+        ok, err = backup.validate_backup_dir(path, backup.get_backup_dir(self._cfg))
+        if not ok:
+            return {"ok": False, "error": f"新存储目录与备份目录冲突: {err}"}
         new = Path(path).resolve()
         try:
             new.mkdir(parents=True, exist_ok=True)
@@ -2106,6 +2365,79 @@ class SettingsApi:
 
     def cancel_storage_migration(self) -> dict:
         return cancel_storage_migration()
+
+    # ─── 本地备份与恢复 ───
+
+    def backup_get_info(self) -> dict:
+        """备份目录与已有备份列表"""
+        d = backup.get_backup_dir(self._cfg)
+        return {
+            "ok": True,
+            "backup_dir": str(d),
+            "custom": bool(self._cfg.get("backup_dir", "")),
+            "list": backup.list_backups(d),
+        }
+
+    def backup_pick_dir(self) -> dict:
+        """选择备份输出目录并立即生效"""
+        result = self._dialog(webview.FileDialog.FOLDER)
+        if not result:
+            return {"ok": False, "cancelled": True}
+        path = result[0] if isinstance(result, (tuple, list)) else result
+        new = Path(path).resolve()
+        try:
+            new.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            return {"ok": False, "error": f"创建目录失败: {e}"}
+        if not os.access(new, os.W_OK):
+            return {"ok": False, "error": "目标目录不可写"}
+        ok, err = backup.validate_backup_dir(str(new), self._cfg.cache_dir)
+        if not ok:
+            return {"ok": False, "error": err}
+        self._cfg.set("backup_dir", str(new))
+        self._cfg.save()
+        return {"ok": True, "backup_dir": str(new)}
+
+    def backup_create(self) -> dict:
+        if start_backup_thread("create"):
+            return {"ok": True, "async": True}
+        return {"ok": False, "error": "有备份/恢复任务正在进行"}
+
+    def backup_delete(self, name: str) -> dict:
+        if backup.delete_backup(backup.get_backup_dir(self._cfg), name):
+            return {"ok": True}
+        return {"ok": False, "error": "删除失败：无效的备份文件名或文件不存在"}
+
+    def backup_pick_zip(self) -> dict:
+        """选择要恢复的备份 ZIP 文件"""
+        result = self._dialog(
+            webview.FileDialog.OPEN,
+            allow_multiple=False,
+            file_types=("备份包 (*.zip)",),
+        )
+        if not result:
+            return {"ok": False, "cancelled": True}
+        path = result[0] if isinstance(result, (tuple, list)) else result
+        return {"ok": True, "path": path}
+
+    def backup_restore(self, path: str) -> dict:
+        """从备份 ZIP 恢复；仅允许空库，拒绝时返回当前条数"""
+        if (
+            get_db().has_any_data()
+        ):  # 含 stego 载体行与空分组/标签，任何业务数据都视为非空
+            return {
+                "ok": False,
+                "error": "当前数据库已有表情/分组/标签等数据，恢复仅在空库时可用。"
+                "如需保留现有数据，请先手动备份或使用远端同步。",
+            }
+        if not Path(path).is_file():
+            return {"ok": False, "error": "备份文件不存在"}
+        if start_backup_thread("restore", path):
+            return {"ok": True, "async": True}
+        return {"ok": False, "error": "有备份/恢复任务正在进行"}
+
+    def backup_progress(self) -> dict:
+        return get_backup_progress()
 
     def qqnt_default_dir(self, base: str, qq_number: str) -> dict:
         """按账号生成默认输出目录（昵称+QQ号）"""
@@ -2157,14 +2489,11 @@ class SettingsApi:
             return False
 
     def import_memes(self) -> dict:
-        try:
-            result = webview.windows[0].create_file_dialog(
-                webview.FileDialog.OPEN,
-                allow_multiple=True,
-                file_types=("图片文件 (*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp)",),
-            )
-        except Exception:
-            return {"ok": False}
+        result = self._dialog(
+            webview.FileDialog.OPEN,
+            allow_multiple=True,
+            file_types=("图片文件 (*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp)",),
+        )
         if not result:
             return {"ok": False, "cancelled": True}
         r = self._webui._do_import(result)
@@ -2874,6 +3203,8 @@ class WebUI:
         self._started = False
         self._pending_hide = False
         self._hotkey_session = False
+        self._last_toggle_ms = 0
+        self._window_state_lock = threading.Lock()
         self._on_hotkey_change_cb = None
         self._update_debug = update_debug
         self._silent_start = silent_start
@@ -2969,71 +3300,101 @@ class WebUI:
 
     # 显示主窗口并清理非热键会话状态
     def show(self):
-        self._visible = True
-        self._hotkey_session = False
-        if self._window:
-            try:
-                self._window.on_top = True  # 置顶一下提升 z-order，随即复位不长期置顶
-                self._window.on_top = False
-                if callable(self._window.show):
-                    self._window.show()
-                if callable(self._window.focus):
-                    self._window.focus()
-                self._window.evaluate_js("focusSearch()")
-            except Exception as e:
-                logger.warning(f"show window error: {e}")
+        """显示主窗口（线程安全：持锁完成状态更新 + 原生窗口操作）"""
+        if self._window is None:
+            return
+        with self._window_state_lock:
+            self._visible = True
+            self._hotkey_session = False
+            self._show_on_gui()
+
+    def _show_on_gui(self):
+        """必须在 _window_state_lock 内调用（状态与窗口操作原子化）"""
+        try:
+            self._window.on_top = True  # 置顶一下提升 z-order，随即复位不长期置顶
+            self._window.on_top = False
+            if callable(self._window.show):
+                self._window.show()
+            if callable(self._window.focus):
+                self._window.focus()
+            self._window.evaluate_js("focusSearch()")
+        except Exception:
+            pass
 
     def hide(self):
-        self._visible = False
-        self._hotkey_session = False
-        if self._window:
-            try:
-                self._save_window_position()
-                if callable(self._window.hide):
-                    self._window.hide()
-            except Exception as e:
-                logger.warning(f"hide window error: {e}")
+        """隐藏主窗口（线程安全：持锁完成状态更新 + 原生窗口操作）"""
+        if self._window is None:
+            return
+        with self._window_state_lock:
+            self._visible = False
+            self._hotkey_session = False
+            self._hide_on_gui()
+
+    def _hide_on_gui(self):
+        """必须在 _window_state_lock 内调用（状态与窗口操作原子化）"""
+        try:
+            self._save_window_position()
+            if callable(self._window.hide):
+                self._window.hide()
+        except Exception:
+            pass
 
     def toggle(self):
-        if self._visible:
+        with self._window_state_lock:
+            visible = self._visible
+        if visible:
             self.hide()
         else:
             self.show()
 
     def toggle_safe(self):
-        # show/hide 底层为 Invoke 调度，任意线程调用均安全
         if self._window:
             self.toggle()
 
+    _HOTKEY_DEBOUNCE_S = 0.25
+
     def toggle_hotkey_safe(self):
-        """按热键专用定位规则安全切换窗口"""
+        """按热键专用定位规则安全切换窗口（去抖 + 持锁 + 状态与窗口操作原子化）"""
         if not self._window:
             return
-        if self._visible:
-            self.hide()
-            return
-        if self._cfg.get("hotkey_show_at_mouse", False):
-            try:
-                position = self._get_hotkey_window_position()
-                if position is not None:
-                    self._window.move(*position)
-            except Exception as e:
-                logger.warning("hotkey window move error: %s", e)
-        self.show()
-        self._hotkey_session = True
+        now = time.monotonic()
+        with self._window_state_lock:
+            if now - self._last_toggle_ms < self._HOTKEY_DEBOUNCE_S:
+                return
+            self._last_toggle_ms = now
+            visible = self._visible
+            if visible:
+                self._visible = False
+                self._hotkey_session = False
+                self._hide_on_gui()
+                return
+            if self._cfg.get("hotkey_show_at_mouse", False):
+                try:
+                    position = self._get_hotkey_window_position()
+                    if position is not None:
+                        self._window.move(*position)
+                except Exception:
+                    pass
+            self._visible = True
+            self._show_on_gui()
+            # 在锁内设置 _hotkey_session，避免 show 与 schedule_hide 之间的竞争窗口
+            self._hotkey_session = True
 
     def schedule_hide(self):
-        if not self._hotkey_session:
-            return False
-        self._pending_hide = True
+        with self._window_state_lock:
+            if not self._hotkey_session:
+                return False
+            self._pending_hide = True
         if self._window:
             self._run_on_gui(0.1, self._process_pending_hide)
         return True
 
     def _process_pending_hide(self):
-        if self._pending_hide:
+        with self._window_state_lock:
+            if not self._pending_hide:
+                return
             self._pending_hide = False
-            self.hide()
+        self.hide()
 
     def _run_on_gui(self, delay: float, func):
         """延时在 GUI 线程执行（pywebview Window 无 after 方法）"""
@@ -3082,7 +3443,18 @@ class WebUI:
             buf = io.BytesIO()
             img.save(buf, "PNG")
             cache_dir.mkdir(parents=True, exist_ok=True)
-            thumb_path.write_bytes(buf.getvalue())
+            # 并发请求同一缩略图时避免交错写同一文件：先写临时文件再原子替换
+            fd, tmp_path = tempfile.mkstemp(dir=str(cache_dir), suffix=".tmp")
+            try:
+                with os.fdopen(fd, "wb") as f:
+                    f.write(buf.getvalue())
+                os.replace(tmp_path, thumb_path)
+            except Exception:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+                raise
             return str(thumb_path)
         except Exception as e:
             logger.warning(f"thumb error {filename}: {e}")
@@ -3337,21 +3709,41 @@ class WebUI:
 
         @app.route("/api/contributors")
         def serve_contributors():
-            # 代理贡献者 SVG：剥离白色背景矩形，适配深色主题
-            try:
-                from urllib.request import Request, urlopen
+            # 代理贡献者 SVG：剥离白色背景矩形，适配深色主题；TTL 缓存 + 单飞
+            # 刷新（锁内抓取），失败退避 60s 并回退旧缓存
+            now = time.time()
+            if _CONTRIBUTORS_CACHE["svg"] is None or now >= (
+                _CONTRIBUTORS_CACHE["at"] + _CONTRIBUTORS_TTL
+            ):
+                with _CONTRIBUTORS_LOCK:
+                    # 取锁后刷新时间并重查退避期：等待中的并发请求不再重复抓取
+                    now = time.time()
+                    if _CONTRIBUTORS_CACHE["svg"] is None or now >= (
+                        _CONTRIBUTORS_CACHE["at"] + _CONTRIBUTORS_TTL
+                    ):
+                        if now < _CONTRIBUTORS_CACHE["next_retry"]:
+                            if _CONTRIBUTORS_CACHE["svg"] is None:
+                                bottle.response.status = 502
+                                return ""
+                            return _contributors_svg()
+                        try:
+                            from urllib.request import Request, urlopen
 
-                url = "https://contributor.starsfire.top/TNTXZ/OhMyMeme"
-                req = Request(url, headers={"User-Agent": "OhMyMeme"})
-                with urlopen(req, timeout=10) as resp:
-                    svg = resp.read().decode("utf-8", "replace")
-                white_rect = '<rect width="100%" height="100%" fill="#ffffff"/>'
-                svg = svg.replace(white_rect, "")
-                bottle.response.content_type = "image/svg+xml; charset=utf-8"
-                return svg
-            except Exception:
-                bottle.response.status = 502
-                return ""
+                            url = "https://contributor.starsfire.top/TNTXZ/OhMyMeme"
+                            req = Request(url, headers={"User-Agent": "OhMyMeme"})
+                            with urlopen(req, timeout=10) as resp:
+                                svg = resp.read().decode("utf-8", "replace")
+                            _CONTRIBUTORS_CACHE["svg"] = svg
+                            _CONTRIBUTORS_CACHE["at"] = now
+                        except Exception:
+                            # 失败一律退避（含无缓存冷启动），防并发请求反复触发网络重试
+                            _CONTRIBUTORS_CACHE["next_retry"] = (
+                                now + _CONTRIBUTORS_RETRY_INTERVAL
+                            )
+                            if _CONTRIBUTORS_CACHE["svg"] is None:
+                                bottle.response.status = 502
+                                return ""
+            return _contributors_svg()
 
         @app.route("/api/thumb/<meme_id>/<filename>")
         def serve_thumb(meme_id, filename):
@@ -3449,7 +3841,21 @@ class WebUI:
                 return bottle.static_file(filepath, root=str(HTML_DIR), mimetype=ctype)
             return bottle.static_file(filepath, root=str(HTML_DIR))
 
-        bottle.run(app, host="127.0.0.1", port=self._port, quiet=True)
+        # 多线程 wsgiref：默认单线程下慢请求（外网抓取/缩略图生成）会阻塞
+        # 其他路由，导致设置页资源排队、JS 监听未注册期间窗口无法交互
+        from socketserver import ThreadingMixIn
+        from wsgiref.simple_server import WSGIServer
+
+        class _ThreadedWSGIServer(ThreadingMixIn, WSGIServer):
+            daemon_threads = True
+
+        bottle.run(
+            app,
+            host="127.0.0.1",
+            port=self._port,
+            quiet=True,
+            server_class=_ThreadedWSGIServer,
+        )
 
     # --- 缓存扫描 ---
 
@@ -3570,12 +3976,24 @@ class WebUI:
                 self._settings_window = None
 
             settings_url = f"http://127.0.0.1:{self._port}/settings/"
+            sx = sy = None
+            if self._window is not None:
+                try:
+                    mx, my = self._window.x, self._window.y
+                    mw, mh = self._window.width, self._window.height
+                    if mx is not None and my is not None and mw and mh:
+                        sx = mx + (mw - 720) // 2
+                        sy = my + (mh - 560) // 2
+                except Exception:
+                    sx = sy = None
             self._settings_window = webview.create_window(
                 "设置 - OhMyMeme",
                 settings_url,
                 js_api=self._settings_api,
                 width=720,
                 height=560,
+                x=sx,
+                y=sy,
                 resizable=False,
                 frameless=True,
                 easy_drag=False,
@@ -3584,6 +4002,21 @@ class WebUI:
         except Exception as e:
             logger.warning(f"create settings window error: {e}")
             return False
+
+    def focus_settings_window(self):
+        """把设置窗口重新拉到前台（对话框关闭后恢复焦点用）"""
+        win = self._settings_window
+        if win is None:
+            return
+        try:
+            win.on_top = True  # 置顶一下提升 z-order，随即复位不长期置顶
+            win.on_top = False
+            if callable(win.show):
+                win.show()
+            if callable(win.focus):
+                win.focus()
+        except Exception:
+            pass
 
     def close_settings(self):
         if self._settings_window:

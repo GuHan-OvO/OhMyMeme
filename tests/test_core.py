@@ -1,9 +1,16 @@
 """OhMyMeme 核心模块测试"""
 
+import json
 import re
+import shutil
+import sqlite3
 import sys
 import tempfile
+import threading
+import time
 import unittest
+import unittest.mock as mock
+import zipfile
 from pathlib import Path
 
 # 确保 src 在导入路径中
@@ -184,9 +191,11 @@ class TestDatabase(unittest.TestCase):
         # 孤儿标签一次性修剪
         self.assertEqual(set(self.db.get_all_tags()), {"only2"})
         # 外键级联清理分组成员关系
-        rows = self.db._get_conn().execute(
-            "SELECT 1 FROM meme_collections WHERE meme_id=?", (m1,)
-        ).fetchall()
+        rows = (
+            self.db._get_conn()
+            .execute("SELECT 1 FROM meme_collections WHERE meme_id=?", (m1,))
+            .fetchall()
+        )
         self.assertEqual(len(rows), 0)
         self.assertFalse(self.db.is_favorite(m2))
 
@@ -206,6 +215,112 @@ class TestDatabase(unittest.TestCase):
 
         results = self.db.search(keyword="dog")
         self.assertEqual(len(results), 2)
+
+    def test_search_keyword_matches_tag(self):
+        self.db.add_meme("img1.png", tags=["小猫"])
+        self.db.add_meme("img2.png", tags=["小狗"])
+        # 搜索词命中标签名也能搜到
+        results = self.db.search(keyword="小猫")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["filename"], "img1.png")
+        self.assertEqual(self.db.count(keyword="小狗"), 1)
+        self.assertEqual(self.db.count(keyword="不存在的标签"), 0)
+
+    def test_add_tags_to_memes_merge(self):
+        mid1 = self.db.add_meme("a.png", tags=["old"])
+        mid2 = self.db.add_meme("b.png")
+        count = self.db.add_tags_to_memes([mid1, mid2], ["new", " old "])
+        self.assertEqual(count, 2)
+        self.assertEqual(set(self.db.get_meme_tags(mid1)), {"old", "new"})
+        self.assertEqual(set(self.db.get_meme_tags(mid2)), {"old", "new"})
+        self.assertEqual(set(self.db.get_all_tags()), {"old", "new"})
+        # 空参数不产生变更
+        self.assertEqual(self.db.add_tags_to_memes([], ["x"]), 0)
+        self.assertEqual(self.db.add_tags_to_memes([mid1], []), 0)
+        self.assertEqual(self.db.add_tags_to_memes([mid1], ["  "]), 0)
+
+    def test_add_tags_to_memes_missing_ids(self):
+        # 混合有效与不存在的 id：只对存在的表情生效，不抛异常、不部分写入
+        mid = self.db.add_meme("a.png")
+        count = self.db.add_tags_to_memes([mid, 99999], ["t1"])
+        self.assertEqual(count, 1)
+        self.assertEqual(set(self.db.get_meme_tags(mid)), {"t1"})
+        self.assertEqual(set(self.db.get_all_tags()), {"t1"})
+        # 全部 id 不存在：返回 0 且不产生任何标签
+        self.assertEqual(self.db.add_tags_to_memes([88888, 99999], ["t2"]), 0)
+        self.assertEqual(set(self.db.get_all_tags()), {"t1"})
+
+    def test_add_memes_to_collection_batch(self):
+        mid1 = self.db.add_meme("a.png")
+        mid2 = self.db.add_meme("b.png")
+        cid = self.db.create_collection("g")
+        # 混合有效与不存在的 id：只对存在的表情生效
+        count = self.db.add_memes_to_collection([mid1, mid2, 99999], cid)
+        self.assertEqual(count, 2)
+        self.assertEqual(len(self.db.search(collection_id=cid)), 2)
+        # 重复加入同一分组：不产生重复关联，计数为 0
+        self.assertEqual(self.db.add_memes_to_collection([mid1], cid), 0)
+        self.assertEqual(len(self.db.search(collection_id=cid)), 2)
+        # 目标分组不存在：抛异常且不产生部分写入
+        with self.assertRaises(ValueError):
+            self.db.add_memes_to_collection([mid1], 424242)
+        self.assertEqual(len(self.db.search(collection_id=cid)), 2)
+
+    def test_move_memes_to_collection_scope_and_dedup(self):
+        mid1 = self.db.add_meme("a.png")  # 属于源分组
+        mid2 = self.db.add_meme("b.png")  # 不属于源分组，仅属于其他分组
+        mid3 = self.db.add_meme("c.png")  # 属于源分组且已在目标分组
+        src = self.db.create_collection("src")
+        other = self.db.create_collection("other")
+        target = self.db.create_collection("t")
+        self.db.add_to_collection(mid1, src)
+        self.db.add_to_collection(mid3, src)
+        self.db.add_to_collection(mid3, target)
+        self.db.add_to_collection(mid2, other)
+
+        moved = self.db.move_memes_to_collection([mid1, mid2, mid3], [src], target)
+        # 仅 mid1 实际新增目标关联；mid3 重复加入不计；mid2 非源成员不受影响
+        self.assertEqual(moved, 1)
+        self.assertEqual(self.db.search(collection_id=src), [])
+        self.assertEqual(len(self.db.search(collection_id=target)), 2)
+        self.assertEqual(len(self.db.search(collection_id=other)), 1)
+
+    def test_move_cascades_empty_group_cleanup(self):
+        mid1 = self.db.add_meme("a.png")
+        mid2 = self.db.add_meme("b.png")
+        parent = self.db.create_collection("p")
+        child = self.db.create_collection("c", parent_id=parent)
+        keep = self.db.create_collection("keep")  # 源子树外的空分组
+        target = self.db.create_collection("t")
+        self.db.add_to_collection(mid1, child)
+        self.db.add_to_collection(mid2, parent)
+
+        moved = self.db.move_memes_to_collection([mid1, mid2], [parent, child], target)
+        self.assertEqual(moved, 2)
+        # 源子树内 child 先空、parent 后空，级联清理；子树外的空分组保留
+        ids = {c[0] for c in self.db.get_collections()}
+        self.assertEqual(ids, {target, keep})
+
+    def test_move_memes_to_collection_batch(self):
+        mid1 = self.db.add_meme("a.png")
+        mid2 = self.db.add_meme("b.png")  # 仅属于子分组
+        parent = self.db.create_collection("p")
+        child = self.db.create_collection("c", parent_id=parent)
+        self.db.add_to_collection(mid1, parent)
+        self.db.add_to_collection(mid2, child)
+        target = self.db.create_collection("t")
+        # 从源子树整体移出：仅属于子分组的成员也会被移走
+        count = self.db.move_memes_to_collection(
+            [mid1, mid2, 99999], [parent, child], target
+        )
+        self.assertEqual(count, 2)
+        self.assertEqual(self.db.search(collection_id=parent), [])
+        self.assertEqual(self.db.search(collection_id=child), [])
+        self.assertEqual(len(self.db.search(collection_id=target)), 2)
+        # 目标分组不存在：抛异常且不产生部分写入
+        with self.assertRaises(ValueError):
+            self.db.move_memes_to_collection([mid1], [parent], 424242)
+        self.assertEqual(len(self.db.search(collection_id=target)), 2)
 
     def test_tags(self):
         mid = self.db.add_meme("test.png", tags=["a", "b", "c"])
@@ -291,6 +406,867 @@ class TestDatabase(unittest.TestCase):
         results = self.db.search()
         self.assertEqual(len(results), 0)
         self.assertEqual(self.db.count(), 0)
+
+
+class TestHotkeyWatchdog(unittest.TestCase):
+    """GlobalHotkey 键盘监听线程守护：自动重注册逻辑（mock keyboard 模块）"""
+
+    def _fake_keyboard_module(self, should_raise=False, hook_raises=False):
+        class FakeModule(object):
+            add_raises = False
+            hook_raises = False
+            add_calls = 0
+            remove_calls = 0
+
+            @classmethod
+            def add_hotkey(cls, *a, **kw):
+                cls.add_calls += 1
+                if cls.add_raises:
+                    raise RuntimeError("inject-fail")
+
+            @classmethod
+            def remove_hotkey(cls, *a, **kw):
+                cls.remove_calls += 1
+
+            @classmethod
+            def hook(cls, *a, **kw):
+                if cls.hook_raises:
+                    raise RuntimeError("hook-fail")
+
+            @classmethod
+            def unhook(cls, *a, **kw):
+                pass
+
+        FakeModule.add_raises = should_raise
+        FakeModule.hook_raises = hook_raises
+        return FakeModule
+
+    @mock.patch.dict("sys.modules", {"keyboard": None}, clear=False)
+    def test_file_logger_disabled_under_pytest(self):
+        """pytest 下禁用热键文件日志，测试夹具错误不得写入真实 hotkey.log。"""
+        from src import hotkey
+
+        self.assertIs(hotkey._get_file_logger(), hotkey.logger)
+
+    def _fresh_hotkey(self):
+        from src.hotkey import GlobalHotkey
+
+        hk = GlobalHotkey()
+        hk._hotkey = "Ctrl+Alt+N"
+        hk._safe_callback = lambda: None
+        hk._backend = "keyboard"
+        hk._watchdog_stop = threading.Event()
+        hk._hook_last_seen = 0.0
+        hk._last_probe_at = 0.0
+        hk._probe_pending_at = None
+        hk._hook_observer = lambda event: None  # 模拟观察者已注册
+        return hk
+
+    def test_hook_health_check_probe_timeout_detects_dead_hook(self):
+        """探针注入后超时未见任何键盘事件判死；用户按键即视为存活。"""
+        from src.hotkey import KEYBOARD_PROBE_TIMEOUT
+
+        hk = self._fresh_hotkey()
+        calls = []
+        hk._inject_probe_key = lambda: calls.append(1)
+
+        # 第一轮：注入探针，待确认
+        self.assertFalse(hk._hook_health_check(now=100.0))
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(hk._probe_pending_at, 100.0)
+        # 用户按键（或探针事件）上报 → 存活
+        hk._hook_last_seen = 100.5
+        self.assertFalse(hk._hook_health_check(now=105.0))
+        self.assertIsNone(hk._probe_pending_at)
+        # 距上次探针满间隔再次注入
+        self.assertFalse(hk._hook_health_check(now=130.0))
+        self.assertEqual(len(calls), 2)
+        # 注入后超时无任何事件 → 判死
+        hk._hook_last_seen = 0.0
+        self.assertTrue(hk._hook_health_check(now=130.0 + KEYBOARD_PROBE_TIMEOUT))
+        self.assertIsNone(hk._probe_pending_at)
+
+    def test_restart_keyboard_listener_reinstalls_hook(self):
+        """钩子失效重启：结束旧线程→重装钩子→重挂热键；成功后清 pending。"""
+        fake_mod = self._fake_keyboard_module()
+        fake_mod.add_calls = 0
+        fake_mod.remove_calls = 0
+
+        class FakeThread(object):
+            def is_alive(self):
+                return False
+
+        class FakeListener(object):
+            listening = True
+            listening_thread = FakeThread()
+            started = False
+
+            def start_if_necessary(self):
+                self.started = True
+
+        hk = self._fresh_hotkey()
+        hk._reregister_pending = True  # 此前一次重启失败遗留
+        hk._kill_listening_thread = lambda listener: None
+
+        listener = FakeListener()
+        with mock.patch.dict("sys.modules", {"keyboard": fake_mod}):
+            ok = hk._restart_keyboard_listener(listener)
+
+        self.assertTrue(ok)
+        self.assertFalse(hk._reregister_pending)
+        self.assertEqual(fake_mod.remove_calls, 1)
+        self.assertTrue(listener.started)
+        self.assertEqual(fake_mod.add_calls, 1)
+
+    def test_restart_keyboard_listener_keeps_healthy_processing_thread(self):
+        """处理线程健康时仅替换监听线程，不产生重复的事件消费者。"""
+        fake_mod = self._fake_keyboard_module()
+        fake_mod.add_calls = 0
+        fake_mod.remove_calls = 0
+
+        class FakeThread(object):
+            def __init__(self, alive):
+                self._alive = alive
+
+            def is_alive(self):
+                return self._alive
+
+        class FakeListener(object):
+            listening = True
+            listening_thread = FakeThread(False)  # kill 之后的残留状态
+            processing_thread = FakeThread(True)
+            started = False
+            listened = False
+
+            def start_if_necessary(self):
+                self.started = True
+
+            def listen(self):
+                self.listened = True
+
+        hk = self._fresh_hotkey()
+        hk._kill_listening_thread = lambda listener: None
+        original_pt = FakeListener.processing_thread
+
+        listener = FakeListener()
+        with mock.patch.dict("sys.modules", {"keyboard": fake_mod}):
+            ok = hk._restart_keyboard_listener(listener)
+            if listener.listening_thread is not None:
+                listener.listening_thread.join(timeout=2)
+
+        self.assertTrue(ok)
+        self.assertFalse(listener.started)  # 未走 start_if_necessary
+        self.assertTrue(listener.listening)
+        self.assertTrue(listener.listened)  # 新监听线程已启动
+        # 原处理线程对象被保留（未新建重复消费者）
+        self.assertIs(listener.processing_thread, original_pt)
+        self.assertEqual(fake_mod.add_calls, 1)
+
+    @mock.patch.dict("sys.modules", {"keyboard": None}, clear=False)
+    @mock.patch("sys.platform", "win32")
+    def test_try_keyboard_hook_failure_degrades_gracefully(self):
+        """hook 观察者注册失败：保留 keyboard 后端仅降级心跳，不回落 pynput
+        造成双后端重复触发。"""
+        from src.hotkey import GlobalHotkey
+
+        fake_mod = self._fake_keyboard_module(hook_raises=True)
+        hk = GlobalHotkey()
+        try:
+            with mock.patch.dict("sys.modules", {"keyboard": fake_mod}):
+                ok = hk._try_keyboard("Ctrl+Alt+N", lambda: None)
+
+            self.assertTrue(ok)
+            self.assertEqual(hk._backend, "keyboard")
+            self.assertIsNone(hk._hook_observer)
+            self.assertEqual(fake_mod.add_calls, 1)
+        finally:
+            hk.unregister()
+
+    def test_hook_health_check_disabled_without_observer(self):
+        """降级模式（观察者未注册）下不注入探针、不判死，避免误判重启循环。"""
+        hk = self._fresh_hotkey()
+        hk._hook_observer = None
+        calls = []
+        hk._inject_probe_key = lambda: calls.append(1)
+
+        self.assertFalse(hk._hook_health_check(now=1000.0))
+        self.assertEqual(calls, [])
+        self.assertIsNone(hk._probe_pending_at)
+
+    def test_reregister_listening_only_death_starts_listen_thread(self):
+        """仅监听线程死亡：保留处理线程，单独启动新监听线程（不重建存活线程）。"""
+        fake_mod = self._fake_keyboard_module()
+        fake_mod.add_calls = 0
+        fake_mod.remove_calls = 0
+
+        class FakeThread(object):
+            def __init__(self, alive):
+                self._alive = alive
+
+            def is_alive(self):
+                return self._alive
+
+        class FakeListener(object):
+            listening = True
+            listening_thread = FakeThread(False)  # 仅监听线程死亡
+            processing_thread = FakeThread(True)  # 处理线程存活
+            restarted = False
+            listened = False
+
+            def start_if_necessary(self):
+                self.restarted = True
+
+            def listen(self):
+                self.listened = True
+
+        hk = self._fresh_hotkey()
+        original_pt = FakeListener.processing_thread
+
+        listener = FakeListener()
+        with mock.patch.dict("sys.modules", {"keyboard": fake_mod}):
+            ok = hk._reregister_keyboard(listener)
+            listener.listening_thread.join(timeout=2)
+
+        self.assertTrue(ok)
+        self.assertFalse(listener.restarted)  # 未全量重启
+        self.assertTrue(listener.listened)  # 单独启动了新监听线程
+        self.assertIs(listener.processing_thread, original_pt)  # 处理线程保留
+        self.assertEqual(fake_mod.add_calls, 1)
+
+    def test_reregister_processing_only_death_starts_process_thread(self):
+        """仅处理线程死亡：保留监听线程（钩子仍在），单独启动新处理线程。"""
+        fake_mod = self._fake_keyboard_module()
+        fake_mod.add_calls = 0
+        fake_mod.remove_calls = 0
+
+        class FakeThread(object):
+            def __init__(self, alive):
+                self._alive = alive
+
+            def is_alive(self):
+                return self._alive
+
+        class FakeListener(object):
+            listening = True
+            listening_thread = FakeThread(True)  # 监听线程存活（钩子仍在）
+            processing_thread = FakeThread(False)  # 仅处理线程死亡
+            restarted = False
+            processed = False
+
+            def start_if_necessary(self):
+                self.restarted = True
+
+            def process(self):
+                self.processed = True
+
+        hk = self._fresh_hotkey()
+        original_lt = FakeListener.listening_thread
+
+        listener = FakeListener()
+        with mock.patch.dict("sys.modules", {"keyboard": fake_mod}):
+            ok = hk._reregister_keyboard(listener)
+            listener.processing_thread.join(timeout=2)
+
+        self.assertTrue(ok)
+        self.assertFalse(listener.restarted)  # 未全量重启（避免双钩子）
+        self.assertTrue(listener.processed)  # 单独启动了新处理线程
+        self.assertIs(listener.listening_thread, original_lt)  # 监听线程未重建
+        self.assertEqual(fake_mod.add_calls, 1)
+
+    def test_watchdog_tick_retries_pending_reregistration(self):
+        """add_hotkey 失败置 pending 后，看门狗轮询必须重试（否则热键永久失效）。"""
+        fake_mod = self._fake_keyboard_module()
+        fake_mod.add_calls = 0
+        fake_mod.remove_calls = 0
+
+        class FakeThread(object):
+            def is_alive(self):
+                return True
+
+        class FakeListener(object):
+            listening = True
+            listening_thread = FakeThread()  # 线程已补齐：pending 场景的常态
+            processing_thread = FakeThread()
+
+        hk = self._fresh_hotkey()
+        hk._reregister_pending = True  # 上轮 add_hotkey 失败遗留
+
+        with mock.patch.dict("sys.modules", {"keyboard": fake_mod}):
+            hk._watchdog_tick(FakeListener(), hk._watchdog_gen)
+
+        self.assertFalse(hk._reregister_pending)  # 重试成功
+        self.assertEqual(fake_mod.add_calls, 1)
+
+    def test_watchdog_tick_healthy_state_is_noop(self):
+        """线程存活、无 pending、观察者存活时单轮检查不做任何动作。"""
+        fake_mod = self._fake_keyboard_module()
+        fake_mod.add_calls = 0
+
+        class FakeThread(object):
+            def is_alive(self):
+                return True
+
+        class FakeListener(object):
+            listening = True
+            listening_thread = FakeThread()
+            processing_thread = FakeThread()
+
+        hk = self._fresh_hotkey()
+        hk._reregister_pending = False
+        # 模拟刚注入过探针：间隔未满，不应再次注入
+        hk._last_probe_at = time.monotonic()
+        probe_calls = []
+        hk._inject_probe_key = lambda: probe_calls.append(1)
+
+        with mock.patch.dict("sys.modules", {"keyboard": fake_mod}):
+            hk._watchdog_tick(FakeListener(), hk._watchdog_gen)
+
+        self.assertEqual(fake_mod.add_calls, 0)
+        # 探针在间隔未满时不注入（刚注册不久）
+        self.assertEqual(probe_calls, [])
+
+    def test_restart_keyboard_listener_failure_sets_pending(self):
+        """旧监听线程无法退出时中止重启（避免双钩子），置 pending 待下轮重试。"""
+        fake_mod = self._fake_keyboard_module()
+        fake_mod.add_calls = 0
+        fake_mod.remove_calls = 0
+
+        class FakeThread(object):
+            def is_alive(self):
+                return True
+
+        class FakeListener(object):
+            listening = True
+            listening_thread = FakeThread()
+
+            def start_if_necessary(self):
+                raise AssertionError("不应重装钩子")
+
+        hk = self._fresh_hotkey()
+
+        def refuse(listener):
+            raise RuntimeError("旧监听线程未能退出")
+
+        hk._kill_listening_thread = refuse
+
+        with mock.patch.dict("sys.modules", {"keyboard": fake_mod}):
+            ok = hk._restart_keyboard_listener(FakeListener())
+
+        self.assertFalse(ok)
+        self.assertTrue(hk._reregister_pending)
+        self.assertEqual(fake_mod.add_calls, 0)
+
+    @mock.patch.dict("sys.modules", {"keyboard": None}, clear=False)
+    def test_reregister_restarts_listener_and_reattaches(self):
+        from src.hotkey import GlobalHotkey
+
+        fake_mod = self._fake_keyboard_module()
+        fake_mod.add_calls = 0
+        fake_mod.remove_calls = 0
+
+        class FakeListener(object):
+            listening = True
+            start_calls = 0
+
+            def start_if_necessary(self):
+                self.start_calls += 1
+
+        listener = FakeListener()
+
+        hk = GlobalHotkey()
+        hk._hotkey = "Ctrl+Alt+N"
+        hk._safe_callback = lambda: None
+        hk._backend = "keyboard"
+        hk._watchdog_stop = threading.Event()  # 模拟守护已启动
+
+        with mock.patch.dict("sys.modules", {"keyboard": fake_mod}):
+            ok = hk._reregister_keyboard(listener)
+
+        self.assertTrue(ok)
+        self.assertFalse(hk._reregister_pending)
+        self.assertEqual(fake_mod.remove_calls, 1)
+        self.assertEqual(listener.start_calls, 1)
+        self.assertFalse(listener.listening)
+        self.assertEqual(fake_mod.add_calls, 1)
+
+    @mock.patch.dict("sys.modules", {"keyboard": None}, clear=False)
+    def test_reregister_add_failure_sets_pending_and_not_success(self):
+        """重注册 add_hotkey 失败：返回 False、置 pending，绝不记录成功/停止重试。"""
+        from src.hotkey import GlobalHotkey
+
+        fake_mod = self._fake_keyboard_module(should_raise=True)
+        fake_mod.add_calls = 0
+        fake_mod.remove_calls = 0
+
+        class FakeListener(object):
+            listening = True
+            start_calls = 0
+
+            def start_if_necessary(self):
+                self.start_calls += 1
+
+        hk = GlobalHotkey()
+        hk._hotkey = "Ctrl+Alt+N"
+        hk._safe_callback = lambda: None
+        hk._backend = "keyboard"
+        hk._watchdog_stop = threading.Event()
+
+        with mock.patch.dict("sys.modules", {"keyboard": fake_mod}):
+            ok = hk._reregister_keyboard(FakeListener())
+
+        self.assertFalse(ok)
+        self.assertTrue(hk._reregister_pending)  # 守护下轮会继续重试
+
+    @mock.patch.dict("sys.modules", {"keyboard": None}, clear=False)
+    def test_reregister_after_unregister_does_not_add(self):
+        """注销后重注册不得重新挂热键（同锁 + 停止标志/回调清空兜底）。"""
+        from src.hotkey import GlobalHotkey
+
+        fake_mod = self._fake_keyboard_module()
+        fake_mod.add_calls = 0
+        fake_mod.remove_calls = 0
+
+        class FakeListener(object):
+            listening = True
+
+            def start_if_necessary(self):
+                pass
+
+        hk = GlobalHotkey()
+        hk._hotkey = "Ctrl+Alt+N"
+        hk._safe_callback = lambda: None
+        hk._backend = "keyboard"
+
+        with mock.patch.dict("sys.modules", {"keyboard": fake_mod}):
+            # 1) 已注销：watchdog_stop 置位后 unregister 清空回调
+            hk._watchdog_stop = threading.Event()
+            hk.unregister()  # stop.set() + _safe_callback=None
+            # 2) 守护线程若此刻想重注册，应直接返回 False 且不再 add
+            ok = hk._reregister_keyboard(FakeListener())
+
+        self.assertFalse(ok)
+        self.assertEqual(fake_mod.add_calls, 0)  # 注销后不得重新挂热键
+
+    @mock.patch.dict("sys.modules", {"keyboard": None}, clear=False)
+    def test_stale_generation_cannot_touch_after_reregister(self):
+        """注销后重新注册：旧代次 watchdog 的重注册操作不得作用到新生命周期。"""
+        from src.hotkey import GlobalHotkey
+
+        fake_mod = self._fake_keyboard_module()
+        fake_mod.add_calls = 0
+
+        class FakeListener(object):
+            listening = True
+
+            def start_if_necessary(self):
+                pass
+
+        hk = GlobalHotkey()
+        hk._backend = "keyboard"
+        hk._hotkey = "Ctrl+Alt+N"
+
+        with mock.patch.dict("sys.modules", {"keyboard": fake_mod}):
+            # 第一次注册（代次 0）→ 注销（代次 -> 1）→ 立即重新注册（新代次 1）
+            hk._watchdog_stop = threading.Event()
+            hk.unregister()
+            old_gen = 0  # 旧 watchdog 捕获的代次
+            # 重新注册：赋新回调并启动新守护（当前代次已是 1）
+            hk._safe_callback = lambda: None
+            self.assertEqual(hk._watchdog_gen, 1)
+            # 旧代次 watchdog 调重注册：应被拒，不得 add
+            stale = hk._reregister_keyboard(FakeListener(), gen=old_gen)
+            self.assertFalse(stale)
+            self.assertEqual(fake_mod.add_calls, 0)
+            # 新代次（当前 gen）可以正常重注册
+            fresh = hk._reregister_keyboard(FakeListener(), gen=hk._watchdog_gen)
+            self.assertTrue(fresh)
+            self.assertEqual(fake_mod.add_calls, 1)
+
+    @mock.patch.dict("sys.modules", {"keyboard": None}, clear=False)
+    def test_unregister_stops_watchdog(self):
+        from src.hotkey import GlobalHotkey
+
+        fake_mod = self._fake_keyboard_module()
+        fake_mod.add_calls = 0
+
+        hk = GlobalHotkey()
+        hk._backend = "keyboard"
+        hk._hotkey = "Ctrl+Alt+N"
+        hk._safe_callback = lambda: None
+
+        with mock.patch.dict("sys.modules", {"keyboard": fake_mod}):
+            stop = mock.MagicMock()
+            hk._watchdog_stop = stop
+            hk.unregister()
+
+        # watchdog 应被停止，safe_callback 清空，remove_hotkey 被调用
+        stop.set.assert_called_once()
+        self.assertIsNone(hk._watchdog_stop)
+        self.assertIsNone(hk._safe_callback)
+        self.assertEqual(fake_mod.remove_calls, 1)
+
+
+class TestBackup(unittest.TestCase):
+    """本地备份：ZIP 创建/列表/删除/恢复（PC 间整库迁移）"""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.db = MemeDB(self.tmp / "memes.db")
+        self.cache = self.tmp / "cache"
+        self.cache.mkdir()
+        self.backup_dir = self.tmp / "backups"
+
+    def tearDown(self):
+        self.db.close()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_create_list_delete(self):
+        from src import backup
+
+        (self.cache / "abc123.png").write_bytes(b"pngdata")
+        (self.cache / "thumbnails").mkdir()
+        (self.cache / "thumbnails" / "thumb.png").write_bytes(b"thumb")
+        r = backup.create_backup(self.backup_dir, self.tmp, self.cache, self.db)
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["file_count"], 1)  # thumbnails 不入包
+        lst = backup.list_backups(self.backup_dir)
+        self.assertEqual(len(lst), 1)
+        self.assertEqual(lst[0]["name"], r["path"])
+        self.assertTrue(backup.delete_backup(self.backup_dir, lst[0]["name"]))
+        self.assertEqual(backup.list_backups(self.backup_dir), [])
+        # 路径穿越/非法名拒绝
+        self.assertFalse(backup.delete_backup(self.backup_dir, "../evil.zip"))
+        self.assertFalse(backup.delete_backup(self.backup_dir, "other.zip"))
+
+    def test_restore_preserves_metadata(self):
+        from src import backup
+
+        mid = self.db.add_meme("abc123.png", tags=["cat"], width=10, height=10)
+        self.db.toggle_favorite(mid)
+        cid = self.db.create_collection("col")
+        self.db.add_to_collection(mid, cid)
+        (self.cache / "abc123.png").write_bytes(b"pngdata")
+        r = backup.create_backup(self.backup_dir, self.tmp, self.cache, self.db)
+
+        # 第二台设备：全新库与空缓存目录
+        db2 = MemeDB(self.tmp / "memes2.db")
+        try:
+            cache2 = self.tmp / "cache2"
+            cache2.mkdir()
+            r2 = backup.restore_backup(
+                self.backup_dir / r["path"], self.tmp, cache2, db2
+            )
+            self.assertTrue(r2["ok"])
+            self.assertEqual(db2.count(), 1)
+            m = db2.search()[0]
+            self.assertEqual(m["filename"], "abc123.png")
+            self.assertEqual(set(db2.get_meme_tags(m["id"])), {"cat"})
+            self.assertTrue(db2.is_favorite(m["id"]))
+            self.assertEqual(len(db2.search(collection_id=cid)), 1)
+            self.assertTrue((cache2 / "abc123.png").exists())
+        finally:
+            db2.close()
+
+    def test_restore_keeps_orphans_and_overwrites_same_name(self):
+        from src import backup
+
+        (self.cache / "aaa111.png").write_bytes(b"newcontent")
+        r = backup.create_backup(self.backup_dir, self.tmp, self.cache, self.db)
+
+        db2 = MemeDB(self.tmp / "memes2.db")
+        try:
+            cache2 = self.tmp / "cache2"
+            cache2.mkdir()
+            (cache2 / "bbb222.png").write_bytes(b"orphan")  # 孤儿文件
+            (cache2 / "aaa111.png").write_bytes(b"old")  # 同名旧内容
+            r2 = backup.restore_backup(
+                self.backup_dir / r["path"], self.tmp, cache2, db2
+            )
+            self.assertTrue(r2["ok"])
+            # 孤儿保留、同名被备份内容覆盖
+            self.assertEqual((cache2 / "bbb222.png").read_bytes(), b"orphan")
+            self.assertEqual((cache2 / "aaa111.png").read_bytes(), b"newcontent")
+        finally:
+            db2.close()
+
+    def test_restore_rejects_nonempty_db(self):
+        from src import backup
+
+        src_cache = self.tmp / "src_cache"
+        src_cache.mkdir()
+        (src_cache / "aaa111.png").write_bytes(b"data")
+        db2 = MemeDB(self.tmp / "src.db")
+        try:
+            db2.add_meme("aaa111.png")
+            r = backup.create_backup(self.backup_dir, self.tmp, src_cache, db2)
+        finally:
+            db2.close()
+
+        self.db.add_meme("existing.png")  # 目标库非空
+        cache2 = self.tmp / "cache2"
+        cache2.mkdir()
+        r2 = backup.restore_backup(
+            self.backup_dir / r["path"], self.tmp, cache2, self.db
+        )
+        self.assertFalse(r2["ok"])
+        self.assertIn("中止", r2["error"])
+        self.assertEqual(list(cache2.iterdir()), [])  # 未落任何文件
+        self.assertFalse((self.tmp / "backup_restore_tmp").exists())  # staging 已清理
+
+    def test_has_any_data_includes_stego_carriers(self):
+        """仅含 stego 载体行的库 count() 为 0，但 has_any_data 为真，拒绝恢复。"""
+        from src import backup
+
+        mid = self.db.add_meme("carrier.gif")
+        self.db.update_meme(mid, stego_of_hash="deadbeef")
+        self.assertEqual(self.db.count(), 0)  # search/count 层隐藏载体
+        self.assertTrue(self.db.has_any_data())
+
+        src_cache = self.tmp / "src_cache"
+        src_cache.mkdir()
+        (src_cache / "aaa111.png").write_bytes(b"data")
+        db2 = MemeDB(self.tmp / "src.db")
+        try:
+            db2.add_meme("aaa111.png")
+            r = backup.create_backup(self.backup_dir, self.tmp, src_cache, db2)
+        finally:
+            db2.close()
+
+        cache2 = self.tmp / "cache2"
+        cache2.mkdir()
+        r2 = backup.restore_backup(
+            self.backup_dir / r["path"], self.tmp, cache2, self.db
+        )
+        self.assertFalse(r2["ok"])  # 仅载体库不得被恢复覆盖
+        self.assertEqual(list(cache2.iterdir()), [])
+
+    def test_restore_from_rechecks_empty_and_preserves_data(self):
+        """模拟竞态：前置空库检查后又有写入，restore_from 锁内复查拒绝且记录保留。"""
+        from src import backup
+
+        src_cache = self.tmp / "src_cache"
+        src_cache.mkdir()
+        (src_cache / "aaa111.png").write_bytes(b"data")
+        db2 = MemeDB(self.tmp / "src.db")
+        try:
+            db2.add_meme("aaa111.png")
+            r = backup.create_backup(self.backup_dir, self.tmp, src_cache, db2)
+        finally:
+            db2.close()
+
+        self.db.add_meme("sneaky.png")  # 前置检查之后才出现的写入
+        real_has_any_data = self.db.has_any_data
+        calls = {"n": 0}
+
+        def fake_has_any_data():
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return False  # 首次（restore_backup 前置检查）谎报为空
+            return real_has_any_data()  # restore_from 锁内复查取真实值
+
+        with mock.patch.object(self.db, "has_any_data", side_effect=fake_has_any_data):
+            r = backup.restore_backup(
+                self.backup_dir / r["path"], self.tmp, self.cache, self.db
+            )
+        self.assertFalse(r["ok"])
+        self.assertIn("中止", r["error"])
+        self.assertEqual(self.db.count(), 1)  # 竞态写入的记录仍被保留
+        self.assertEqual(calls["n"], 2)  # 锁内复查确实执行过
+
+    def test_validate_backup_dir_rejects_cache_nesting(self):
+        """备份目录与 cache_dir 相同/互为嵌套时拒绝，防止备份递归自包含。"""
+        from src import backup
+
+        cache = self.tmp / "cache"  # setUp 已创建
+        nested = cache / "backups"
+        other = self.tmp / "elsewhere"
+        self.assertEqual(
+            backup.validate_backup_dir(nested, cache),
+            (False, "备份目录不能与表情包存储目录相同或互为嵌套"),
+        )
+        self.assertEqual(backup.validate_backup_dir(cache, cache)[0], False)
+        # cache_dir 嵌套在备份目录内同样拒绝
+        self.assertEqual(backup.validate_backup_dir(other, other / "cache")[0], False)
+        # 平级目录放行
+        self.assertEqual(backup.validate_backup_dir(other, cache)[0], True)
+        self.assertEqual(
+            backup.validate_backup_dir(self.tmp / "backups", cache)[0], True
+        )
+
+    def test_prepare_restore_source_rejects_missing_tables(self):
+        """候选库缺失关系表（meme_tags/favorites 等）时拒绝恢复。"""
+        partial = self.tmp / "partial.db"
+        conn = sqlite3.connect(partial)
+        try:
+            conn.executescript(
+                "CREATE TABLE memes (id INTEGER PRIMARY KEY, filename TEXT);"
+                "CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT);"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        with self.assertRaises(ValueError) as ctx:
+            self.db.prepare_restore_source(str(partial))
+        self.assertIn("缺少必需的数据表", str(ctx.exception))
+        self.assertIn("meme_tags", str(ctx.exception))
+
+    def test_restore_rejects_missing_foreign_key_definitions(self):
+        """表与列齐全但外键定义被删除的候选库：预校验拒绝，restore 流程不接受。"""
+        from src import backup
+
+        nofk = self.tmp / "nofk.db"
+        conn = sqlite3.connect(nofk)
+        try:
+            # 与正式 schema 相同的表和列，但全部 REFERENCES 被移除
+            conn.executescript("""
+                CREATE TABLE memes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    filename TEXT NOT NULL,
+                    file_hash TEXT NOT NULL DEFAULT '',
+                    original_name TEXT NOT NULL DEFAULT '',
+                    width INTEGER DEFAULT 0,
+                    height INTEGER DEFAULT 0,
+                    file_size INTEGER DEFAULT 0,
+                    mime_type TEXT DEFAULT 'image/png',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+                );
+                CREATE TABLE tags (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE);
+                CREATE TABLE meme_tags (
+                    meme_id INTEGER NOT NULL,
+                    tag_id INTEGER NOT NULL,
+                    PRIMARY KEY (meme_id, tag_id)
+                );
+                CREATE TABLE collections (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    parent_id INTEGER DEFAULT NULL,
+                    sort_order INTEGER DEFAULT 0
+                );
+                CREATE TABLE meme_collections (
+                    meme_id INTEGER NOT NULL,
+                    collection_id INTEGER NOT NULL,
+                    sort_order INTEGER DEFAULT 0,
+                    PRIMARY KEY (meme_id, collection_id)
+                );
+                CREATE TABLE favorites (
+                    meme_id INTEGER PRIMARY KEY,
+                    added_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+                );
+                CREATE TABLE recent_uses (meme_id INTEGER PRIMARY KEY, used_at TEXT NOT NULL);
+            """)
+            conn.commit()
+        finally:
+            conn.close()
+        with self.assertRaises(ValueError) as ctx:
+            self.db.prepare_restore_source(str(nofk))
+        self.assertIn("缺少必需的外键定义", str(ctx.exception))
+
+        # 端到端：restore_backup 不接受该候选库
+        self.backup_dir.mkdir()
+        bad = self.backup_dir / "OhMyMeme-backup-nofk.zip"
+        with zipfile.ZipFile(bad, "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr("backup.json", json.dumps({"file_count": 0}))
+            zf.write(nofk, "db/memes.db")
+        r = backup.restore_backup(bad, self.tmp, self.cache, self.db)
+        self.assertFalse(r["ok"])
+        self.assertIn("缺少必需的外键定义", r["error"])
+        self.assertEqual(list(self.cache.iterdir()), [])
+
+    def test_prepare_restore_source_rejects_fk_orphans(self):
+        """候选库存在孤儿外键记录（引用被删分组）时拒绝恢复。"""
+        cid = None
+        src = self.tmp / "candidate.db"
+        db2 = MemeDB(self.tmp / "src.db")
+        try:
+            mid = db2.add_meme("a.png")
+            cid = db2.create_collection("c")
+            db2.add_to_collection(mid, cid)
+            db2.backup_to(str(src))
+        finally:
+            db2.close()
+        # 默认连接外键关闭，可删除被引用行制造孤儿 meme_collections 记录
+        conn = sqlite3.connect(src)
+        try:
+            conn.execute("PRAGMA foreign_keys=OFF")
+            conn.execute("DELETE FROM collections WHERE id=?", (cid,))
+            conn.commit()
+        finally:
+            conn.close()
+        with self.assertRaises(ValueError) as ctx:
+            self.db.prepare_restore_source(str(src))
+        self.assertIn("孤儿外键", str(ctx.exception))
+
+    def test_restore_rejects_oversized_or_unsupported_members(self):
+        """ZIP 安全限制：不支持的压缩类型 / 超大成员拒绝恢复。"""
+        from src import backup
+
+        self.backup_dir.mkdir()
+        # BZIP2 压缩类型
+        bad = self.backup_dir / "OhMyMeme-backup-a.zip"
+        with zipfile.ZipFile(bad, "w") as zf:
+            zf.writestr("backup.json", json.dumps({"file_count": 1}))
+            zf.writestr("db/memes.db", b"db")
+            zi = zipfile.ZipInfo("files/aaa111.png")
+            zf.writestr(zi, b"data", compress_type=zipfile.ZIP_BZIP2)
+        r = backup.restore_backup(bad, self.tmp, self.cache, self.db)
+        self.assertFalse(r["ok"])
+        self.assertIn("压缩类型", r["error"])
+        # 超大成员：调低限制常量后由 file_size 校验拦截
+        big = self.backup_dir / "OhMyMeme-backup-b.zip"
+        with zipfile.ZipFile(big, "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr("backup.json", json.dumps({"file_count": 1}))
+            zf.writestr("db/memes.db", b"db")
+            zf.writestr("files/aaa111.png", b"data")
+        with mock.patch.object(backup, "RESTORE_MAX_MEMBER_BYTES", 2):
+            r2 = backup.restore_backup(big, self.tmp, self.cache, self.db)
+        self.assertFalse(r2["ok"])
+        self.assertIn("超大文件", r2["error"])
+        self.assertEqual(list(self.cache.iterdir()), [])  # 未落任何文件
+
+    def test_restore_rejects_invalid_candidate_db(self):
+        """文件数正确但库文件是垃圾字节：预校验拒绝，缓存零落盘。"""
+        from src import backup
+
+        self.backup_dir.mkdir()
+        bad = self.backup_dir / "OhMyMeme-backup-c.zip"
+        with zipfile.ZipFile(bad, "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr("backup.json", json.dumps({"file_count": 1}))
+            zf.writestr("db/memes.db", b"not a real database")
+            zf.writestr("files/aaa111.png", b"data")
+        r = backup.restore_backup(bad, self.tmp, self.cache, self.db)
+        self.assertFalse(r["ok"])
+        self.assertIn("数据库无效", r["error"])
+        self.assertEqual(list(self.cache.iterdir()), [])
+        self.assertFalse((self.tmp / "backup_restore_tmp").exists())
+
+    def test_restore_rejects_invalid_package(self):
+        from src import backup
+
+        self.backup_dir.mkdir()
+        bad = self.backup_dir / "OhMyMeme-backup-x.zip"
+        with zipfile.ZipFile(bad, "w") as zf:
+            zf.writestr("other.txt", "hi")
+        r = backup.restore_backup(bad, self.tmp, self.cache, self.db)
+        self.assertFalse(r["ok"])
+
+        notzip = self.backup_dir / "OhMyMeme-backup-y.zip"
+        notzip.write_bytes(b"junk")
+        with self.assertRaises(zipfile.BadZipFile):
+            backup.restore_backup(notzip, self.tmp, self.cache, self.db)
+
+    def test_restore_rejects_count_mismatch(self):
+        from src import backup
+
+        self.backup_dir.mkdir()
+        bad = self.backup_dir / "OhMyMeme-backup-z.zip"
+        with zipfile.ZipFile(bad, "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr("backup.json", json.dumps({"file_count": 5, "created_at": ""}))
+            zf.writestr("db/memes.db", b"not a real db")
+            zf.writestr("files/aaa111.png", b"data")
+        r = backup.restore_backup(bad, self.tmp, self.cache, self.db)
+        self.assertFalse(r["ok"])
+        self.assertIn("不完整", r["error"])
 
 
 if __name__ == "__main__":
