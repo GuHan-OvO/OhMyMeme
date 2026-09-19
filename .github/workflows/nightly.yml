@@ -68,7 +68,7 @@ jobs:
           name: nightly-linux-${{ matrix.arch }}
           path: |
             dist/OhMyMeme-v*-${{ matrix.arch }}.AppImage
-            dist/OhMyMeme-v*-${{ matrix.arch }}.deb
+            dist/OhMyMeme-v*-${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64' }}.deb
             dist/OhMyMeme-v*-${{ matrix.arch }}.rpm
 
   nightly-macos:
