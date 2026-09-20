@@ -220,7 +220,7 @@ function trapSettingsFocus(box, e) {
   }
 }
 // 找当前可见覆盖层（静态 HTML + 动态创建的 update/confirm 弹窗）
-const _SETTINGS_OVERLAY_IDS = ['danger-overlay','sync-progress-overlay','sync-done-overlay','storage-migrate-overlay','backup-progress-overlay','qq-import-overlay','qqnt-overlay','tg-import-overlay','dy-import-overlay','wechat-import-overlay','update-overlay'];
+const _SETTINGS_OVERLAY_IDS = ['danger-overlay','sync-progress-overlay','sync-done-overlay','qq-import-overlay','qqnt-overlay','tg-import-overlay','dy-import-overlay','wechat-import-overlay','update-overlay'];
 function visibleSettingsOverlay() {
   for (const id of _SETTINGS_OVERLAY_IDS) {
     const el = document.getElementById(id);
@@ -557,7 +557,6 @@ function cancelStoragePick() {
   loadStorageInfo();
 }
 
-let storageMigrateTimer = null;
 async function applyStorageDir() {
   if (!pendingStorageDir) return;
   const moveEl = document.getElementById('s-move-files');
@@ -574,11 +573,6 @@ async function applyStorageDir() {
     }
     pendingStorageDir = null;
     if (pending) pending.style.display = 'none';
-    if (move && r.async) {
-      // 后台迁移：弹出进度覆盖层轮询
-      showStorageMigration();
-      return;
-    }
     const el = document.getElementById('s-cache-dir');
     if (el && r.cache_dir) el.value = r.cache_dir;
     let msg = '已应用新存储目录';
@@ -591,67 +585,6 @@ async function applyStorageDir() {
   } finally {
     if (btn) btn.disabled = false;
   }
-}
-
-function showStorageMigration() {
-  document.getElementById('storage-migrate-title').textContent = '正在迁移表情包...';
-  document.getElementById('storage-migrate-file').textContent = '准备中';
-  document.getElementById('storage-migrate-bar').style.width = '0%';
-  document.getElementById('storage-migrate-pct').textContent = '0%';
-  document.getElementById('storage-migrate-count').textContent = '';
-  const cancelBtn = document.getElementById('btn-storage-migrate-cancel');
-  if (cancelBtn) { cancelBtn.style.display = 'inline-block'; cancelBtn.disabled = false; }
-  rememberSettingsFocus();
-  document.getElementById('storage-migrate-overlay').style.display = 'flex';
-  if (storageMigrateTimer) clearInterval(storageMigrateTimer);
-  storageMigrateTimer = setInterval(pollStorageMigration, 300);
-  pollStorageMigration();
-}
-
-function hideStorageMigration(restore = true, clearTimer = true) {
-  // 后台运行时保留轮询（clearTimer=false），使完成/失败/取消状态仍可被观察到；
-  // 终态关闭才清 timer
-  if (clearTimer && storageMigrateTimer) { clearInterval(storageMigrateTimer); storageMigrateTimer = null; }
-  document.getElementById('storage-migrate-overlay').style.display = 'none';
-  if (restore) restoreSettingsFocus();
-}
-
-async function pollStorageMigration() {
-  let s = null;
-  try { s = await api('get_storage_migration_progress'); } catch (e) { s = null; }
-  if (!s) return;
-  const bar = document.getElementById('storage-migrate-bar');
-  const pct = document.getElementById('storage-migrate-pct');
-  const file = document.getElementById('storage-migrate-file');
-  const count = document.getElementById('storage-migrate-count');
-  if (bar) bar.style.width = (s.progress || 0) + '%';
-  if (pct) pct.textContent = (s.progress || 0) + '%';
-  if (file) file.textContent = s.current || s.message || '';
-  if (count) count.textContent = s.total > 0 ? ('已迁移 ' + (s.moved || 0) + ' / ' + s.total + ' 个') : '';
-  if (!s.status || s.status === 'idle' || s.status === 'running') return;
-  // 结束状态：done/error/cancelled
-  hideStorageMigration(false);
-  const status = document.getElementById('s-storage-status');
-  if (s.status === 'done') {
-    if (status) status.textContent = '迁移完成，新存储目录已生效（' + (s.total || 0) + ' 个文件）';
-    showToast('存储位置已更新');
-    location.reload();
-  } else if (s.status === 'cancelled') {
-    if (status) status.textContent = '迁移已取消，已回滚已移动文件（原存储目录未变）';
-    showToast('已取消迁移');
-  } else {
-    if (status) status.textContent = '迁移失败：' + (s.error || '未知错误') + '（已回滚，原存储目录未变）';
-    showToast('迁移失败');
-  }
-}
-
-function cancelStorageMigration() {
-  const btn = document.getElementById('btn-storage-migrate-cancel');
-  if (btn) btn.disabled = true;
-  const title = document.getElementById('storage-migrate-title');
-  if (title) title.textContent = '正在取消...';
-  api('cancel_storage_migration').catch(() => {});
-  // overlay 由 pollStorageMigration 收到 cancelled 后自动关闭
 }
 
 function toggleSyncType() {
@@ -1606,15 +1539,6 @@ function wechatSelectedAccount() {
   return sel && sel.value ? sel.value : null;
 }
 
-const WECHAT_STATUS_TEXT = {
-  account_root_missing: '目录不存在，请手动指定微信文件目录',
-  default_root_missing: '未找到默认微信文件目录，请手动指定',
-  no_accounts: '未检测到账号目录',
-  no_database: '已找到账号目录，但未找到表情库（emoticon.db）',
-  wechat_3x_unsupported: '检测到微信 3.x 旧版数据目录（WeChat Files/Msg），暂不支持。请升级微信到 4.x，升级后数据会自动迁移到 xwechat_files，再重新检测',
-  unsupported_platform: '仅 Windows 支持',
-};
-
 async function inspectWechat() {
   const btn = document.getElementById('btn-wechat-inspect');
   const status = document.getElementById('wechat-status');
@@ -1629,14 +1553,7 @@ async function inspectWechat() {
       status.textContent = '已检测到 ' + r.account_directory_count + ' 个账号，其中 ' + accounts.length + ' 个可用';
       status.className = '';
     } else {
-      let msg = WECHAT_STATUS_TEXT[r.status] || WECHAT_STATUS_TEXT[r.reason] || r.reason || r.status || '未检测到';
-      if (r.status === 'no_database') {
-        const withFiles = (r.accounts || []).find(a => (a.db_files || []).length);
-        if (withFiles) {
-          msg += '，该目录下实际存在的数据库：' + withFiles.db_files.join('、');
-        }
-      }
-      status.textContent = msg;
+      status.textContent = r.reason || r.status || '未检测到';
       status.className = 'error';
     }
     wechatRenderAccounts(r);
@@ -1952,30 +1869,18 @@ titlebar.addEventListener('mousedown', async (e) => {
   if (e.target.closest('.title-btn')) return;
   const nativeDrag = await api('start_window_drag', e.button + 1, e.screenX, e.screenY);
   if (nativeDrag) return;   // Linux：交给合成器拖动
-  dragState = { sx: e.screenX, sy: e.screenY, px: 0, py: 0, raf: null };
+  dragState = { sx: e.screenX, sy: e.screenY };
   e.preventDefault();
 });
 document.addEventListener('mousemove', (e) => {
   if (!dragState) return;
-  // 记录相对拖动起点的总偏移（屏幕坐标，自愈无累积滞后）
-  dragState.px = e.screenX - dragState.sx;
-  dragState.py = e.screenY - dragState.sy;
-  // rAF 合并每帧最新位置，避免高回报率鼠标消息风暴堵塞桥接
-  if (dragState.raf) return;
-  dragState.raf = requestAnimationFrame(() => {
-    if (!dragState) return;
-    dragState.raf = null;
-    const dx = dragState.px, dy = dragState.py;
-    if (dx !== 0 || dy !== 0) {
-      api('move_window', dx, dy);
-    }
-  });
+  const dx = e.screenX - dragState.sx, dy = e.screenY - dragState.sy;
+  if (dx !== 0 || dy !== 0) {
+    api('move_window', dx, dy);
+    dragState.sx = e.screenX; dragState.sy = e.screenY;
+  }
 });
-document.addEventListener('mouseup', () => {
-  if (dragState && dragState.raf) cancelAnimationFrame(dragState.raf);
-  api('stop_window_drag').catch(() => {});
-  dragState = null;
-});
+document.addEventListener('mouseup', () => { dragState = null; });
 
 /* Keyboard shortcuts */
 document.addEventListener('keydown', (e) => {
@@ -2023,18 +1928,6 @@ document.addEventListener('keydown', (e) => {
     if (syncDoneOverlay && syncDoneOverlay.style.display === 'flex') {
       syncDoneOverlay.style.display = 'none';
       restoreSettingsFocus();
-      return;
-    }
-    const migrateOverlay = document.getElementById('storage-migrate-overlay');
-    if (migrateOverlay && migrateOverlay.style.display === 'flex') {
-      cancelStorageMigration();
-      return;
-    }
-    const backupOverlay = document.getElementById('backup-progress-overlay');
-    if (backupOverlay && backupOverlay.style.display === 'flex') {
-      // 运行中不可关闭；完成后允许 Esc 关闭
-      const btn = document.getElementById('btn-backup-progress-close');
-      if (btn && btn.style.display !== 'none') closeBackupProgress();
       return;
     }
     closeSettings();
@@ -2218,126 +2111,6 @@ async function initSettings() {
   }
 }
 
-/* ─── 本地备份与恢复 ─── */
-let backupPollTimer = null;
-
-async function loadBackupInfo() {
-  const info = await api('backup_get_info');
-  if (!info || !info.ok) return;
-  const dirEl = document.getElementById('backup-dir');
-  const customEl = document.getElementById('backup-dir-custom');
-  if (dirEl) dirEl.textContent = info.backup_dir;
-  if (customEl) customEl.style.display = info.custom ? 'inline' : 'none';
-  renderBackupList(info.list || []);
-}
-
-function renderBackupList(list) {
-  const wrap = document.getElementById('backup-list');
-  if (!wrap) return;
-  if (!list.length) {
-    wrap.innerHTML = '<div style="font-size:11.5px;color:var(--muted)">暂无备份</div>';
-    return;
-  }
-  wrap.innerHTML = list.map(b => `
-    <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm)">
-      <span style="flex:1;font-size:11.5px;color:var(--fg);word-break:break-all">${esc(b.name)}</span>
-      <span style="font-size:11px;color:var(--muted);white-space:nowrap">${formatSize(b.size)}</span>
-      <button class="btn btn-ghost btn-sm backup-delete-btn" data-name="${esc(b.name)}" style="color:var(--danger);border-color:var(--danger)">删除</button>
-    </div>`).join('');
-  // 文件名经 data-* 属性传递，避免拼入内联 onclick 造成注入面
-  wrap.querySelectorAll('.backup-delete-btn').forEach(btn => {
-    btn.addEventListener('click', () => deleteBackupItem(btn.dataset.name));
-  });
-}
-
-async function refreshBackupList() {
-  const info = await api('backup_get_info');
-  if (info && info.ok) renderBackupList(info.list || []);
-}
-
-async function pickBackupDir() {
-  const r = await api('backup_pick_dir');
-  if (r && r.ok) { showToast('备份目录已更新'); loadBackupInfo(); }
-  else if (r && !r.cancelled) showToast(r.error || '设置失败');
-}
-
-async function startBackupCreate() {
-  const r = await api('backup_create');
-  if (!r || !r.ok) { showToast((r && r.error) || '无法开始备份'); return; }
-  rememberSettingsFocus();
-  showBackupProgress('正在备份...');
-  backupPollTimer = setInterval(pollBackupProgress, 300);
-}
-
-function showBackupProgress(title) {
-  const ov = document.getElementById('backup-progress-overlay');
-  if (!ov) return;
-  document.getElementById('backup-progress-title').textContent = title;
-  document.getElementById('backup-progress-text').textContent = '准备中';
-  document.getElementById('backup-progress-bar').style.width = '0%';
-  document.getElementById('backup-progress-pct').textContent = '0%';
-  document.getElementById('btn-backup-progress-close').style.display = 'none';
-  ov.style.display = 'flex';
-}
-
-async function pollBackupProgress() {
-  const p = await api('backup_progress');
-  if (!p) return;
-  const pct = p.total > 0 ? Math.round(p.done * 100 / p.total) : 0;
-  document.getElementById('backup-progress-bar').style.width = pct + '%';
-  document.getElementById('backup-progress-pct').textContent = pct + '%';
-  document.getElementById('backup-progress-text').textContent =
-    p.status === 'done' ? '完成' : (p.status === 'error' ? '失败：' + (p.error || '') : `${p.done} / ${p.total}`);
-  if (p.status === 'running') return;
-  clearInterval(backupPollTimer);
-  backupPollTimer = null;
-  const titleEl = document.getElementById('backup-progress-title');
-  if (p.status === 'done') {
-    titleEl.textContent = p.kind === 'restore' ? '恢复完成' : '备份完成';
-    if (p.kind === 'restore') {
-      document.getElementById('backup-progress-text').textContent = '请重启应用后生效';
-    }
-    refreshBackupList();
-  } else {
-    titleEl.textContent = p.kind === 'restore' ? '恢复失败' : '备份失败';
-  }
-  document.getElementById('btn-backup-progress-close').style.display = 'inline-block';
-}
-
-function closeBackupProgress() {
-  const ov = document.getElementById('backup-progress-overlay');
-  if (ov) ov.style.display = 'none';
-  restoreSettingsFocus();
-}
-
-async function deleteBackupItem(name) {
-  const ok = await showConfirm('删除备份', `确定删除备份「${name}」吗？此操作不可恢复。`);
-  if (!ok) return;
-  const r = await api('backup_delete', name);
-  if (r && r.ok) { showToast('已删除'); refreshBackupList(); }
-  else showToast((r && r.error) || '删除失败');
-}
-
-async function startBackupRestore() {
-  const pick = await api('backup_pick_zip');
-  if (!pick || !pick.ok) {
-    if (pick && !pick.cancelled) showToast(pick.error || '选择文件失败');
-    return;
-  }
-  const ok = await showConfirm('恢复备份', '将从备份 ZIP 恢复全部表情与数据（标签/收藏/分组/排序随库保留）。仅允许在数据库为空时进行，已有数据不会被覆盖。确定继续吗？');
-  if (!ok) return;
-  const r = await api('backup_restore', pick.path);
-  if (!r || !r.ok) {
-    const el = document.getElementById('backup-restore-status');
-    if (el) el.textContent = (r && r.error) || '恢复失败';
-    showToast((r && r.error) || '恢复失败');
-    return;
-  }
-  rememberSettingsFocus();
-  showBackupProgress('正在恢复...');
-  backupPollTimer = setInterval(pollBackupProgress, 300);
-}
-
 /* 左栏分组导航：显示对应分组的 section，隐藏其余 */
 function switchSettingsGroup(group) {
   document.querySelectorAll('#settings-nav .nav-item').forEach(btn => {
@@ -2346,7 +2119,6 @@ function switchSettingsGroup(group) {
   document.querySelectorAll('#settings-content .section').forEach(sec => {
     sec.style.display = (sec.dataset.group === group) ? 'block' : 'none';
   });
-  if (group === 'backup') loadBackupInfo();
   const content = document.getElementById('settings-content');
   if (content) content.scrollTop = 0;
 }
