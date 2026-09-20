@@ -19,6 +19,10 @@ from scripts import plugin_license_matrix as licenses
 ROOT = Path(__file__).resolve().parents[1]
 MATRIX = ROOT / "docs/plugin-license-matrix.json"
 SCHEMA = ROOT / "schemas/plugin/license-matrix.schema.json"
+FINAL_ENV_EVIDENCE = (
+    ".omo/evidence/pluginized-recomposition-parity/"
+    "todo-14-final-environment-installation.json"
+)
 
 
 def documents():
@@ -27,6 +31,41 @@ def documents():
         licenses._json(MATRIX.read_bytes()),
         licenses._json(SCHEMA.read_bytes()),
     )
+
+
+def redirect_matrix_paths(monkeypatch, replacements):
+    # Redirect selected matrix inputs while leaving all other evidence on the root.
+    original_path = licenses._path
+
+    def redirected(root, candidate):
+        if candidate in replacements:
+            return replacements[candidate]
+        return original_path(root, candidate)
+
+    monkeypatch.setattr(licenses, "_path", redirected)
+
+
+def redirect_matrix_path(monkeypatch, name, replacement):
+    # Keep single-path probes concise while using the shared redirection boundary.
+    redirect_matrix_paths(monkeypatch, {name: replacement})
+
+
+def isolate_bundle_outputs(monkeypatch, tmp_path):
+    # Keep generator output in a temporary tree while retaining the real input root.
+    bundle = licenses.build_notice_bundle
+    index = bundle.expected_index(ROOT, Path(FINAL_ENV_EVIDENCE))
+    output_names = set(bundle._expected_files(ROOT, index))
+    output_names.add("docs/plugin-license-matrix.json")
+    output_root = tmp_path / "generated"
+    original_path = bundle._path
+
+    def redirected(root, candidate):
+        if candidate in output_names:
+            return output_root / candidate
+        return original_path(root, candidate)
+
+    monkeypatch.setattr(bundle, "_path", redirected)
+    return output_root
 
 
 def test_auditable_distribution_native_scope_can_approve_real_release():
@@ -224,6 +263,80 @@ def test_native_record_bundle_mismatch_is_field_specific(monkeypatch, tmp_path):
         "byte/hash mismatch" in error
         for error in errors
     )
+
+
+def test_superseded_wave5_curl_record_is_rejected(monkeypatch, tmp_path):
+    # A Wave5 installer RECORD cannot be accepted for the current final venv.
+    evidence = licenses.build_notice_bundle._json(
+        (ROOT / FINAL_ENV_EVIDENCE).read_bytes()
+    )
+    old_launcher = evidence["supersedes"]["wave5_launcher_record"]
+    source = (
+        ROOT / ".venv/Lib/site-packages/curl_cffi-0.16.3.dist-info/RECORD"
+    ).read_bytes()
+    current_launcher = next(
+        row
+        for row in source.decode("utf-8").splitlines()
+        if row.startswith("../../Scripts/curl-cffi.exe,")
+    )
+    assert old_launcher != current_launcher
+    stale = tmp_path / "wave5-RECORD"
+    stale.write_bytes(
+        source.replace(current_launcher.encode("utf-8"), old_launcher.encode("utf-8"))
+    )
+    original_path = licenses.build_notice_bundle._path
+
+    def redirected(root, name):
+        if name == "THIRD-PARTY-NOTICES/curl-cffi/RECORD":
+            return stale
+        return original_path(root, name)
+
+    monkeypatch.setattr(licenses.build_notice_bundle, "_path", redirected)
+    errors = licenses.build_notice_bundle.check_bundle(
+        local_evidence_path=Path(FINAL_ENV_EVIDENCE)
+    )
+
+    assert any(
+        "notice_bundle.file[THIRD-PARTY-NOTICES/curl-cffi/RECORD]: "
+        "byte/hash mismatch" in error
+        for error in errors
+    )
+
+
+def test_final_environment_evidence_accepts_regenerated_curl_bundle():
+    # The final RECORD must map the shipped DLL without assigning it a license.
+    errors = licenses.build_notice_bundle.check_bundle(
+        local_evidence_path=Path(FINAL_ENV_EVIDENCE)
+    )
+    index = licenses.build_notice_bundle.expected_index(
+        local_evidence_path=Path(FINAL_ENV_EVIDENCE)
+    )
+    row = next(
+        item
+        for item in index["native_distributions"]
+        if item["id"] == "curl-cffi-wheel"
+    )
+    record = licenses.build_notice_bundle._record_hashes(
+        (ROOT / row["record"]["bundle_path"]).read_bytes()
+    )
+
+    assert errors == []
+    assert (
+        row["record"]["sha256"]
+        == "08f043276ab2667ae98256770432bc69d9d155f3297e8da5035f92603d80dbc3"
+    )
+    assert all(
+        licenses.build_notice_bundle._record_digest(record[item["record_path"]])
+        == item["sha256"]
+        for item in row["artifacts"]
+    )
+    assert any(
+        item["name"] == "pypinyin"
+        and item["version"] == "0.55.0"
+        and item["spdx"] == "MIT"
+        for item in index["distributions"]
+    )
+    assert "not asserted to be independently MIT" in row["limitation"]
 
 
 def test_owned_helper_mapping_does_not_create_tag_claim_files():
@@ -443,6 +556,236 @@ def test_source_hash_drift_preserves_unrelated_dirty_files_and_cleans_probe(case
             )
         assert sentinel.read_text(encoding="utf-8") == "retain me"
     assert not root.exists()
+
+
+def test_stale_precomputed_source_hash_is_rejected():
+    # A carried-forward source digest must not pass current materialization.
+    matrix, schema = documents()
+    target = "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py"
+    matrix["distributions"][0]["source_hashes"][target] = "0" * 64
+
+    errors, _, _ = licenses.check_matrix(matrix, schema)
+
+    assert any(
+        "matrix.distributions[source.qqnt].source_hashes." + target in error
+        for error in errors
+    ), errors
+
+
+def test_matrix_materialization_replaces_stale_precomputed_source_hash(
+    monkeypatch, tmp_path
+):
+    # Notice-bundle materialization replaces stale facts instead of preserving them.
+    matrix, schema = documents()
+    name = "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py"
+    matrix["distributions"][0]["source_hashes"][name] = "0" * 64
+    materialized_path = tmp_path / "plugin-license-matrix.json"
+    materialized_path.write_text(
+        json.dumps(matrix, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    redirect_matrix_path(
+        monkeypatch, "docs/plugin-license-matrix.json", materialized_path
+    )
+
+    monkeypatch.chdir(tmp_path)
+    materialized = licenses.write_matrix(
+        root=ROOT, local_evidence_path=Path(FINAL_ENV_EVIDENCE)
+    )
+    assert materialized["distributions"][0]["source_hashes"][name] != "0" * 64
+    assert licenses._json(materialized_path.read_bytes()) == materialized
+
+    errors, _, _ = licenses.check_matrix(materialized, schema)
+
+    assert errors == []
+
+
+def test_bundle_write_refreshes_stale_source_and_frozen_hashes(monkeypatch, tmp_path):
+    # A source/staging update first fails validation, then one write refreshes both.
+    source_name = "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py"
+    frozen_source_name = (
+        "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_qqnt/__init__.py"
+    )
+    entry_name = (
+        "fixtures/plugin-parity/frozen-staging/"
+        "ohmymeme_plugin_qqnt-0.1.0.dist-info/entry_points.txt"
+    )
+    output_root = isolate_bundle_outputs(monkeypatch, tmp_path)
+    matrix_path = output_root / "docs/plugin-license-matrix.json"
+    matrix_path.parent.mkdir(parents=True)
+    stale, schema = documents()
+    stale["distributions"][0]["source_hashes"][source_name] = "0" * 64
+    stale["frozen_official_set"]["distributions"][0]["entry_points_sha256"] = "0" * 64
+    matrix_path.write_text(
+        json.dumps(stale, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    source = tmp_path / "source.py"
+    source.write_bytes(
+        (ROOT / source_name).read_bytes() + b"\n# generator source drift fixture\n"
+    )
+    frozen_source = tmp_path / "frozen-source.py"
+    frozen_source.write_bytes(source.read_bytes())
+    entry = tmp_path / "entry_points.txt"
+    entry.write_bytes(
+        (ROOT / entry_name).read_bytes() + b"\n; generator frozen drift fixture\n"
+    )
+    redirect_matrix_paths(
+        monkeypatch,
+        {
+            "docs/plugin-license-matrix.json": matrix_path,
+            source_name: source,
+            frozen_source_name: frozen_source,
+            entry_name: entry,
+        },
+    )
+    bundle = licenses.build_notice_bundle
+    index = bundle.expected_index(ROOT, Path(FINAL_ENV_EVIDENCE))
+    bundle_files = bundle._expected_files(ROOT, index)
+
+    stale_errors, _, _ = licenses.check_matrix(
+        stale,
+        schema,
+        root=ROOT,
+        local_evidence_path=Path(FINAL_ENV_EVIDENCE),
+        bundle_files=bundle_files,
+        notice_index=index,
+    )
+    assert any("source_hashes." + source_name in error for error in stale_errors)
+    assert any("entry_points_sha256" in error for error in stale_errors)
+
+    replacements = []
+    replace = bundle.os.replace
+
+    def tracked_replace(temporary, destination):
+        replacements.append(Path(destination))
+        replace(temporary, destination)
+
+    monkeypatch.setattr(bundle.os, "replace", tracked_replace)
+    monkeypatch.chdir(tmp_path)
+    written_index = bundle.write_bundle(
+        root=ROOT,
+        local_evidence_path=Path(FINAL_ENV_EVIDENCE),
+        matrix_path=Path("docs/plugin-license-matrix.json"),
+    )
+    materialized = licenses._json(matrix_path.read_bytes())
+    assert materialized["distributions"][0]["source_hashes"][source_name] == (
+        bundle.matrix_hash(source_name, source.read_bytes())
+    )
+    assert materialized["frozen_official_set"]["distributions"][0][
+        "entry_points_sha256"
+    ] == bundle.matrix_hash(entry_name, entry.read_bytes())
+
+    errors, _, _ = licenses.check_matrix(
+        materialized,
+        schema,
+        root=ROOT,
+        local_evidence_path=Path(FINAL_ENV_EVIDENCE),
+        bundle_files=bundle._expected_files(ROOT, written_index),
+        notice_index=written_index,
+    )
+    assert errors == []
+    assert replacements and replacements[-1] == matrix_path
+
+
+def test_bundle_write_rejects_invalid_matrix_fixture_before_publish(
+    monkeypatch, tmp_path
+):
+    # Invalid manual policy evidence cannot publish even a freshly copied bundle.
+    output_root = isolate_bundle_outputs(monkeypatch, tmp_path)
+    matrix_path = output_root / "docs/plugin-license-matrix.json"
+    matrix_path.parent.mkdir(parents=True)
+    matrix_path.write_bytes(
+        (ROOT / "fixtures/plugin-parity/license-matrix-invalid.json").read_bytes()
+    )
+    redirect_matrix_path(monkeypatch, "docs/plugin-license-matrix.json", matrix_path)
+
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="matrix materialization"):
+        licenses.build_notice_bundle.write_bundle(
+            root=ROOT,
+            local_evidence_path=Path(FINAL_ENV_EVIDENCE),
+            matrix_path=Path("docs/plugin-license-matrix.json"),
+        )
+
+    assert not (output_root / "NOTICE").exists()
+    assert licenses._json(matrix_path.read_bytes())["schema_version"] is True
+
+
+def test_bundle_write_rejects_missing_local_evidence_before_publish(
+    monkeypatch, tmp_path
+):
+    # Missing target evidence must fail before a stale matrix or notice is carried.
+    output_root = isolate_bundle_outputs(monkeypatch, tmp_path)
+    matrix_path = output_root / "docs/plugin-license-matrix.json"
+    matrix_path.parent.mkdir(parents=True)
+    original = MATRIX.read_bytes()
+    matrix_path.write_bytes(original)
+    redirect_matrix_path(monkeypatch, "docs/plugin-license-matrix.json", matrix_path)
+
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(OSError):
+        licenses.build_notice_bundle.write_bundle(
+            root=ROOT,
+            local_evidence_path=Path(
+                "fixtures/plugin-parity/missing-local-evidence.json"
+            ),
+            matrix_path=Path("docs/plugin-license-matrix.json"),
+        )
+
+    assert matrix_path.read_bytes() == original
+    assert not (output_root / "NOTICE").exists()
+
+
+def test_source_semantic_modification_is_rejected(monkeypatch, tmp_path):
+    # A non-EOL source change must fail both source/frozen and matrix comparisons.
+    matrix, schema = documents()
+    name = "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py"
+    changed = tmp_path / "__init__.py"
+    changed.write_bytes((ROOT / name).read_bytes() + b"\n# matrix semantic probe\n")
+    redirect_matrix_path(monkeypatch, name, changed)
+
+    errors, _, _ = licenses.check_matrix(matrix, schema)
+
+    assert any("source hash drift in frozen" in error for error in errors), errors
+    assert any("source_hashes." + name in error for error in errors), errors
+
+
+def test_crlf_only_source_text_uses_documented_normalization(monkeypatch, tmp_path):
+    # A checkout-only CRLF rewrite does not change the normalized source evidence.
+    matrix, schema = documents()
+    name = "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py"
+    crlf = tmp_path / "__init__.py"
+    raw = (ROOT / name).read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    crlf.write_bytes(raw.replace(b"\n", b"\r\n"))
+    redirect_matrix_path(monkeypatch, name, crlf)
+
+    errors, facts, _ = licenses.check_matrix(matrix, schema)
+
+    assert errors == []
+    assert facts["hash_policy"]["input_hash_modes"][name] == "utf8-lf-normalized"
+
+
+def test_changed_frozen_entry_point_is_rejected(monkeypatch, tmp_path):
+    # The matrix binds actual staged entry-point bytes and semantic triplets.
+    matrix, schema = documents()
+    name = (
+        "fixtures/plugin-parity/frozen-staging/"
+        "ohmymeme_plugin_qqnt-0.1.0.dist-info/entry_points.txt"
+    )
+    changed = tmp_path / "entry_points.txt"
+    changed.write_bytes(
+        (ROOT / name)
+        .read_bytes()
+        .replace(
+            b"ohmymeme_plugin_qqnt:create_plugin",
+            b"ohmymeme_plugin_qqnt:tampered_factory",
+        )
+    )
+    redirect_matrix_path(monkeypatch, name, changed)
+
+    errors, _, _ = licenses.check_matrix(matrix, schema)
+
+    assert any("frozen entry point drift" in error for error in errors), errors
+    assert any("entry_points_sha256" in error for error in errors), errors
 
 
 @pytest.mark.parametrize(

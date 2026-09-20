@@ -2,6 +2,7 @@
 
 import argparse
 import ast
+import copy
 import hashlib
 import json
 import os
@@ -32,6 +33,8 @@ OFFICIAL = (
 GPL = "GPL-3.0-only"
 STAGING = "fixtures/plugin-parity/frozen-staging"
 BUNDLE_INDEX = "THIRD-PARTY-NOTICES/license-evidence.json"
+MATRIX = "docs/plugin-license-matrix.json"
+SCHEMA = "schemas/plugin/license-matrix.schema.json"
 FROZEN_NOTICE_TARGETS = (
     "ohmymeme/LICENSE",
     "ohmymeme/NOTICE",
@@ -42,7 +45,7 @@ OPTIONAL_RUNTIME_EXCLUSIONS = ("gmssl",)
 EXTERNAL_HELPER_BINARY_SUFFIXES = {".a", ".dll", ".exe", ".lib", ".obj", ".pdb"}
 DEPENDENCY_RULES = {
     "boto3": (
-        "1.43.94",
+        "1.43.97",
         "https://github.com/boto/boto3",
         "Apache-2.0",
         "License",
@@ -51,7 +54,7 @@ DEPENDENCY_RULES = {
         "aggregate/runtime dependency.",
     ),
     "botocore": (
-        "1.43.94",
+        "1.43.97",
         "https://github.com/boto/botocore",
         "Apache-2.0",
         "License",
@@ -106,6 +109,14 @@ DEPENDENCY_RULES = {
         "https://github.com/pydantic/pydantic",
         "MIT",
         "License-Expression",
+        "MIT",
+        "MIT permission and notice preserved in the bundled license text.",
+    ),
+    "pypinyin": (
+        "0.55.0",
+        "https://github.com/mozillazg/python-pinyin",
+        "MIT",
+        "License",
         "MIT",
         "MIT permission and notice preserved in the bundled license text.",
     ),
@@ -307,15 +318,47 @@ def _difference(actual, expected, path):
     return errors
 
 
-def inspect_sources(root=ROOT):
+def _entry_point_triplets(text):
+    # Parse staged entry point semantics independently from its normalized hash.
+    group = None
+    entries = []
+    errors = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith(("#", ";")):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            group = line[1:-1]
+            continue
+        if group is None or "=" not in line:
+            errors.append(f"malformed frozen entry point line {raw_line!r}")
+            continue
+        name, value = (part.strip() for part in line.split("=", 1))
+        if not name or not value:
+            errors.append(f"malformed frozen entry point line {raw_line!r}")
+            continue
+        entries.append((group, name, value))
+    return entries, errors
+
+
+def inspect_sources(
+    root=ROOT,
+    local_evidence_path=build_notice_bundle.FINAL_ENV_EVIDENCE,
+    notice_index=None,
+    generated_files=None,
+):
     # Parse authored metadata, requirements and frozen files without importing code.
-    hashes, errors, declarations, packages, imports = {}, [], {}, [], {}
+    hashes, hash_modes, errors, declarations, packages, imports = {}, {}, [], {}, [], {}
 
     def read(name):
-        # Bind observations to the exact bytes consumed in this worktree.
-        path = _path(root, name)
-        raw = path.read_bytes()
-        hashes[name] = hashlib.sha256(raw).hexdigest()
+        # Bind observations to the documented byte or normalized-text hash mode.
+        if generated_files is not None and name in generated_files:
+            raw = generated_files[name]
+        else:
+            path = _path(root, name)
+            raw = path.read_bytes()
+        hash_modes[name] = build_notice_bundle.matrix_hash_mode(name)
+        hashes[name] = build_notice_bundle.matrix_hash(name, raw)
         return raw.decode("utf-8")
 
     def source_hashes(names):
@@ -526,7 +569,10 @@ def inspect_sources(root=ROOT):
         for name in module_files:
             source_name = f"plugins/{provider}/src/{name}"
             source = read(source_name)
-            if source != read(f"{STAGING}/{name}"):
+            frozen_source = read(f"{STAGING}/{name}")
+            if build_notice_bundle._utf8_lf_bytes(
+                source.encode("utf-8")
+            ) != build_notice_bundle._utf8_lf_bytes(frozen_source.encode("utf-8")):
                 errors.append(f"{distribution}: source hash drift in frozen {name}")
             for node in ast.walk(ast.parse(source)):
                 names = []
@@ -561,6 +607,8 @@ def inspect_sources(root=ROOT):
             errors.append(f"{distribution}: missing/unknown frozen metadata file")
         message = Parser().parsestr(read(metadata_path))
         entries = read(entry_path)
+        entry_points, entry_errors = _entry_point_triplets(entries)
+        errors.extend(f"{distribution}: {error}" for error in entry_errors)
         for field, expected in (
             ("Name", distribution),
             ("Version", project["version"]),
@@ -575,10 +623,8 @@ def inspect_sources(root=ROOT):
         dependencies = project.get("dependencies", [])
         if message.get_all("Requires-Dist", []) != dependencies:
             errors.append(f"{distribution}: frozen dependency metadata drift")
-        if entries.splitlines() != [
-            "[ohmymeme.plugins.v1]",
-            f"{provider} = {factory}",
-        ]:
+        expected_entry_points = [("ohmymeme.plugins.v1", provider, factory)]
+        if entry_points != expected_entry_points:
             errors.append(f"{distribution}: frozen entry point drift")
         for field, expected in (
             ("distribution", distribution),
@@ -619,6 +665,7 @@ def inspect_sources(root=ROOT):
                 "license_files_disabled": row["license_files_disabled"],
                 "metadata_sha256": hashes[metadata_path],
                 "entry_points_sha256": hashes[entry_path],
+                "entry_points": [list(item) for item in entry_points],
             }
         )
     actual_dist_info = sorted(
@@ -662,9 +709,7 @@ def inspect_sources(root=ROOT):
                 source_components[-1]["source_revision"] = {
                     "tag": tag["tag"],
                     "commit": tag["commit"],
-                    "root_license_sha256": helper_research["local_hashes"][
-                        "helper_source"
-                    ]["LICENSE"],
+                    "root_license_sha256": hashes["LICENSE"],
                     "source_binding": "local-source-only",
                 }
             except KeyError as error:
@@ -756,7 +801,9 @@ def inspect_sources(root=ROOT):
                 f"release scope: {name} declares an unapproved frozen binary target"
             )
     try:
-        notice_bundle = build_notice_bundle.expected_index(root)
+        notice_bundle = notice_index or build_notice_bundle.expected_index(
+            root, local_evidence_path
+        )
         read(BUNDLE_INDEX)
     except (KeyError, OSError, ValueError) as error:
         errors.append(f"notice bundle: unavailable: {error}")
@@ -828,6 +875,7 @@ def inspect_sources(root=ROOT):
     }
     return (
         {
+            "hash_policy": build_notice_bundle.matrix_hash_policy(hash_modes),
             "host": host,
             "distributions": packages,
             "source_components": source_components,
@@ -942,7 +990,16 @@ def _bundle_row(bundle, name):
     return rows[0]
 
 
-def _dependency_approval(row, root, prefix, bundle):
+def _evidence_bytes(root, name, bundle_files=None):
+    # Read planned bundle bytes during generation and current files during checks.
+    if bundle_files is not None and name.startswith("THIRD-PARTY-NOTICES/"):
+        if name not in bundle_files:
+            raise ValueError(f"planned notice bundle file missing: {name}")
+        return bundle_files[name]
+    return _path(root, name).read_bytes()
+
+
+def _dependency_approval(row, root, prefix, bundle, bundle_files=None):
     # An approval cannot replace the dependency's actual metadata and license files.
     name = row["name"]
     if row["approval"] == "not-shipped" and all(
@@ -1003,10 +1060,11 @@ def _dependency_approval(row, root, prefix, bundle):
             f"{prefix}: missing dependency approval/provenance for {name}; REJECTED"
         ]
     try:
-        path = _path(root, row["provenance_file"])
-        if row["provenance_file"].split("/")[0] in ("fixtures", ".omo", "docs"):
+        provenance_file = row["provenance_file"]
+        if provenance_file.split("/")[0] in ("fixtures", ".omo", "docs"):
             raise ValueError("fixture/report cannot approve a dependency")
-        metadata = Parser().parsestr(path.read_text(encoding="utf-8"))
+        metadata_bytes = _evidence_bytes(root, provenance_file, bundle_files)
+        metadata = Parser().parsestr(metadata_bytes.decode("utf-8"))
         actual_name = re.sub(r"[-_.]+", "-", metadata.get("Name", "")).lower()
         rule = DEPENDENCY_RULES.get(name)
         if rule is None:
@@ -1030,9 +1088,9 @@ def _dependency_approval(row, root, prefix, bundle):
             or bundle_row["spdx"] != spdx
             or bundle_row["evidence_expression"] != spdx
             or bundle_row["source_url"] != project_url
-            or bundle_row["metadata"]["bundle_path"] != row["provenance_file"]
+            or bundle_row["metadata"]["bundle_path"] != provenance_file
             or bundle_row["metadata"]["sha256"]
-            != hashlib.sha256(path.read_bytes()).hexdigest()
+            != hashlib.sha256(metadata_bytes).hexdigest()
             or bundle_row["metadata"]["license_field"] != license_field
             or bundle_row["metadata"]["license"] != metadata_license
         ):
@@ -1062,13 +1120,13 @@ def _dependency_approval(row, root, prefix, bundle):
             raise ValueError("dependency evidence compatibility drift")
         if (
             evidence.get("metadata_sha256")
-            != hashlib.sha256(path.read_bytes()).hexdigest()
+            != hashlib.sha256(metadata_bytes).hexdigest()
         ):
             raise ValueError("dependency METADATA hash mismatch")
         declared_license_files = metadata.get_all("License-File", [])
         if declared_license_files:
             license_files = [
-                (path.parent / item).relative_to(root).as_posix()
+                (Path(provenance_file).parent / item).as_posix()
                 for item in declared_license_files
             ]
         else:
@@ -1076,26 +1134,26 @@ def _dependency_approval(row, root, prefix, bundle):
             if fallback is None:
                 raise ValueError("missing dependency License-File evidence")
             license_files = [
-                (path.parent / item).relative_to(root).as_posix() for item in fallback
+                (Path(provenance_file).parent / item).as_posix() for item in fallback
             ]
         if not license_files or row["license_files"] != license_files:
             raise ValueError("missing dependency License-File evidence")
         if [item["bundle_path"] for item in bundle_row["files"]] != license_files:
             raise ValueError("bundle license or notice path drift")
         if evidence.get("license_file_hashes") != {
-            item: hashlib.sha256(_path(root, item).read_bytes()).hexdigest()
+            item: hashlib.sha256(_evidence_bytes(root, item, bundle_files)).hexdigest()
             for item in license_files
         }:
             raise ValueError("dependency license file hash mismatch")
         for name in license_files:
-            if not _path(root, name).read_bytes().strip():
+            if not _evidence_bytes(root, name, bundle_files).strip():
                 raise ValueError(f"empty dependency license: {name}")
     except (OSError, ValueError) as error:
         return [f"{prefix}: {error}; REJECTED"]
     return []
 
 
-def _native_distribution_approval(row, root, prefix, bundle):
+def _native_distribution_approval(row, root, prefix, bundle, bundle_files=None):
     # A shipped native payload is accepted only as a record-bound distribution.
     errors = []
     records = [
@@ -1124,7 +1182,7 @@ def _native_distribution_approval(row, root, prefix, bundle):
     record = row["record"]
     record_rows = {}
     try:
-        bundled_record = _path(root, record["bundle_path"]).read_bytes()
+        bundled_record = _evidence_bytes(root, record["bundle_path"], bundle_files)
         source_record = _path(root, record["source_path"]).read_bytes()
     except (OSError, ValueError) as error:
         errors.append(f"{prefix}.record: {error}; REJECTED")
@@ -1141,7 +1199,7 @@ def _native_distribution_approval(row, root, prefix, bundle):
             errors.append(f"{prefix}.record: {error}; REJECTED")
     wheel = row["wheel_metadata"]
     try:
-        bundled_wheel = _path(root, wheel["bundle_path"]).read_bytes()
+        bundled_wheel = _evidence_bytes(root, wheel["bundle_path"], bundle_files)
         source_wheel_bytes = _path(root, wheel["source_path"]).read_bytes()
     except (OSError, ValueError) as error:
         errors.append(f"{prefix}.wheel_metadata: {error}; REJECTED")
@@ -1170,7 +1228,7 @@ def _native_distribution_approval(row, root, prefix, bundle):
         # Each copied wheel evidence file must retain its source bytes and RECORD hash.
         item_prefix = f"{prefix}.{field}"
         try:
-            bundled = _path(root, item["bundle_path"]).read_bytes()
+            bundled = _evidence_bytes(root, item["bundle_path"], bundle_files)
             source = _path(root, item["source_path"]).read_bytes()
         except (OSError, ValueError) as error:
             errors.append(f"{item_prefix}: {error}; REJECTED")
@@ -1205,7 +1263,7 @@ def _native_distribution_approval(row, root, prefix, bundle):
         errors.append(f"{prefix}.notice_paths: distribution bundle mismatch; REJECTED")
     for item in row["notice_paths"]:
         try:
-            if not _path(root, item).read_bytes().strip():
+            if not _evidence_bytes(root, item, bundle_files).strip():
                 raise ValueError(f"empty distribution notice: {item}")
         except (OSError, ValueError) as error:
             errors.append(f"{prefix}.notice_paths: {error}; REJECTED")
@@ -1296,7 +1354,15 @@ def _release_component_policy(matrix, facts):
     return errors
 
 
-def check_matrix(matrix, schema, root=ROOT, bundle_index=Path(BUNDLE_INDEX)):
+def check_matrix(
+    matrix,
+    schema,
+    root=ROOT,
+    bundle_index=Path(BUNDLE_INDEX),
+    local_evidence_path=build_notice_bundle.FINAL_ENV_EVIDENCE,
+    bundle_files=None,
+    notice_index=None,
+):
     # Source facts and approval evidence are checked before any provider/build work.
     schema_errors = _schema(matrix, schema, schema)
     errors = list(schema_errors)
@@ -1331,20 +1397,28 @@ def check_matrix(matrix, schema, root=ROOT, bundle_index=Path(BUNDLE_INDEX)):
                 "host ohmymeme.spdx: wrong license "
                 f"{matrix['host'].get('spdx')!r}; expected {GPL}"
             )
-    facts, source_errors, hashes = inspect_sources(root)
+    facts, source_errors, hashes = inspect_sources(
+        root, local_evidence_path, notice_index, bundle_files
+    )
     errors.extend(source_errors)
     try:
-        bundle_errors = build_notice_bundle.check_bundle(root, bundle_index)
-        errors.extend(f"{error}; REJECTED" for error in bundle_errors)
-        bundle = build_notice_bundle._json(
-            _path(root, bundle_index.as_posix()).read_bytes()
+        bundle_name = Path(bundle_index).as_posix()
+        bundle_errors = build_notice_bundle.check_bundle(
+            root,
+            bundle_index,
+            local_evidence_path,
+            bundle_files,
         )
+        errors.extend(f"{error}; REJECTED" for error in bundle_errors)
+        bundle_bytes = _evidence_bytes(root, bundle_name, bundle_files)
+        bundle = build_notice_bundle._json(bundle_bytes)
     except (OSError, ValueError) as error:
         errors.append(f"notice_bundle.index: {error}; REJECTED")
         bundle = {}
     if schema_errors:
         return errors, facts, hashes
     for field in (
+        "hash_policy",
         "host",
         "native_distributions",
         "owned_source_mapping",
@@ -1416,7 +1490,9 @@ def check_matrix(matrix, schema, root=ROOT, bundle_index=Path(BUNDLE_INDEX)):
                         f"{prefix}.dependency_approval: missing approval; REJECTED"
                     )
             else:
-                errors.extend(_dependency_approval(row, root, prefix, bundle))
+                errors.extend(
+                    _dependency_approval(row, root, prefix, bundle, bundle_files)
+                )
     native_rows = matrix["native_distributions"]
     native_facts = facts["native_distributions"]
     if [row["id"] for row in native_rows] != [row["id"] for row in native_facts]:
@@ -1432,9 +1508,134 @@ def check_matrix(matrix, schema, root=ROOT, bundle_index=Path(BUNDLE_INDEX)):
             continue
         prefix = f"matrix.native_distributions[{identifier}]"
         errors.extend(_difference(row, expected, prefix))
-        errors.extend(_native_distribution_approval(row, root, prefix, bundle))
+        errors.extend(
+            _native_distribution_approval(row, root, prefix, bundle, bundle_files)
+        )
     errors.extend(_release_component_policy(matrix, facts))
     return errors, facts, hashes
+
+
+def _materialized_rows(matrix, facts, field, key):
+    # Replace only current source-derived row fields while retaining approval text.
+    existing = matrix.get(field)
+    if not isinstance(existing, list):
+        raise ValueError(f"matrix materialization: {field} is not an array")
+    rows = {}
+    for row in existing:
+        if not isinstance(row, dict) or not isinstance(row.get(key), str):
+            raise ValueError(f"matrix materialization: malformed {field} row")
+        if row[key] in rows:
+            raise ValueError(
+                f"matrix materialization: duplicate {field} row {row[key]}"
+            )
+        rows[row[key]] = row
+    expected = facts[field]
+    expected_ids = [row[key] for row in expected]
+    if set(rows) != set(expected_ids):
+        raise ValueError(
+            f"matrix materialization: {field} approval inventory differs from source"
+        )
+    return [{**rows[row[key]], **row} for row in expected]
+
+
+def _write_matrix_file(path, matrix):
+    # Publish a complete LF matrix atomically after all source facts are derived.
+    data = json.dumps(matrix, ensure_ascii=False, indent=2) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def materialize_matrix(
+    root=ROOT,
+    matrix_path=Path(MATRIX),
+    local_evidence_path=build_notice_bundle.FINAL_ENV_EVIDENCE,
+    notice_index=None,
+    bundle_files=None,
+):
+    # Derive a candidate matrix while retaining only source-backed manual policy rows.
+    path = _path(root, Path(matrix_path).as_posix())
+    matrix = _json(path.read_bytes())
+    if not isinstance(matrix, dict):
+        raise ValueError("matrix materialization: expected object")
+    if notice_index is None:
+        notice_index = build_notice_bundle.expected_index(root, local_evidence_path)
+    if bundle_files is None:
+        bundle_errors = build_notice_bundle.check_bundle(
+            root, local_evidence_path=local_evidence_path
+        )
+    else:
+        bundle_errors = build_notice_bundle.check_bundle(
+            root,
+            local_evidence_path=local_evidence_path,
+            files=bundle_files,
+        )
+    facts, source_errors, _ = inspect_sources(
+        root, local_evidence_path, notice_index, bundle_files
+    )
+    errors = source_errors + [f"notice bundle: {error}" for error in bundle_errors]
+    if errors:
+        raise ValueError("matrix materialization blocked: " + "; ".join(errors))
+    result = copy.deepcopy(matrix)
+    host = result.get("host")
+    if not isinstance(host, dict):
+        raise ValueError("matrix materialization: host is not an object")
+    result["hash_policy"] = facts["hash_policy"]
+    result["host"] = {**host, **facts["host"]}
+    for field, key in (
+        ("distributions", "id"),
+        ("source_components", "id"),
+        ("dependencies", "name"),
+    ):
+        result[field] = _materialized_rows(result, facts, field, key)
+    for field in (
+        "native_distributions",
+        "owned_source_mapping",
+        "provider_extras",
+        "frozen_official_set",
+        "notice_bundle",
+        "release_scope",
+    ):
+        result[field] = facts[field]
+    schema = _json(_path(root, SCHEMA).read_bytes())
+    errors, _, _ = check_matrix(
+        result,
+        schema,
+        root,
+        Path(BUNDLE_INDEX),
+        local_evidence_path,
+        bundle_files,
+        notice_index,
+    )
+    if errors:
+        raise ValueError("matrix materialization blocked: " + "; ".join(errors))
+    return result
+
+
+def write_matrix(
+    root=ROOT,
+    matrix_path=Path(MATRIX),
+    local_evidence_path=build_notice_bundle.FINAL_ENV_EVIDENCE,
+):
+    # Publish a fully validated matrix when the existing bundle is already current.
+    path = _path(root, Path(matrix_path).as_posix())
+    result = materialize_matrix(root, matrix_path, local_evidence_path)
+    _write_matrix_file(path, result)
+    return _json(path.read_bytes())
 
 
 def _write_report(path, report):
@@ -1466,6 +1667,11 @@ def main(argv=None):
     parser.add_argument("--schema", type=Path, required=True)
     parser.add_argument("--matrix", type=Path, required=True)
     parser.add_argument("--bundle-index", type=Path, default=Path(BUNDLE_INDEX))
+    parser.add_argument(
+        "--local-evidence",
+        type=Path,
+        default=build_notice_bundle.FINAL_ENV_EVIDENCE,
+    )
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args(argv)
     report = {
@@ -1479,19 +1685,32 @@ def main(argv=None):
         schema_raw, matrix_raw = args.schema.read_bytes(), args.matrix.read_bytes()
         schema, matrix = _json(schema_raw), _json(matrix_raw)
         errors, facts, hashes = check_matrix(
-            matrix, schema, bundle_index=args.bundle_index
+            matrix,
+            schema,
+            bundle_index=args.bundle_index,
+            local_evidence_path=args.local_evidence,
         )
         report.update(
             {
                 "errors": errors,
                 "observed": facts,
                 "input_hashes": hashes,
-                "schema_sha256": hashlib.sha256(schema_raw).hexdigest(),
-                "matrix_sha256": hashlib.sha256(matrix_raw).hexdigest(),
+                "hash_policy": facts.get("hash_policy", {}),
+                "input_hash_modes": facts.get("hash_policy", {}).get(
+                    "input_hash_modes", {}
+                ),
+                "schema_sha256": build_notice_bundle.matrix_hash(
+                    args.schema.as_posix(), schema_raw
+                ),
+                "matrix_sha256": build_notice_bundle.matrix_hash(
+                    args.matrix.as_posix(), matrix_raw
+                ),
                 "bundle_index": args.bundle_index.as_posix(),
-                "validator_sha256": hashlib.sha256(
-                    Path(__file__).read_bytes()
-                ).hexdigest(),
+                "local_evidence_path": args.local_evidence.as_posix(),
+                "validator_sha256": build_notice_bundle.matrix_hash(
+                    Path(__file__).resolve().relative_to(ROOT).as_posix(),
+                    Path(__file__).read_bytes(),
+                ),
             }
         )
         if not errors:

@@ -4,9 +4,10 @@
   "title": "OhMyMeme source-backed license ownership matrix",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "host", "distributions", "source_components", "native_distributions", "owned_source_mapping", "dependencies", "provider_extras", "frozen_official_set", "notice_bundle", "release_scope", "excluded_distributions"],
+  "required": ["schema_version", "hash_policy", "host", "distributions", "source_components", "native_distributions", "owned_source_mapping", "dependencies", "provider_extras", "frozen_official_set", "notice_bundle", "release_scope", "excluded_distributions"],
   "properties": {
     "schema_version": {"type": "integer", "const": 2},
+    "hash_policy": {"$ref": "#/$defs/hash_policy"},
     "host": {"$ref": "#/$defs/host"},
     "distributions": {"type": "array", "minItems": 9, "maxItems": 9, "items": {"$ref": "#/$defs/distribution"}},
     "source_components": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/component"}},
@@ -24,6 +25,19 @@
     "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "git_hash": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "hashes": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#/$defs/hash"}},
+    "hash_policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "hash_mode", "text_hash_mode", "raw_hash_mode", "canonical_manifest_hash_mode", "canonical_manifest_path", "input_hash_modes"],
+      "properties": {
+        "id": {"const": "todo14-path-policy-v1"},
+        "hash_mode": {"const": "path-policy-v1"},
+        "text_hash_mode": {"const": "utf8-lf-normalized"},
+        "raw_hash_mode": {"const": "raw-bytes"},
+        "canonical_manifest_hash_mode": {"const": "raw-bytes"},
+        "canonical_manifest_path": {"const": "config/plugin-manifest.json"},
+        "input_hash_modes": {"type": "object", "minProperties": 1, "additionalProperties": {"enum": ["utf8-lf-normalized", "raw-bytes"]}}
+      }
+    },
     "provenance": {
       "type": "object", "additionalProperties": false,
       "required": ["status", "files", "references", "basis"],
@@ -196,11 +210,12 @@
     },
     "frozen_distribution": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "distribution", "version", "spdx", "dependencies", "module_files", "metadata_files", "license_files", "license_files_disabled", "metadata_sha256", "entry_points_sha256"],
+      "required": ["id", "distribution", "version", "spdx", "dependencies", "module_files", "metadata_files", "license_files", "license_files_disabled", "metadata_sha256", "entry_points_sha256", "entry_points"],
       "properties": {
         "id": {"type": "string"}, "distribution": {"type": "string"}, "version": {"type": "string"}, "spdx": {"type": "string"}, "dependencies": {"$ref": "#/$defs/strings"},
         "module_files": {"$ref": "#/$defs/strings"}, "metadata_files": {"$ref": "#/$defs/strings"}, "license_files": {"$ref": "#/$defs/strings"}, "license_files_disabled": {"type": "boolean"},
-        "metadata_sha256": {"$ref": "#/$defs/hash"}, "entry_points_sha256": {"$ref": "#/$defs/hash"}
+        "metadata_sha256": {"$ref": "#/$defs/hash"}, "entry_points_sha256": {"$ref": "#/$defs/hash"},
+        "entry_points": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "string", "minLength": 1}}}
       }
     },
     "frozen": {

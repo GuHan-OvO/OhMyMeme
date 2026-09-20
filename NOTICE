@@ -2,22 +2,22 @@ OhMyMeme NOTICE
 ===============
 
 This is an engineering evidence index, not legal advice or a license grant.
-Notice bundle version: todo14-wave5-2026-09-18-r3
-Notice bundle content SHA-256: c1e4bc8f5cc21bc994386fcd17f1976e4401b65f2fd31fbdc30fe868da8e6c9b
+Notice bundle version: todo14-final-2026-09-18-r4
+Notice bundle content SHA-256: be60e4975630221d00cf9707d190670148128e7c6fdc901d2d6d6dfb687b873a
 
 Python distribution evidence and frozen scope
 -------------------------------------------
 
-boto3 1.43.94 [approved; evidence_expression: Apache-2.0]
+boto3 1.43.97 [approved; evidence_expression: Apache-2.0]
   source: https://github.com/boto/boto3
-  metadata: THIRD-PARTY-NOTICES/boto3/METADATA sha256=078e2ec9e5fee88345613a80eb555566e675d19351833e583de03e9d5b2a7f6f (License: Apache-2.0)
+  metadata: THIRD-PARTY-NOTICES/boto3/METADATA sha256=b5fad9445c55222613838caa24650f89faa332b983bdac76c5f136d7667cae80 (License: Apache-2.0)
   expression basis: The retained full LICENSE is Apache License, Version 2.0; this is release evidence, not a synthesized PEP 639 metadata field.
   notice: THIRD-PARTY-NOTICES/boto3/LICENSE sha256=0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594
   notice: THIRD-PARTY-NOTICES/boto3/NOTICE sha256=04fb1e61484a7810f1ba09bb42bc01ca58c9af33927d7c5a21556e4c4d1c7fa4
 
-botocore 1.43.94 [approved; evidence_expression: Apache-2.0]
+botocore 1.43.97 [approved; evidence_expression: Apache-2.0]
   source: https://github.com/boto/botocore
-  metadata: THIRD-PARTY-NOTICES/botocore/METADATA sha256=02b47103e3b6728d16e2c66de3f3063b38867a197311c722f5c9e6b7c74f667a (License: Apache-2.0)
+  metadata: THIRD-PARTY-NOTICES/botocore/METADATA sha256=afc8177e124322cb35c84ca097e90522ccaa41bf7fe476fc3abd4e0e69440bdd (License: Apache-2.0)
   expression basis: The retained full LICENSE.txt is Apache License, Version 2.0; this is release evidence, not a synthesized PEP 639 metadata field.
   notice: THIRD-PARTY-NOTICES/botocore/LICENSE.txt sha256=0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594
   notice: THIRD-PARTY-NOTICES/botocore/NOTICE sha256=1d1c5a6f3d68cb11f4fad1afa86a7450d0286f15c176ef0ea048f255b46d95b0
@@ -68,6 +68,12 @@ pydantic 2.11.7 [approved; evidence_expression: MIT]
   metadata: THIRD-PARTY-NOTICES/pydantic/METADATA sha256=f791b40bde997db7ff175b238bff97d50cf9505a8aa307e0bf791d57ed1ae282 (License-Expression: MIT)
   expression basis: The installed PEP 639 License-Expression and retained LICENSE state MIT.
   notice: THIRD-PARTY-NOTICES/pydantic/LICENSE sha256=a9e186f3ca16b5eef84318e7a701721351a00cb7b8ae3a4394b67b49e3529ef3
+
+pypinyin 0.55.0 [approved; evidence_expression: MIT]
+  source: https://github.com/mozillazg/python-pinyin
+  metadata: THIRD-PARTY-NOTICES/pypinyin/METADATA sha256=82ac94eb74fa0eb500355219bc585228716759ed255c385c5e32dd28ddbaf03f (License: MIT)
+  expression basis: The retained legacy License field and installed LICENSE.txt state MIT.
+  notice: THIRD-PARTY-NOTICES/pypinyin/LICENSE.txt sha256=1e6c90014b4912815c296ee64bb6f6280af47e6d4c5d80e86232dfc5defe764c
 
 pyinstaller 6.22.3 [approved; evidence_expression: GPL-2.0-or-later WITH Bootloader-exception]
   source: https://github.com/pyinstaller/pyinstaller
@@ -142,7 +148,7 @@ curl-cffi-wheel [shipped_distribution; distribution-covered-unmapped]
   distribution: curl-cffi 0.16.3; evidence_expression: MIT
   PyPI wheel: curl_cffi-0.16.3-cp310-abi3-win_amd64.whl sha256=fe87b66e324ed7318166698e02169f3208dbda32b872a27d2bc61a9c19b335eb
   PyPI JSON: https://pypi.org/pypi/curl-cffi/0.16.3/json
-  RECORD: THIRD-PARTY-NOTICES/curl-cffi/RECORD sha256=a8ae7f4581aee9df62397bc6a6793086a26e74506a684572d91bcfb6ac945886
+  RECORD: THIRD-PARTY-NOTICES/curl-cffi/RECORD sha256=08f043276ab2667ae98256770432bc69d9d155f3297e8da5035f92603d80dbc3
   WHEEL: THIRD-PARTY-NOTICES/curl-cffi/WHEEL sha256=1517363ea090e5011be1d9d80dafaf4c645b95893f0bbc1eceffba05d3bcfb89; tag=cp310-abi3-win_amd64
   native artifact: curl_cffi/_wrapper.pyd sha256=d7d354dc1b6b0be4bffa463940e7f81e50f2f5d741a9f4724b8f2fff7341cff7
   native artifact: curl_cffi.libs/libcurl-impersonate-1172405423dc93b7aeed557f2a2ca325.dll sha256=1172405423dc93b7aeed557f2a2ca325f73d89c4593640a4b775cee3cc1ea048
@@ -166,7 +172,7 @@ gmssl-distribution [external_runtime_not_shipped]
   reason: The installed distribution has only legacy License: BSD metadata, no License-Expression, no License-File, and no installed license file. The official PyPI metadata reports the same legacy label. The upstream v3.2.2, 3.2.2, and master LICENSE raw URL probes returned 404. The upstream master setup.py did return version 3.2.2 with license='BSD', but that does not identify a precise SPDX BSD variant or supply a license text. The exact PyPI source archive was additionally verified and contained no complete license text.
 wechat-helper-openssl [helper_build_input_not_reproducible]
   owner: source.wechat; excluded from: pyinstaller, nuitka
-  evidence: 3d558e79c3a687160b919be215f9b494a50199974eae68d3ce7080f5e5841c0b
+  evidence: 83d9ab16dad70d34d34f83db0c03b54a25b459ec3e5365ce44351501c104d128
   reason: CMake requests a static OpenSSL::Crypto target but fixes neither version nor OpenSSL root/source archive/hash. No CMakeCache, static library, helper executable, or build attestation is in the worktree. The cryptography wheel SBOM's OpenSSL 4.0.2 record is intentionally not reused for this independent CMake dependency.
 wechat-keyfinder-downloaded-binary [external_runtime_not_shipped]
   owner: source.wechat; excluded from: pyinstaller, nuitka
@@ -177,6 +183,6 @@ Local helper source mapping
 ---------------------------
 wechat-keyfinder-local-source [local-source-only; GPL-3.0-only]
   root LICENSE sha256=230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809; local tag 0.6.3 (287c5127915208e2ca647115de3eb664237d5554)
-  source: src/wechat_keyfinder/CMakeLists.txt sha256=3d558e79c3a687160b919be215f9b494a50199974eae68d3ce7080f5e5841c0b
-  source: src/wechat_keyfinder/wechat_keyfinder.cpp sha256=f05c5a591d146ec9ef328dc52f5c94e76fd8b9a0c7a4d7906677254338c67c48
+  source: src/wechat_keyfinder/CMakeLists.txt sha256=83d9ab16dad70d34d34f83db0c03b54a25b459ec3e5365ce44351501c104d128
+  source: src/wechat_keyfinder/wechat_keyfinder.cpp sha256=9fc47dfc690a38f22d4515707baa8075ddff5169913421e75e69df93425c0a89
   limitation: The root GPL text and local tag map only the repository-local C++ source. They do not attest that the separately fetched helper executable was built from this source or from any particular OpenSSL.

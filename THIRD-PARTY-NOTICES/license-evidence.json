@@ -1,6 +1,6 @@
 {
-  "bundle_version": "todo14-wave5-2026-09-18-r3",
-  "content_sha256": "c1e4bc8f5cc21bc994386fcd17f1976e4401b65f2fd31fbdc30fe868da8e6c9b",
+  "bundle_version": "todo14-final-2026-09-18-r4",
+  "content_sha256": "be60e4975630221d00cf9707d190670148128e7c6fdc901d2d6d6dfb687b873a",
   "distributions": [
     {
       "approval": "approved",
@@ -11,26 +11,26 @@
           "bundle_path": "THIRD-PARTY-NOTICES/boto3/LICENSE",
           "role": "license",
           "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
-          "source_path": ".venv/Lib/site-packages/boto3-1.43.94.dist-info/LICENSE"
+          "source_path": ".venv/Lib/site-packages/boto3-1.43.97.dist-info/LICENSE"
         },
         {
           "bundle_path": "THIRD-PARTY-NOTICES/boto3/NOTICE",
           "role": "notice",
           "sha256": "04fb1e61484a7810f1ba09bb42bc01ca58c9af33927d7c5a21556e4c4d1c7fa4",
-          "source_path": ".venv/Lib/site-packages/boto3-1.43.94.dist-info/NOTICE"
+          "source_path": ".venv/Lib/site-packages/boto3-1.43.97.dist-info/NOTICE"
         }
       ],
       "metadata": {
         "bundle_path": "THIRD-PARTY-NOTICES/boto3/METADATA",
         "license": "Apache-2.0",
         "license_field": "License",
-        "sha256": "078e2ec9e5fee88345613a80eb555566e675d19351833e583de03e9d5b2a7f6f",
-        "source_path": ".venv/Lib/site-packages/boto3-1.43.94.dist-info/METADATA"
+        "sha256": "b5fad9445c55222613838caa24650f89faa332b983bdac76c5f136d7667cae80",
+        "source_path": ".venv/Lib/site-packages/boto3-1.43.97.dist-info/METADATA"
       },
       "name": "boto3",
       "source_url": "https://github.com/boto/boto3",
       "spdx": "Apache-2.0",
-      "version": "1.43.94"
+      "version": "1.43.97"
     },
     {
       "approval": "approved",
@@ -41,26 +41,26 @@
           "bundle_path": "THIRD-PARTY-NOTICES/botocore/LICENSE.txt",
           "role": "license",
           "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
-          "source_path": ".venv/Lib/site-packages/botocore-1.43.94.dist-info/LICENSE.txt"
+          "source_path": ".venv/Lib/site-packages/botocore-1.43.97.dist-info/LICENSE.txt"
         },
         {
           "bundle_path": "THIRD-PARTY-NOTICES/botocore/NOTICE",
           "role": "notice",
           "sha256": "1d1c5a6f3d68cb11f4fad1afa86a7450d0286f15c176ef0ea048f255b46d95b0",
-          "source_path": ".venv/Lib/site-packages/botocore-1.43.94.dist-info/NOTICE"
+          "source_path": ".venv/Lib/site-packages/botocore-1.43.97.dist-info/NOTICE"
         }
       ],
       "metadata": {
         "bundle_path": "THIRD-PARTY-NOTICES/botocore/METADATA",
         "license": "Apache-2.0",
         "license_field": "License",
-        "sha256": "02b47103e3b6728d16e2c66de3f3063b38867a197311c722f5c9e6b7c74f667a",
-        "source_path": ".venv/Lib/site-packages/botocore-1.43.94.dist-info/METADATA"
+        "sha256": "afc8177e124322cb35c84ca097e90522ccaa41bf7fe476fc3abd4e0e69440bdd",
+        "source_path": ".venv/Lib/site-packages/botocore-1.43.97.dist-info/METADATA"
       },
       "name": "botocore",
       "source_url": "https://github.com/boto/botocore",
       "spdx": "Apache-2.0",
-      "version": "1.43.94"
+      "version": "1.43.97"
     },
     {
       "approval": "approved",
@@ -244,6 +244,30 @@
     },
     {
       "approval": "approved",
+      "evidence_expression": "MIT",
+      "evidence_expression_basis": "The retained legacy License field and installed LICENSE.txt state MIT.",
+      "files": [
+        {
+          "bundle_path": "THIRD-PARTY-NOTICES/pypinyin/LICENSE.txt",
+          "role": "license",
+          "sha256": "1e6c90014b4912815c296ee64bb6f6280af47e6d4c5d80e86232dfc5defe764c",
+          "source_path": ".venv/Lib/site-packages/pypinyin-0.55.0.dist-info/licenses/LICENSE.txt"
+        }
+      ],
+      "metadata": {
+        "bundle_path": "THIRD-PARTY-NOTICES/pypinyin/METADATA",
+        "license": "MIT",
+        "license_field": "License",
+        "sha256": "82ac94eb74fa0eb500355219bc585228716759ed255c385c5e32dd28ddbaf03f",
+        "source_path": ".venv/Lib/site-packages/pypinyin-0.55.0.dist-info/METADATA"
+      },
+      "name": "pypinyin",
+      "source_url": "https://github.com/mozillazg/python-pinyin",
+      "spdx": "MIT",
+      "version": "0.55.0"
+    },
+    {
+      "approval": "approved",
       "evidence_expression": "GPL-2.0-or-later WITH Bootloader-exception",
       "evidence_expression_basis": "The retained COPYING.txt states the Bootloader Exception and its file-specific Apache-2.0 and MIT scopes.",
       "files": [
@@ -418,7 +442,7 @@
       "owner": "source.wechat",
       "reason": "CMake requests a static OpenSSL::Crypto target but fixes neither version nor OpenSSL root/source archive/hash. No CMakeCache, static library, helper executable, or build attestation is in the worktree. The cryptography wheel SBOM's OpenSSL 4.0.2 record is intentionally not reused for this independent CMake dependency.",
       "scope": "helper_build_input_not_reproducible",
-      "sha256": "3d558e79c3a687160b919be215f9b494a50199974eae68d3ce7080f5e5841c0b",
+      "sha256": "83d9ab16dad70d34d34f83db0c03b54a25b459ec3e5365ce44351501c104d128",
       "source_path": "src/wechat_keyfinder/CMakeLists.txt"
     },
     {
@@ -436,6 +460,18 @@
       "url": "https://github.com/ZE514/OhMyMeme/releases/download/v0.6.3/wechat_keyfinder-windows-x64.exe"
     }
   ],
+  "hash_policy": {
+    "canonical_manifest_hash_mode": "raw-bytes",
+    "canonical_manifest_path": "config/plugin-manifest.json",
+    "hash_mode": "path-policy-v1",
+    "id": "todo14-path-policy-v1",
+    "raw_hash_mode": "raw-bytes",
+    "text_hash_mode": "utf8-lf-normalized"
+  },
+  "local_evidence": {
+    "path": ".omo/evidence/pluginized-recomposition-parity/todo-14-final-environment-installation.json",
+    "sha256": "c6de215a8a3cc8ee995ad4ebd1152e5dba25a11a7dc9e061f5b2b74de0af8533"
+  },
   "native_distributions": [
     {
       "artifacts": [
@@ -597,7 +633,7 @@
       ],
       "record": {
         "bundle_path": "THIRD-PARTY-NOTICES/curl-cffi/RECORD",
-        "sha256": "a8ae7f4581aee9df62397bc6a6793086a26e74506a684572d91bcfb6ac945886",
+        "sha256": "08f043276ab2667ae98256770432bc69d9d155f3297e8da5035f92603d80dbc3",
         "source_path": ".venv/Lib/site-packages/curl_cffi-0.16.3.dist-info/RECORD"
       },
       "sbom_files": [],
@@ -631,8 +667,8 @@
     },
     "scope": "local-source-only",
     "source_hashes": {
-      "src/wechat_keyfinder/CMakeLists.txt": "3d558e79c3a687160b919be215f9b494a50199974eae68d3ce7080f5e5841c0b",
-      "src/wechat_keyfinder/wechat_keyfinder.cpp": "f05c5a591d146ec9ef328dc52f5c94e76fd8b9a0c7a4d7906677254338c67c48"
+      "src/wechat_keyfinder/CMakeLists.txt": "83d9ab16dad70d34d34f83db0c03b54a25b459ec3e5365ce44351501c104d128",
+      "src/wechat_keyfinder/wechat_keyfinder.cpp": "9fc47dfc690a38f22d4515707baa8075ddff5169913421e75e69df93425c0a89"
     },
     "source_paths": [
       "src/wechat_keyfinder/CMakeLists.txt",
@@ -641,7 +677,8 @@
   },
   "research": [
     ".omo/evidence/pluginized-recomposition-parity/todo-14-license-source-research.json",
-    ".omo/evidence/pluginized-recomposition-parity/todo-14-helper-local-provenance.json"
+    ".omo/evidence/pluginized-recomposition-parity/todo-14-helper-local-provenance.json",
+    ".omo/evidence/pluginized-recomposition-parity/todo-14-final-environment-installation.json"
   ],
   "schema_version": 2
 }

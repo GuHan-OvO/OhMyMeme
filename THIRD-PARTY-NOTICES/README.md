@@ -6,5 +6,5 @@ RECORD files, WHEEL files, and SBOMs are copied without editing.
 It does not contain a downloaded helper executable, a PYD, a DLL, or a
 static library. See ../NOTICE for the release scope and limitations.
 
-Bundle version: todo14-wave5-2026-09-18-r3
-Content SHA-256: c1e4bc8f5cc21bc994386fcd17f1976e4401b65f2fd31fbdc30fe868da8e6c9b
+Bundle version: todo14-final-2026-09-18-r4
+Content SHA-256: be60e4975630221d00cf9707d190670148128e7c6fdc901d2d6d6dfb687b873a

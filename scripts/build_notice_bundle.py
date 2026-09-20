@@ -22,9 +22,21 @@ HELPER_RESEARCH = Path(
     ".omo/evidence/pluginized-recomposition-parity/"
     "todo-14-helper-local-provenance.json"
 )
+FINAL_ENV_EVIDENCE = Path(
+    ".omo/evidence/pluginized-recomposition-parity/"
+    "todo-14-final-environment-installation.json"
+)
+CURL_CFFI_OFFICIAL_RECORD_SHA256 = (
+    "be2f44dc3d91b1a64381a7fc7f663e11eff79a901b52dd3f3f57a140fb06481f"
+)
 BUNDLE = Path("THIRD-PARTY-NOTICES")
 INDEX = BUNDLE / "license-evidence.json"
-BUNDLE_VERSION = "todo14-wave5-2026-09-18-r3"
+MATRIX = Path("docs/plugin-license-matrix.json")
+STAGING = "fixtures/plugin-parity/frozen-staging"
+BUNDLE_VERSION = "todo14-final-2026-09-18-r4"
+HASH_POLICY_ID = "todo14-path-policy-v1"
+HASH_MODE_TEXT = "utf8-lf-normalized"
+HASH_MODE_RAW = "raw-bytes"
 APPROVED_SPDX = {
     "boto3": "Apache-2.0",
     "botocore": "Apache-2.0",
@@ -34,6 +46,7 @@ APPROVED_SPDX = {
     "keyboard": "MIT",
     "pillow": "MIT-CMU",
     "pydantic": "MIT",
+    "pypinyin": "MIT",
     "pyinstaller": "GPL-2.0-or-later WITH Bootloader-exception",
     "pyperclip": "BSD-3-Clause",
     "pystray": "LGPL-3.0-only",
@@ -77,6 +90,10 @@ EVIDENCE_EXPRESSIONS = {
     "pydantic": (
         "MIT",
         "The installed PEP 639 License-Expression and retained LICENSE state MIT.",
+    ),
+    "pypinyin": (
+        "MIT",
+        "The retained legacy License field and installed LICENSE.txt state MIT.",
     ),
     "pyinstaller": (
         "GPL-2.0-or-later WITH Bootloader-exception",
@@ -217,12 +234,7 @@ NATIVE_WHEEL_SPECS = (
         "extra_evidence_paths": (
             ".venv/Lib/site-packages/curl_cffi-0.16.3.dist-info/DELVEWHEEL",
         ),
-        "record_sha256": (
-            "a8ae7f4581aee9df62397bc6a6793086a26e74506a684572d91bcfb6ac945886"
-        ),
-        "wheel_metadata_sha256": (
-            "1517363ea090e5011be1d9d80dafaf4c645b95893f0bbc1eceffba05d3bcfb89"
-        ),
+        "local_evidence": "curl-cffi",
         "source_wheel": {
             "filename": "curl_cffi-0.16.3-cp310-abi3-win_amd64.whl",
             "url": (
@@ -254,6 +266,7 @@ ORDER = (
     "keyboard",
     "pillow",
     "pydantic",
+    "pypinyin",
     "pyinstaller",
     "pyperclip",
     "pystray",
@@ -283,6 +296,74 @@ def _json(raw):
 def _sha256(data):
     # Hash raw bytes rather than decoded text so copied notices stay byte-exact.
     return hashlib.sha256(data).hexdigest()
+
+
+def _utf8_lf_bytes(data):
+    # Normalize only controlled UTF-8 text before source and staging comparisons.
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("utf8-lf-normalized hash requires UTF-8 text") from error
+    return text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
+
+
+def matrix_hash_mode(name):
+    # Select the documented path policy without weakening raw artifact provenance.
+    name = str(name).replace("\\", "/")
+    canonical_manifests = {
+        "config/plugin-manifest.json",
+        f"{STAGING}/ohmymeme/config/plugin-manifest.json",
+    }
+    if name in canonical_manifests:
+        return HASH_MODE_RAW
+    if (
+        name in {"LICENSE", "NOTICE"}
+        or name.startswith("LICENSES/")
+        or name.startswith("THIRD-PARTY-NOTICES/")
+        or name.startswith(".venv/")
+        or "/.dist-info/licenses/" in name
+        or name.endswith("/RECORD")
+        or name.endswith((".dll", ".exe", ".lib", ".obj", ".pdb", ".pyd"))
+    ):
+        return HASH_MODE_RAW
+    if name.startswith(f"{STAGING}/"):
+        if name.endswith((".py", "/METADATA", "/entry_points.txt", "/top_level.txt")):
+            return HASH_MODE_TEXT
+        if name == f"{STAGING}/staging-manifest.json":
+            return HASH_MODE_TEXT
+        return HASH_MODE_RAW
+    if name in {"requirements.txt", "requirements-dev.txt", "environment.yml"}:
+        return HASH_MODE_TEXT
+    if name.endswith(
+        (".py", ".cpp", ".h", ".hpp", ".toml", ".json", ".md", ".yml", ".yaml")
+    ):
+        return HASH_MODE_TEXT
+    if name.endswith("/CMakeLists.txt"):
+        return HASH_MODE_TEXT
+    return HASH_MODE_RAW
+
+
+def matrix_hash(name, data):
+    # Hash a matrix input according to its path-specific evidence policy.
+    mode = matrix_hash_mode(name)
+    if mode == HASH_MODE_TEXT:
+        return _sha256(_utf8_lf_bytes(data))
+    return _sha256(data)
+
+
+def matrix_hash_policy(input_hash_modes=None):
+    # Describe the source/staging and artifact hash modes carried by Todo14 evidence.
+    policy = {
+        "id": HASH_POLICY_ID,
+        "hash_mode": "path-policy-v1",
+        "text_hash_mode": HASH_MODE_TEXT,
+        "raw_hash_mode": HASH_MODE_RAW,
+        "canonical_manifest_hash_mode": HASH_MODE_RAW,
+        "canonical_manifest_path": "config/plugin-manifest.json",
+    }
+    if input_hash_modes is None:
+        return policy
+    return {**policy, "input_hash_modes": dict(sorted(input_hash_modes.items()))}
 
 
 def _path(root, name):
@@ -335,6 +416,320 @@ def _research(root):
     ):
         raise ValueError("helper research task identity drift")
     return source, helper
+
+
+def _final_environment_evidence(root, evidence_path, spec):
+    # Load explicit final-installation evidence without accepting stale records.
+    path = _path(root, Path(evidence_path).as_posix())
+    evidence = _json(path.read_bytes())
+    if set(evidence) != {
+        "schema_version",
+        "task",
+        "research_only",
+        "curl_cffi",
+        "supersedes",
+        "distribution_overrides",
+        "additional_distributions",
+    }:
+        raise ValueError("final environment: malformed installation evidence")
+    curl_cffi = evidence["curl_cffi"]
+    if not isinstance(curl_cffi, dict) or set(curl_cffi) != {
+        "distribution",
+        "version",
+        "source_wheel",
+        "official_wheel_record_sha256",
+        "installed",
+        "assessment",
+    }:
+        raise ValueError("curl-cffi: malformed local installation evidence")
+    if (
+        evidence["schema_version"] != 1
+        or evidence["task"]
+        != "pluginized-recomposition-parity/Todo14/final-environment-installation"
+        or evidence["research_only"] is not True
+        or curl_cffi["distribution"] != "curl-cffi"
+        or curl_cffi["version"] != "0.16.3"
+        or curl_cffi["source_wheel"] != spec["source_wheel"]
+        or curl_cffi["official_wheel_record_sha256"] != CURL_CFFI_OFFICIAL_RECORD_SHA256
+    ):
+        raise ValueError("curl-cffi: local installation identity/source wheel drift")
+    installed = curl_cffi["installed"]
+    if not isinstance(installed, dict) or set(installed) != {
+        "metadata",
+        "record",
+        "wheel_metadata",
+        "launcher",
+        "artifacts",
+        "evidence_files",
+    }:
+        raise ValueError("curl-cffi: local installation fields missing")
+    for name in ("metadata", "record", "wheel_metadata"):
+        value = installed[name]
+        if not isinstance(value, dict) or set(value) != {"source_path", "sha256"}:
+            raise ValueError(f"curl-cffi: malformed local {name} evidence")
+        if not isinstance(value["source_path"], str) or not isinstance(
+            value["sha256"], str
+        ):
+            raise ValueError(f"curl-cffi: local {name} path/hash missing")
+    launcher = installed["launcher"]
+    if (
+        not isinstance(launcher, dict)
+        or set(launcher)
+        != {
+            "source_path",
+            "record_path",
+            "sha256",
+        }
+        or not all(isinstance(launcher[key], str) for key in launcher)
+    ):
+        raise ValueError("curl-cffi: malformed local launcher evidence")
+    for name in ("artifacts", "evidence_files"):
+        values = installed[name]
+        if not isinstance(values, list) or not values:
+            raise ValueError(f"curl-cffi: local {name} missing")
+        expected = {"source_path", "sha256"}
+        if name == "artifacts":
+            expected.add("record_path")
+        for value in values:
+            if not isinstance(value, dict) or set(value) != expected:
+                raise ValueError(f"curl-cffi: malformed local {name} entry")
+            if not all(isinstance(value[key], str) for key in expected):
+                raise ValueError(f"curl-cffi: local {name} path/hash missing")
+    supersedes = evidence["supersedes"]
+    if not isinstance(supersedes, dict) or set(supersedes) != {
+        "wave5_license_source_research",
+        "wave5_bundle_version",
+        "wave5_record_sha256",
+        "wave5_launcher_record",
+    }:
+        raise ValueError("curl-cffi: superseded Wave5 evidence missing")
+    wave5 = supersedes["wave5_license_source_research"]
+    if not isinstance(wave5, dict) or set(wave5) != {"path", "sha256"}:
+        raise ValueError("curl-cffi: malformed superseded Wave5 research")
+    if (
+        not isinstance(wave5["path"], str)
+        or not isinstance(wave5["sha256"], str)
+        or _sha256(_path(root, wave5["path"]).read_bytes()) != wave5["sha256"]
+        or supersedes["wave5_bundle_version"] != "todo14-wave5-2026-09-18-r3"
+        or not isinstance(supersedes["wave5_record_sha256"], str)
+        or supersedes["wave5_record_sha256"] == installed["record"]["sha256"]
+        or not isinstance(supersedes["wave5_launcher_record"], str)
+        or not supersedes["wave5_launcher_record"].startswith(
+            "../../Scripts/curl-cffi.exe,sha256="
+        )
+    ):
+        raise ValueError("curl-cffi: superseded Wave5 evidence drift")
+    assessment = curl_cffi["assessment"]
+    if (
+        not isinstance(assessment, dict)
+        or set(assessment)
+        != {
+            "status",
+            "dll_license_status",
+        }
+        or assessment
+        != {
+            "status": "legitimate-installed-record-rewrite",
+            "dll_license_status": "NOASSERTION",
+        }
+    ):
+        raise ValueError("curl-cffi: local installation assessment drift")
+    if not isinstance(evidence["distribution_overrides"], dict):
+        raise ValueError("final environment: distribution overrides missing")
+    if not isinstance(evidence["additional_distributions"], dict):
+        raise ValueError("final environment: additional distributions missing")
+    return evidence
+
+
+def _final_distribution_overrides(root, evidence, research, candidates):
+    # Apply only hash-verified final-environment replacements for stale packages.
+    overrides = evidence["distribution_overrides"]
+    if set(overrides) != {"boto3", "botocore"}:
+        raise ValueError("final environment: unexpected distribution overrides")
+    rows = {}
+    current_candidates = list(candidates)
+    for name in ("boto3", "botocore"):
+        override = overrides[name]
+        base = research["approved_candidates"].get(name)
+        if (
+            not isinstance(override, dict)
+            or base is None
+            or set(override)
+            != {
+                "version",
+                "metadata",
+                "files",
+                "official_sources",
+                "supersedes",
+            }
+        ):
+            raise ValueError(f"{name}: malformed final environment override")
+        version = override["version"]
+        metadata = override["metadata"]
+        files = override["files"]
+        official = override["official_sources"]
+        supersedes = override["supersedes"]
+        prefix = f".venv/Lib/site-packages/{name}-{version}.dist-info/"
+        if (
+            not isinstance(version, str)
+            or not isinstance(metadata, dict)
+            or set(metadata) != {"path", "sha256"}
+            or metadata["path"] != prefix + "METADATA"
+            or not isinstance(metadata["sha256"], str)
+            or _sha256(_path(root, metadata["path"]).read_bytes()) != metadata["sha256"]
+        ):
+            raise ValueError(f"{name}: final metadata evidence drift")
+        old_prefix = str(Path(base["metadata"]["path"]).parent).replace("\\", "/")
+        old_files = [
+            item
+            for item in candidates
+            if item.get("source_path", "").startswith(old_prefix + "/")
+        ]
+        if not isinstance(files, list) or len(files) != len(old_files):
+            raise ValueError(f"{name}: final notice evidence differs from Wave5")
+        expected_notices = {
+            (item["suggested_bundle_path"], item["role"]) for item in old_files
+        }
+        actual_notices = set()
+        for item in files:
+            if not isinstance(item, dict) or set(item) != {
+                "source_path",
+                "suggested_bundle_path",
+                "role",
+                "sha256",
+            }:
+                raise ValueError(f"{name}: malformed final notice evidence")
+            if (
+                not isinstance(item["source_path"], str)
+                or not item["source_path"].startswith(prefix)
+                or not isinstance(item["sha256"], str)
+                or _sha256(_path(root, item["source_path"]).read_bytes())
+                != item["sha256"]
+            ):
+                raise ValueError(f"{name}: final notice source hash drift")
+            actual_notices.add((item["suggested_bundle_path"], item["role"]))
+        if actual_notices != expected_notices or len(actual_notices) != len(files):
+            raise ValueError(f"{name}: final notice scope differs from Wave5")
+        if not isinstance(official, dict) or set(official) != {
+            "pypi_json_url",
+            "source_url",
+            "source_ref",
+            "wheel",
+        }:
+            raise ValueError(f"{name}: official final source evidence missing")
+        wheel = official["wheel"]
+        if (
+            official["pypi_json_url"] != f"https://pypi.org/pypi/{name}/{version}/json"
+            or official["source_url"] != base["official_sources"]["source_url"]
+            or official["source_ref"] != version
+            or not isinstance(wheel, dict)
+            or set(wheel) != {"filename", "url", "sha256"}
+            or wheel["filename"] != f"{name}-{version}-py3-none-any.whl"
+            or not isinstance(wheel["url"], str)
+            or not wheel["url"].startswith("https://files.pythonhosted.org/")
+            or not isinstance(wheel["sha256"], str)
+            or len(wheel["sha256"]) != 64
+        ):
+            raise ValueError(f"{name}: official final source evidence drift")
+        if not isinstance(supersedes, dict) or supersedes != {
+            "wave5_version": base["version"],
+            "wave5_metadata_sha256": base["metadata"]["sha256"],
+        }:
+            raise ValueError(f"{name}: superseded Wave5 evidence drift")
+        row = dict(base)
+        row["version"] = version
+        row["metadata"] = {**base["metadata"], **metadata}
+        row["official_sources"] = {
+            **base["official_sources"],
+            "pypi_metadata": official["pypi_json_url"],
+            "source_ref": version,
+        }
+        rows[name] = row
+        current_candidates = [
+            item
+            for item in current_candidates
+            if not item.get("source_path", "").startswith(old_prefix + "/")
+        ]
+        current_candidates.extend(files)
+    return rows, current_candidates
+
+
+def _final_additional_distributions(root, evidence):
+    # Bind newly declared current dependencies without rewriting Wave5 research.
+    additions = evidence["additional_distributions"]
+    if set(additions) != {"pypinyin"}:
+        raise ValueError("final environment: unexpected additional distributions")
+    row = additions["pypinyin"]
+    if not isinstance(row, dict) or set(row) != {
+        "version",
+        "metadata",
+        "files",
+        "official_sources",
+    }:
+        raise ValueError("pypinyin: malformed final environment evidence")
+    version = row["version"]
+    metadata = row["metadata"]
+    prefix = f".venv/Lib/site-packages/pypinyin-{version}.dist-info/"
+    if (
+        version != "0.55.0"
+        or not isinstance(metadata, dict)
+        or set(metadata) != {"path", "sha256", "license"}
+        or metadata["path"] != prefix + "METADATA"
+        or metadata["license"] != "MIT"
+        or not isinstance(metadata["sha256"], str)
+        or _sha256(_path(root, metadata["path"]).read_bytes()) != metadata["sha256"]
+    ):
+        raise ValueError("pypinyin: final metadata evidence drift")
+    metadata_text = _path(root, metadata["path"]).read_text(encoding="utf-8")
+    if any(
+        field not in "\n" + metadata_text
+        for field in (
+            "\nName: pypinyin\n",
+            f"\nVersion: {version}\n",
+            "\nLicense: MIT\n",
+            "\nLicense-File: LICENSE.txt\n",
+        )
+    ):
+        raise ValueError("pypinyin: final metadata fields drift")
+    files = row["files"]
+    expected_file = {
+        "source_path": prefix + "licenses/LICENSE.txt",
+        "suggested_bundle_path": "THIRD-PARTY-NOTICES/pypinyin/LICENSE.txt",
+        "role": "license",
+    }
+    if not isinstance(files, list) or len(files) != 1:
+        raise ValueError("pypinyin: final license evidence missing")
+    item = files[0]
+    if (
+        not isinstance(item, dict)
+        or set(item) != {*expected_file, "sha256"}
+        or any(item[key] != value for key, value in expected_file.items())
+        or not isinstance(item["sha256"], str)
+        or _sha256(_path(root, item["source_path"]).read_bytes()) != item["sha256"]
+    ):
+        raise ValueError("pypinyin: final license evidence drift")
+    official = row["official_sources"]
+    if (
+        not isinstance(official, dict)
+        or set(official) != {"pypi_json_url", "source_url", "source_ref"}
+        or official
+        != {
+            "pypi_json_url": f"https://pypi.org/pypi/pypinyin/{version}/json",
+            "source_url": "https://github.com/mozillazg/python-pinyin",
+            "source_ref": version,
+        }
+    ):
+        raise ValueError("pypinyin: final source evidence drift")
+    return (
+        {
+            "pypinyin": {
+                "version": version,
+                "metadata": metadata,
+                "official_sources": official,
+            }
+        },
+        files,
+    )
 
 
 def _entry(name, row, candidates, approved):
@@ -426,11 +821,12 @@ def _record_digest(value):
         raise ValueError(f"malformed RECORD SHA-256: {value!r}") from error
 
 
-def _native_distributions(root, research, helper_research, rows):
+def _native_distributions(root, research, helper_research, rows, final_evidence):
     # Bind native payloads to one exact wheel, RECORD, notices, and optional SBOMs.
     candidate_rows = {row["name"]: row for row in rows}
     native_hashes = helper_research["local_hashes"]["native_and_sbom"]
     site_packages = root / ".venv" / "Lib" / "site-packages"
+    local_evidence = {"curl-cffi": final_evidence["curl_cffi"]["installed"]}
     result = []
     for spec in NATIVE_WHEEL_SPECS:
         name = spec["distribution"]
@@ -441,11 +837,56 @@ def _native_distributions(root, research, helper_research, rows):
         dist_info = str(Path(metadata_source).parent).replace("\\", "/")
         record_source = f"{dist_info}/RECORD"
         wheel_source = f"{dist_info}/WHEEL"
+        installed_evidence = local_evidence.get(name)
+        if installed_evidence is not None:
+            metadata = installed_evidence["metadata"]
+            record_evidence = installed_evidence["record"]
+            wheel_evidence = installed_evidence["wheel_metadata"]
+            if metadata != {
+                "source_path": metadata_source,
+                "sha256": candidate["metadata"]["sha256"],
+            }:
+                raise ValueError(
+                    f"{name}: local metadata evidence differs from research"
+                )
+            if record_evidence["source_path"] != record_source:
+                raise ValueError(f"{name}: local RECORD path differs from metadata")
+            if wheel_evidence["source_path"] != wheel_source:
+                raise ValueError(f"{name}: local WHEEL path differs from metadata")
+            evidence_artifacts = installed_evidence["artifacts"]
+            evidence_files = installed_evidence["evidence_files"]
+            if {item["source_path"] for item in evidence_artifacts} != set(
+                spec["artifact_paths"]
+            ) or len(evidence_artifacts) != len(spec["artifact_paths"]):
+                raise ValueError(f"{name}: local native artifact evidence differs")
+            if {item["source_path"] for item in evidence_files} != set(
+                spec["extra_evidence_paths"]
+            ) or len(evidence_files) != len(spec["extra_evidence_paths"]):
+                raise ValueError(f"{name}: local native evidence differs")
+            for item in evidence_artifacts:
+                if item["record_path"] != _site_packages_path(item["source_path"]):
+                    raise ValueError(f"{name}: local artifact RECORD path differs")
+            launcher = installed_evidence["launcher"]
+            if (
+                launcher["source_path"] != ".venv/Scripts/curl-cffi.exe"
+                or launcher["record_path"] != "../../Scripts/curl-cffi.exe"
+            ):
+                raise ValueError(f"{name}: local launcher path differs")
+            expected_hashes = {
+                item["source_path"]: item["sha256"]
+                for item in evidence_artifacts + evidence_files
+            }
+            record_sha256 = record_evidence["sha256"]
+            wheel_metadata_sha256 = wheel_evidence["sha256"]
+        else:
+            expected_hashes = native_hashes
+            record_sha256 = spec["record_sha256"]
+            wheel_metadata_sha256 = spec["wheel_metadata_sha256"]
         record_bytes = _path(root, record_source).read_bytes()
         wheel_bytes = _path(root, wheel_source).read_bytes()
-        if _sha256(record_bytes) != spec["record_sha256"]:
+        if _sha256(record_bytes) != record_sha256:
             raise ValueError(f"{name}: installed RECORD hash differs from evidence")
-        if _sha256(wheel_bytes) != spec["wheel_metadata_sha256"]:
+        if _sha256(wheel_bytes) != wheel_metadata_sha256:
             raise ValueError(f"{name}: installed WHEEL hash differs from evidence")
         wheel_text = wheel_bytes.decode("utf-8")
         tag = next(
@@ -462,6 +903,15 @@ def _native_distributions(root, research, helper_research, rows):
                 f"{name}: PyPI wheel filename does not match installed WHEEL"
             )
         record = _record_hashes(record_bytes)
+        if installed_evidence is not None:
+            launcher = installed_evidence["launcher"]
+            launcher_hash = _sha256(_path(root, launcher["source_path"]).read_bytes())
+            if (
+                launcher_hash != launcher["sha256"]
+                or _record_digest(record.get(launcher["record_path"], ""))
+                != launcher_hash
+            ):
+                raise ValueError(f"{name}: RECORD does not map local launcher")
         artifacts = []
         expected_paths = set(spec["artifact_paths"])
         actual_paths = {
@@ -477,7 +927,7 @@ def _native_distributions(root, research, helper_research, rows):
                 f"got {sorted(actual_paths)!r}"
             )
         for source_path in spec["artifact_paths"]:
-            expected_hash = native_hashes.get(source_path)
+            expected_hash = expected_hashes.get(source_path)
             if not expected_hash:
                 raise ValueError(f"{name}: research hash missing for {source_path}")
             actual_hash = _sha256(_path(root, source_path).read_bytes())
@@ -496,7 +946,7 @@ def _native_distributions(root, research, helper_research, rows):
             )
         sbom_files = []
         for source_path in spec["sbom_paths"]:
-            expected_hash = native_hashes.get(source_path)
+            expected_hash = expected_hashes.get(source_path)
             if (
                 not expected_hash
                 or _sha256(_path(root, source_path).read_bytes()) != expected_hash
@@ -516,7 +966,7 @@ def _native_distributions(root, research, helper_research, rows):
             )
         evidence_files = []
         for source_path in spec["extra_evidence_paths"]:
-            expected_hash = native_hashes.get(source_path)
+            expected_hash = expected_hashes.get(source_path)
             if (
                 not expected_hash
                 or _sha256(_path(root, source_path).read_bytes()) != expected_hash
@@ -545,12 +995,12 @@ def _native_distributions(root, research, helper_research, rows):
                 "record": {
                     "source_path": record_source,
                     "bundle_path": f"THIRD-PARTY-NOTICES/{name}/RECORD",
-                    "sha256": spec["record_sha256"],
+                    "sha256": record_sha256,
                 },
                 "wheel_metadata": {
                     "source_path": wheel_source,
                     "bundle_path": f"THIRD-PARTY-NOTICES/{name}/WHEEL",
-                    "sha256": spec["wheel_metadata_sha256"],
+                    "sha256": wheel_metadata_sha256,
                     "tag": tag,
                 },
                 "artifacts": artifacts,
@@ -564,23 +1014,26 @@ def _native_distributions(root, research, helper_research, rows):
     return result
 
 
-def _owned_source_mapping(research):
+def _owned_source_mapping(root, research):
     # Record local GPL source scope separately from the runtime helper executable.
     helper = research["wechat_helper"]
     local = helper["local_source"]
     history = helper["local_git_history"]
+    root_license = dict(local["root_license"])
+    root_license["sha256"] = _sha256(_path(root, "LICENSE").read_bytes())
+    source_paths = [
+        "src/wechat_keyfinder/CMakeLists.txt",
+        "src/wechat_keyfinder/wechat_keyfinder.cpp",
+    ]
     return {
         "id": "wechat-keyfinder-local-source",
         "scope": "local-source-only",
         "license_expression": "GPL-3.0-only",
-        "root_license": local["root_license"],
-        "source_paths": [
-            "src/wechat_keyfinder/CMakeLists.txt",
-            "src/wechat_keyfinder/wechat_keyfinder.cpp",
-        ],
+        "root_license": root_license,
+        "source_paths": source_paths,
         "source_hashes": {
-            "src/wechat_keyfinder/CMakeLists.txt": local["cmake"]["sha256"],
-            "src/wechat_keyfinder/wechat_keyfinder.cpp": local["cpp"]["sha256"],
+            name: matrix_hash(name, _path(root, name).read_bytes())
+            for name in source_paths
         },
         "local_tag": history["local_tag"],
         "local_tag_commit": history["local_tag_commit"],
@@ -593,7 +1046,7 @@ def _owned_source_mapping(research):
     }
 
 
-def _external_components(research, helper_research):
+def _external_components(root, research, helper_research):
     # Separate disabled runtimes and helper build inputs from shipped wheels.
     unresolved = research["unresolved"]
     helper = research["wechat_helper"]
@@ -619,9 +1072,10 @@ def _external_components(research, helper_research):
             "owner": "source.wechat",
             "excluded_from_targets": ["pyinstaller", "nuitka"],
             "source_path": "src/wechat_keyfinder/CMakeLists.txt",
-            "sha256": helper_research["local_hashes"]["helper_source"][
-                "src/wechat_keyfinder/CMakeLists.txt"
-            ],
+            "sha256": matrix_hash(
+                "src/wechat_keyfinder/CMakeLists.txt",
+                _path(root, "src/wechat_keyfinder/CMakeLists.txt").read_bytes(),
+            ),
             "notice_status": "NOASSERTION",
             "reason": unresolved["openssl_for_wechat_helper"]["reason"],
         },
@@ -639,16 +1093,35 @@ def _external_components(research, helper_research):
     ]
 
 
-def expected_index(root=ROOT):
+def expected_index(root=ROOT, local_evidence_path=FINAL_ENV_EVIDENCE):
     # Build the canonical index only from the recorded local research evidence.
     research, helper_research = _research(root)
+    curl_spec = next(
+        spec for spec in NATIVE_WHEEL_SPECS if spec["distribution"] == "curl-cffi"
+    )
+    final_evidence = _final_environment_evidence(root, local_evidence_path, curl_spec)
     candidates = helper_research["local_hashes"]["notice_copy_candidates"]
     approved = research["approved_candidates"]
+    final_rows, candidates = _final_distribution_overrides(
+        root, final_evidence, research, candidates
+    )
+    additional_rows, additional_candidates = _final_additional_distributions(
+        root, final_evidence
+    )
+    final_rows.update(additional_rows)
+    candidates.extend(additional_candidates)
     unresolved = research["unresolved"]
     rows = []
     for name in ORDER:
-        if name in approved:
-            rows.append(_entry(name, approved[name], candidates, True))
+        if name in approved or name in final_rows:
+            rows.append(
+                _entry(
+                    name,
+                    final_rows[name] if name in final_rows else approved[name],
+                    candidates,
+                    True,
+                )
+            )
         elif name == "gmssl":
             rows.append(_entry(name, unresolved[name], candidates, False))
         else:
@@ -656,13 +1129,24 @@ def expected_index(root=ROOT):
     payload = {
         "schema_version": 2,
         "bundle_version": BUNDLE_VERSION,
-        "research": [SOURCE_RESEARCH.as_posix(), HELPER_RESEARCH.as_posix()],
+        "research": [
+            SOURCE_RESEARCH.as_posix(),
+            HELPER_RESEARCH.as_posix(),
+            Path(local_evidence_path).as_posix(),
+        ],
+        "hash_policy": matrix_hash_policy(),
+        "local_evidence": {
+            "path": Path(local_evidence_path).as_posix(),
+            "sha256": _sha256(
+                _path(root, Path(local_evidence_path).as_posix()).read_bytes()
+            ),
+        },
         "distributions": rows,
         "native_distributions": _native_distributions(
-            root, research, helper_research, rows
+            root, research, helper_research, rows, final_evidence
         ),
-        "external_components": _external_components(research, helper_research),
-        "owned_source_mapping": _owned_source_mapping(research),
+        "external_components": _external_components(root, research, helper_research),
+        "owned_source_mapping": _owned_source_mapping(root, research),
     }
     payload["content_sha256"] = _sha256(
         json.dumps(
@@ -880,6 +1364,9 @@ def _validate_index(index, expected):
         "schema_version",
         "bundle_version",
         "content_sha256",
+        "research",
+        "hash_policy",
+        "local_evidence",
         "distributions",
         "native_distributions",
         "external_components",
@@ -897,6 +1384,9 @@ def _validate_index(index, expected):
             "notice_bundle.index.content_sha256: research-derived digest mismatch"
         )
     for field in (
+        "research",
+        "hash_policy",
+        "local_evidence",
         "distributions",
         "native_distributions",
         "external_components",
@@ -909,34 +1399,57 @@ def _validate_index(index, expected):
     return errors
 
 
-def check_bundle(root=ROOT, index_path=INDEX):
+def check_bundle(
+    root=ROOT,
+    index_path=INDEX,
+    local_evidence_path=FINAL_ENV_EVIDENCE,
+    files=None,
+):
     # Verify source, bundle, index, and owned records without running a provider.
     errors = []
-    expected_index_value = expected_index(root)
-    index_file = _path(root, Path(index_path).as_posix())
+    expected_index_value = expected_index(root, local_evidence_path)
+
+    def read_output(name):
+        # Validate planned output bytes before they are published to the worktree.
+        if files is not None:
+            if name not in files:
+                raise OSError(f"planned bundle file missing: {name}")
+            return files[name]
+        return _path(root, name).read_bytes()
+
+    index_name = Path(index_path).as_posix()
     try:
-        index = _json(index_file.read_bytes())
+        index = _json(read_output(index_name))
     except (OSError, ValueError) as error:
         return [f"notice_bundle.index: {error}"]
     errors.extend(_validate_index(index, expected_index_value))
     expected_files = _expected_files(root, expected_index_value)
     for name, expected_bytes in sorted(expected_files.items()):
         try:
-            actual = _path(root, name).read_bytes()
-        except OSError as error:
+            actual = read_output(name)
+        except (OSError, ValueError) as error:
             errors.append(f"notice_bundle.file[{name}]: missing: {error}")
             continue
         if actual != expected_bytes:
             errors.append(f"notice_bundle.file[{name}]: byte/hash mismatch")
-    bundle_root = root / BUNDLE
-    if bundle_root.is_dir():
+    if files is not None:
+        actual_bundle = {
+            name for name in files if name.startswith(BUNDLE.as_posix() + "/")
+        }
+    else:
+        bundle_root = root / BUNDLE
+        actual_bundle = (
+            {
+                path.relative_to(root).as_posix()
+                for path in bundle_root.rglob("*")
+                if path.is_file()
+            }
+            if bundle_root.is_dir()
+            else None
+        )
+    if actual_bundle is not None:
         expected_bundle = {
             name for name in expected_files if name.startswith(BUNDLE.as_posix() + "/")
-        }
-        actual_bundle = {
-            path.relative_to(root).as_posix()
-            for path in bundle_root.rglob("*")
-            if path.is_file()
         }
         for name in sorted(actual_bundle - expected_bundle):
             errors.append(f"notice_bundle.file[{name}]: unexpected bundle file")
@@ -956,14 +1469,81 @@ def check_bundle(root=ROOT, index_path=INDEX):
     return errors
 
 
-def write_bundle(root=ROOT):
-    # Copy only whitelisted text evidence and create deterministic owned-source records.
-    index = expected_index(root)
+def _materialize_matrix(root, matrix_path, local_evidence_path, index, files):
+    # Derive matrix facts from the same uncommitted bundle snapshot.
+    try:
+        from scripts import plugin_license_matrix
+    except ModuleNotFoundError:
+        import plugin_license_matrix
+
+    return plugin_license_matrix.materialize_matrix(
+        root=root,
+        matrix_path=matrix_path,
+        local_evidence_path=local_evidence_path,
+        notice_index=index,
+        bundle_files=files,
+    )
+
+
+def _stage_files(root, files):
+    # Fsync every replacement before any visible output is published.
+    staged = []
+    try:
+        for name, data in sorted(files.items()):
+            destination = _path(root, name)
+            if destination.exists():
+                if not destination.is_file():
+                    raise ValueError(f"generated output is not a file: {name}")
+                if destination.read_bytes() == data:
+                    continue
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
+            )
+            temporary = Path(temporary_name)
+            try:
+                with os.fdopen(descriptor, "wb") as stream:
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            except BaseException:
+                temporary.unlink(missing_ok=True)
+                raise
+            staged.append((temporary, destination))
+    except BaseException:
+        for temporary, _ in staged:
+            temporary.unlink(missing_ok=True)
+        raise
+    return staged
+
+
+def _replace_staged(staged, final_destination=None):
+    # Publish the matrix last so it never leads a partially published notice bundle.
+    if final_destination is not None:
+        staged = [item for item in staged if item[1] != final_destination] + [
+            item for item in staged if item[1] == final_destination
+        ]
+    try:
+        for temporary, destination in staged:
+            os.replace(temporary, destination)
+    except BaseException:
+        for temporary, _ in staged:
+            temporary.unlink(missing_ok=True)
+        raise
+
+
+def write_bundle(root=ROOT, local_evidence_path=FINAL_ENV_EVIDENCE, matrix_path=MATRIX):
+    # Materialize all bundle and matrix facts from one current source/staging snapshot.
+    index = expected_index(root, local_evidence_path)
     files = _expected_files(root, index)
-    for name, data in files.items():
-        destination = _path(root, name)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(data)
+    matrix_name = Path(matrix_path).as_posix()
+    if matrix_name in files:
+        raise ValueError(f"matrix path overlaps generated bundle output: {matrix_name}")
+    matrix = _materialize_matrix(root, matrix_name, local_evidence_path, index, files)
+    files[matrix_name] = (
+        json.dumps(matrix, ensure_ascii=False, indent=2) + "\n"
+    ).encode("utf-8")
+    _replace_staged(_stage_files(root, files), _path(root, matrix_name))
     return index
 
 
@@ -996,20 +1576,37 @@ def main(argv=None):
     mode.add_argument("--write", action="store_true")
     mode.add_argument("--check", action="store_true")
     parser.add_argument("--index", type=Path, default=INDEX)
+    parser.add_argument("--matrix", type=Path, default=MATRIX)
+    parser.add_argument("--local-evidence", type=Path, default=FINAL_ENV_EVIDENCE)
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args(argv)
     report = {"schema_version": 1, "status": "REJECTED", "errors": []}
     try:
         if args.write:
-            index = write_bundle()
+            index = write_bundle(
+                local_evidence_path=args.local_evidence, matrix_path=args.matrix
+            )
         else:
-            index = expected_index()
-        errors = check_bundle(index_path=args.index)
+            index = expected_index(local_evidence_path=args.local_evidence)
+        errors = check_bundle(
+            index_path=args.index, local_evidence_path=args.local_evidence
+        )
         report.update(
             {
                 "bundle_version": index["bundle_version"],
                 "content_sha256": index["content_sha256"],
                 "index_path": args.index.as_posix(),
+                "matrix_path": args.matrix.as_posix(),
+                "matrix_sha256": (
+                    matrix_hash(
+                        args.matrix.as_posix(),
+                        _path(ROOT, args.matrix.as_posix()).read_bytes(),
+                    )
+                    if _path(ROOT, args.matrix.as_posix()).is_file()
+                    else ""
+                ),
+                "hash_policy": index["hash_policy"],
+                "local_evidence_path": args.local_evidence.as_posix(),
                 "index_sha256": (
                     _sha256(_path(ROOT, args.index.as_posix()).read_bytes())
                     if _path(ROOT, args.index.as_posix()).is_file()

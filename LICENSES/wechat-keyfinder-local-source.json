@@ -12,8 +12,8 @@
   },
   "scope": "local-source-only",
   "source_hashes": {
-    "src/wechat_keyfinder/CMakeLists.txt": "3d558e79c3a687160b919be215f9b494a50199974eae68d3ce7080f5e5841c0b",
-    "src/wechat_keyfinder/wechat_keyfinder.cpp": "f05c5a591d146ec9ef328dc52f5c94e76fd8b9a0c7a4d7906677254338c67c48"
+    "src/wechat_keyfinder/CMakeLists.txt": "83d9ab16dad70d34d34f83db0c03b54a25b459ec3e5365ce44351501c104d128",
+    "src/wechat_keyfinder/wechat_keyfinder.cpp": "9fc47dfc690a38f22d4515707baa8075ddff5169913421e75e69df93425c0a89"
   },
   "source_paths": [
     "src/wechat_keyfinder/CMakeLists.txt",

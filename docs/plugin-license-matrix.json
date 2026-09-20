@@ -1,670 +1,8 @@
 {
-  "schema_version": 2,
-  "host": {
-    "distribution": "ohmymeme",
-    "metadata_source": "setup.py",
-    "spdx": "GPL-3.0-only",
-    "license_files": [
-      "LICENSE"
-    ],
-    "metadata_license_expression": "GPL-3.0-only",
-    "metadata_license_files": [
-      "LICENSE"
-    ],
-    "frozen_license_files": [
-      "ohmymeme/LICENSE",
-      "ohmymeme/NOTICE",
-      "ohmymeme/LICENSES/GPL-3.0-only.txt"
-    ],
-    "requirement_includes": {
-      "requirements.txt": [],
-      "requirements-dev.txt": [
-        "requirements.txt"
-      ],
-      "environment.yml": [
-        "requirements-dev.txt"
-      ]
-    },
-    "source_hashes": {
-      "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
-      "LICENSES/GPL-3.0-only.txt": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
-      "LICENSES/README.md": "878a849c18cc94f25dc9f634cacf2f85f24fd018cb653c6bc834f9327d5a9983",
-      "NOTICE": "9108e3b9160888aac3f47982771b4e8d28012051e964624738fd9294ea81cd91",
-      "README.md": "83ae0ddad894c5e2c9dbd0a172f5be1ae4661a0e9703cd503644b4e48a09d2ff",
-      "environment.yml": "b21aec43b0592ef746b8587ebb20bc5958017669076d783cb47dcf0de5614350",
-      "pyproject.toml": "e0cb0e6e97d74a124792bdb78c29757a65ae7638a32a9f9e2a37197f7a4f4d4d",
-      "requirements-dev.txt": "a31054c45dc25df6f8f758b6e1935606548cfac02ddade564088cf79c089c70e",
-      "requirements.txt": "682670aa9b022e1826f2981c072719eac9cf960147e73c2c3523ecf40423a4a3",
-      "scripts/build.py": "b14e5d7a60ff354230b50f6e0156ad8c27033cbd550bb9d755e1f7bd35e2d80d",
-      "scripts/nuitka/build.py": "0582d76a1264471c8be8e8df36a448b84303bcad9a4fd2e04298aed454de75d9",
-      "scripts/package_smoke.py": "ff22bc11e38cb21673b3bafd9d1b9f0bd16ccf77b46e7e54cf3dfc0cf7ea3411",
-      "setup.py": "241269c996d08270f8d78583cdce5e0d39cee2fc147e6e54178ba089145886a3",
-      "src/ohmymeme/__init__.py": "9e9bf69e87ae5036722c5a905b5a9ada3ab20851a736c1dd293e35e47982fde1"
-    },
-    "provenance": {
-      "status": "verified",
-      "files": [
-        "LICENSE",
-        "setup.py",
-        "README.md"
-      ],
-      "references": [
-        "https://github.com/OhMyMeme/OhMyMeme"
-      ],
-      "basis": "根 LICENSE 的 GPL v3 文本、README 项目声明和 setup.py 元数据；不授予第三方源码的新许可。"
-    },
-    "notice": {
-      "status": "present",
-      "files": [
-        "LICENSE",
-        "NOTICE",
-        "LICENSES/GPL-3.0-only.txt"
-      ],
-      "basis": "根许可、NOTICE 和 owned LICENSES inventory 均映射到 PyInstaller/Nuitka frozen data targets；本记录不替代真实制品检查。"
-    },
-    "source_offer": {
-      "status": "available",
-      "paths": [
-        "src/ohmymeme",
-        "scripts",
-        "setup.py",
-        "LICENSES"
-      ],
-      "basis": "本地对应源码位置及 source_hashes；不是已发布制品的源码交付证明。"
-    }
-  },
-  "distributions": [
-    {
-      "id": "source.qqnt",
-      "distribution": "ohmymeme-plugin-qqnt",
-      "version": "0.1.0",
-      "pyproject": "plugins/source.qqnt/pyproject.toml",
-      "module": "ohmymeme_plugin_qqnt",
-      "factory": "ohmymeme_plugin_qqnt:create_plugin",
-      "spdx": "GPL-3.0-only",
-      "license_files": [
-        "LICENSE"
-      ],
-      "package_license_files": [
-        "LICENSE"
-      ],
-      "frozen_license_files": [
-        "LICENSE"
-      ],
-      "dependencies": [],
-      "source_hashes": {
-        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
-        "plugins/source.qqnt/pyproject.toml": "d8d8c786c52625893fb4b940b517a52c851e05cc059e65a7220572d28022bb20",
-        "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py": "67b05f5b1cc9faa653cb17d09f68fa8a788c9ec61d3ef47164a936693995df4d"
-      },
-      "dependency_approval": {
-        "status": "approved",
-        "basis": "pyproject 无直接第三方依赖；QQNT 衍生来源另列，宿主依赖审批不由此空集替代。"
-      },
-      "provenance": {
-        "status": "verified",
-        "files": [
-          "plugins/source.qqnt/pyproject.toml",
-          "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py"
-        ],
-        "references": [],
-        "basis": "真实分发元数据与算法源码；QQFavoriteExtract 署名见 qqnt-source。"
-      },
-      "notice": {
-        "status": "present",
-        "files": [
-          "LICENSE",
-          "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py"
-        ],
-        "basis": "共享根 LICENSE 和保留的原作者/修改说明；包内独立 license_files 为空，不冒称已复制。"
-      },
-      "source_offer": {
-        "status": "available",
-        "paths": [
-          "plugins/source.qqnt"
-        ],
-        "basis": "本地分发源码可用；独立发布仍需包含许可文本。"
-      }
-    },
-    {
-      "id": "source.telegram",
-      "distribution": "ohmymeme-plugin-telegram",
-      "version": "0.1.0",
-      "pyproject": "plugins/source.telegram/pyproject.toml",
-      "module": "ohmymeme_plugin_telegram",
-      "factory": "ohmymeme_plugin_telegram:create_plugin",
-      "spdx": "GPL-3.0-only",
-      "license_files": [
-        "LICENSE"
-      ],
-      "package_license_files": [
-        "LICENSE"
-      ],
-      "frozen_license_files": [
-        "LICENSE"
-      ],
-      "dependencies": [],
-      "source_hashes": {
-        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
-        "plugins/source.telegram/pyproject.toml": "f50d7327caed09464229fafc1dbe1c6c76b5c6d3adf664eb583157cc6752ff15",
-        "plugins/source.telegram/src/ohmymeme_plugin_telegram/__init__.py": "d9a6679e1f9ec7babb09e99d27b99d42c7f1bff794b3a47786effcee85f82b36"
-      },
-      "dependency_approval": {
-        "status": "approved",
-        "basis": "仅确认 pyproject 直接依赖空集；Pillow/cryptography/tgcrypto 的宿主供应及未决审批单列。"
-      },
-      "provenance": {
-        "status": "verified",
-        "files": [
-          "plugins/source.telegram/pyproject.toml",
-          "plugins/source.telegram/src/ohmymeme_plugin_telegram/__init__.py"
-        ],
-        "references": [],
-        "basis": "真实分发元数据与本仓库源码，未重新标记许可。"
-      },
-      "notice": {
-        "status": "present",
-        "files": [
-          "LICENSE"
-        ],
-        "basis": "官方 frozen 使用宿主共享许可文本；独立包未包含单独 license file。"
-      },
-      "source_offer": {
-        "status": "available",
-        "paths": [
-          "plugins/source.telegram"
-        ],
-        "basis": "本地对应分发源码位置。"
-      }
-    },
-    {
-      "id": "source.douyin",
-      "distribution": "ohmymeme-plugin-douyin",
-      "version": "0.1.0",
-      "pyproject": "plugins/source.douyin/pyproject.toml",
-      "module": "ohmymeme_plugin_douyin",
-      "factory": "ohmymeme_plugin_douyin:create_plugin",
-      "spdx": "GPL-3.0-only",
-      "license_files": [
-        "LICENSE"
-      ],
-      "package_license_files": [
-        "LICENSE"
-      ],
-      "frozen_license_files": [
-        "LICENSE"
-      ],
-      "dependencies": [],
-      "source_hashes": {
-        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
-        "plugins/source.douyin/pyproject.toml": "8c9e7891405b08a3cba5ad88abdbc454b141a1376c36ee386ac640b729d54ab9",
-        "plugins/source.douyin/src/ohmymeme_plugin_douyin/__init__.py": "a045dfd755c619ddecf972431559895a6c0f843eb4e851ae2b1a6a7ad595d55f",
-        "plugins/source.douyin/src/ohmymeme_plugin_douyin/abogus.py": "755aabb65f497bcbf16b964e2349a6248d524c6e56087052f5c193a8a8bbdd39"
-      },
-      "dependency_approval": {
-        "status": "approved",
-        "basis": "仅确认 pyproject 空集；curl_cffi/gmssl 的实际来源与审批另列，ABogus GPL 来源单列。"
-      },
-      "provenance": {
-        "status": "verified",
-        "files": [
-          "plugins/source.douyin/pyproject.toml",
-          "plugins/source.douyin/src/ohmymeme_plugin_douyin/__init__.py",
-          "plugins/source.douyin/src/ohmymeme_plugin_douyin/abogus.py"
-        ],
-        "references": [],
-        "basis": "真实分发和算法源码，保留 ABogus 原始来源。"
-      },
-      "notice": {
-        "status": "present",
-        "files": [
-          "LICENSE",
-          "plugins/source.douyin/src/ohmymeme_plugin_douyin/abogus.py"
-        ],
-        "basis": "共享 GPL 文本与原作者/修改者说明均保留。"
-      },
-      "source_offer": {
-        "status": "available",
-        "paths": [
-          "plugins/source.douyin"
-        ],
-        "basis": "本地对应分发及 ABogus 源码位置。"
-      }
-    },
-    {
-      "id": "source.wechat",
-      "distribution": "ohmymeme-plugin-wechat",
-      "version": "0.1.0",
-      "pyproject": "plugins/source.wechat/pyproject.toml",
-      "module": "ohmymeme_plugin_wechat",
-      "factory": "ohmymeme_plugin_wechat:create_plugin",
-      "spdx": "GPL-3.0-only",
-      "license_files": [
-        "LICENSE"
-      ],
-      "package_license_files": [
-        "LICENSE"
-      ],
-      "frozen_license_files": [
-        "LICENSE"
-      ],
-      "dependencies": [],
-      "source_hashes": {
-        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
-        "plugins/source.wechat/pyproject.toml": "9c4fa4305c28f5bbec9688cc59e8f6ffeeb0111371bf2b286e3522ef51860889",
-        "plugins/source.wechat/src/ohmymeme_plugin_wechat/__init__.py": "bd89ddd5079a1850475bcbf6eea5ea73f1fb6dd44b0c06440f5297d433ca2abd"
-      },
-      "dependency_approval": {
-        "status": "approved",
-        "basis": "仅确认 pyproject 空集；cryptography 和独立 helper/OpenSSL 均有单列未决记录。"
-      },
-      "provenance": {
-        "status": "verified",
-        "files": [
-          "plugins/source.wechat/pyproject.toml",
-          "plugins/source.wechat/src/ohmymeme_plugin_wechat/__init__.py"
-        ],
-        "references": [],
-        "basis": "本仓库 Python 插件元数据与源码；不据此给外部 helper 二进制重新授权。"
-      },
-      "notice": {
-        "status": "present",
-        "files": [
-          "LICENSE"
-        ],
-        "basis": "Python 插件使用官方 frozen 共享许可文本。"
-      },
-      "source_offer": {
-        "status": "available",
-        "paths": [
-          "plugins/source.wechat"
-        ],
-        "basis": "本地 Python 插件源码位置；helper 对应源码绑定仍未决。"
-      }
-    },
-    {
-      "id": "sync.ftp",
-      "distribution": "ohmymeme-plugin-sync-ftp",
-      "version": "0.1.0",
-      "pyproject": "plugins/sync.ftp/pyproject.toml",
-      "module": "ohmymeme_plugin_sync_ftp",
-      "factory": "ohmymeme_plugin_sync_ftp:create_plugin",
-      "spdx": "GPL-3.0-only",
-      "license_files": [
-        "LICENSE"
-      ],
-      "package_license_files": [
-        "LICENSE"
-      ],
-      "frozen_license_files": [
-        "LICENSE"
-      ],
-      "dependencies": [],
-      "source_hashes": {
-        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
-        "plugins/sync.ftp/pyproject.toml": "c4e28b9515cbb13dccd80c30c020b254e333e0d02cc8092ace4e210d08716d9b",
-        "plugins/sync.ftp/src/ohmymeme_plugin_sync_ftp/__init__.py": "79e487e9eb0efe4f045b751b2b2d388299164cb2d67ff5b610b3a5bc362f9d3a"
-      },
-      "dependency_approval": {
-        "status": "approved",
-        "basis": "标准库网络实现，pyproject 无直接第三方依赖。"
-      },
-      "provenance": {
-        "status": "verified",
-        "files": [
-          "plugins/sync.ftp/pyproject.toml",
-          "plugins/sync.ftp/src/ohmymeme_plugin_sync_ftp/__init__.py"
-        ],
-        "references": [],
-        "basis": "真实官方分发与本仓库源码。"
-      },
-      "notice": {
-        "status": "present",
-        "files": [
-          "LICENSE"
-        ],
-        "basis": "官方 frozen 共享许可文本。"
-      },
-      "source_offer": {
-        "status": "available",
-        "paths": [
-          "plugins/sync.ftp"
-        ],
-        "basis": "本地对应分发源码位置。"
-      }
-    },
-    {
-      "id": "sync.s3",
-      "distribution": "ohmymeme-plugin-sync-s3",
-      "version": "0.1.0",
-      "pyproject": "plugins/sync.s3/pyproject.toml",
-      "module": "ohmymeme_plugin_sync_s3",
-      "factory": "ohmymeme_plugin_sync_s3:create_plugin",
-      "spdx": "GPL-3.0-only",
-      "license_files": [
-        "LICENSE"
-      ],
-      "package_license_files": [
-        "LICENSE"
-      ],
-      "frozen_license_files": [
-        "LICENSE"
-      ],
-      "dependencies": [],
-      "source_hashes": {
-        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
-        "plugins/sync.s3/pyproject.toml": "cac49602f0d88ac7d5669dc0d27dcb67bce5fb74d14fef9102d756ac679a3a23",
-        "plugins/sync.s3/src/ohmymeme_plugin_sync_s3/__init__.py": "1f60affd048ab15520f6516216d3b5cb99d0ad86af6c496dccbbff7fe51eae20"
-      },
-      "dependency_approval": {
-        "status": "approved",
-        "basis": "仅确认 pyproject 空集；实际 boto3 extra 由宿主 requirements 供应，审批另列。"
-      },
-      "provenance": {
-        "status": "verified",
-        "files": [
-          "plugins/sync.s3/pyproject.toml",
-          "plugins/sync.s3/src/ohmymeme_plugin_sync_s3/__init__.py"
-        ],
-        "references": [],
-        "basis": "真实官方分发与本仓库源码。"
-      },
-      "notice": {
-        "status": "present",
-        "files": [
-          "LICENSE"
-        ],
-        "basis": "官方 frozen 共享许可文本。"
-      },
-      "source_offer": {
-        "status": "available",
-        "paths": [
-          "plugins/sync.s3"
-        ],
-        "basis": "本地对应分发源码位置。"
-      }
-    },
-    {
-      "id": "sync.r2",
-      "distribution": "ohmymeme-plugin-sync-r2",
-      "version": "0.1.0",
-      "pyproject": "plugins/sync.r2/pyproject.toml",
-      "module": "ohmymeme_plugin_sync_r2",
-      "factory": "ohmymeme_plugin_sync_r2:create_plugin",
-      "spdx": "GPL-3.0-only",
-      "license_files": [
-        "LICENSE"
-      ],
-      "package_license_files": [
-        "LICENSE"
-      ],
-      "frozen_license_files": [
-        "LICENSE"
-      ],
-      "dependencies": [
-        "ohmymeme-plugin-sync-s3==0.1.0"
-      ],
-      "source_hashes": {
-        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
-        "plugins/sync.r2/pyproject.toml": "4106bf0c333132db4c830c04113d1c7914226a12103dd04c259a4e0a86974418",
-        "plugins/sync.r2/src/ohmymeme_plugin_sync_r2/__init__.py": "39e5d956b636b742ab5e24c1e243915b4dfcd0786034bb329faad0371a6918d7"
-      },
-      "dependency_approval": {
-        "status": "approved",
-        "basis": "精确依赖同版本 GPL-3.0-only 官方 S3 分发；不改变 R2 provider 身份，boto3 审批另列。"
-      },
-      "provenance": {
-        "status": "verified",
-        "files": [
-          "plugins/sync.r2/pyproject.toml",
-          "plugins/sync.r2/src/ohmymeme_plugin_sync_r2/__init__.py"
-        ],
-        "references": [],
-        "basis": "真实官方分发及固定 S3 代码复用声明。"
-      },
-      "notice": {
-        "status": "present",
-        "files": [
-          "LICENSE"
-        ],
-        "basis": "官方 frozen 共享许可文本。"
-      },
-      "source_offer": {
-        "status": "available",
-        "paths": [
-          "plugins/sync.r2"
-        ],
-        "basis": "本地对应分发源码位置，依赖源码在 sync.s3 记录。"
-      }
-    },
-    {
-      "id": "sync.webdav",
-      "distribution": "ohmymeme-plugin-sync-webdav",
-      "version": "0.1.0",
-      "pyproject": "plugins/sync.webdav/pyproject.toml",
-      "module": "ohmymeme_plugin_sync_webdav",
-      "factory": "ohmymeme_plugin_sync_webdav:create_plugin",
-      "spdx": "GPL-3.0-only",
-      "license_files": [
-        "LICENSE"
-      ],
-      "package_license_files": [
-        "LICENSE"
-      ],
-      "frozen_license_files": [
-        "LICENSE"
-      ],
-      "dependencies": [],
-      "source_hashes": {
-        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
-        "plugins/sync.webdav/pyproject.toml": "4ca5e2ab62d9f7ee3852809e795fb7f4710a37604c8d805c4876a8ececa81ad3",
-        "plugins/sync.webdav/src/ohmymeme_plugin_sync_webdav/__init__.py": "4d2e7043c776dd07b665416d2d39a81402faa11635b3d42505ceb60aaca04efd"
-      },
-      "dependency_approval": {
-        "status": "approved",
-        "basis": "标准库网络实现，pyproject 无直接第三方依赖。"
-      },
-      "provenance": {
-        "status": "verified",
-        "files": [
-          "plugins/sync.webdav/pyproject.toml",
-          "plugins/sync.webdav/src/ohmymeme_plugin_sync_webdav/__init__.py"
-        ],
-        "references": [],
-        "basis": "真实官方分发与本仓库源码。"
-      },
-      "notice": {
-        "status": "present",
-        "files": [
-          "LICENSE"
-        ],
-        "basis": "官方 frozen 共享许可文本。"
-      },
-      "source_offer": {
-        "status": "available",
-        "paths": [
-          "plugins/sync.webdav"
-        ],
-        "basis": "本地对应分发源码位置。"
-      }
-    },
-    {
-      "id": "transport.lan",
-      "distribution": "ohmymeme-plugin-lan",
-      "version": "0.1.0",
-      "pyproject": "plugins/transport.lan/pyproject.toml",
-      "module": "ohmymeme_plugin_lan",
-      "factory": "ohmymeme_plugin_lan:create_plugin",
-      "spdx": "GPL-3.0-only",
-      "license_files": [
-        "LICENSE"
-      ],
-      "package_license_files": [
-        "LICENSE"
-      ],
-      "frozen_license_files": [
-        "LICENSE"
-      ],
-      "dependencies": [],
-      "source_hashes": {
-        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
-        "plugins/transport.lan/pyproject.toml": "4717ddff366d3748394acd08c476a1e12b9304fd53fa82f6dd843192a70a5553",
-        "plugins/transport.lan/src/ohmymeme_plugin_lan/__init__.py": "88bc1e9607d153f08112ca1d40e57a75501df214b6e8c45d2da339ec68aafc4e"
-      },
-      "dependency_approval": {
-        "status": "approved",
-        "basis": "socket 字节传输使用标准库；安全与 cryptography 仍在宿主，pyproject 无直接第三方依赖。"
-      },
-      "provenance": {
-        "status": "verified",
-        "files": [
-          "plugins/transport.lan/pyproject.toml",
-          "plugins/transport.lan/src/ohmymeme_plugin_lan/__init__.py"
-        ],
-        "references": [],
-        "basis": "真实官方分发与本仓库源码。"
-      },
-      "notice": {
-        "status": "present",
-        "files": [
-          "LICENSE"
-        ],
-        "basis": "官方 frozen 共享许可文本。"
-      },
-      "source_offer": {
-        "status": "available",
-        "paths": [
-          "plugins/transport.lan"
-        ],
-        "basis": "本地对应分发源码位置。"
-      }
-    }
-  ],
-  "source_components": [
-    {
-      "id": "qqnt-source",
-      "kind": "third-party-source",
-      "spdx": "GPL-3.0-only",
-      "license_files": [
-        "LICENSE"
-      ],
-      "source_hashes": {
-        "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py": "67b05f5b1cc9faa653cb17d09f68fa8a788c9ec61d3ef47164a936693995df4d"
-      },
-      "provenance": {
-        "status": "verified",
-        "files": [
-          "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py"
-        ],
-        "references": [
-          "https://github.com/VanillaNahida/QQFavoriteExtract"
-        ],
-        "basis": "源码头记录香草味的纳西妲、main_gui.py v1.4.3、GPL v3 及本地修改说明；未做公网再认证。"
-      },
-      "notice": {
-        "status": "present",
-        "files": [
-          "LICENSE",
-          "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py"
-        ],
-        "basis": "保留原作者、原文件版本、修改说明和 GPL notice。"
-      },
-      "source_offer": {
-        "status": "available",
-        "paths": [
-          "plugins/source.qqnt"
-        ],
-        "basis": "本地实际衍生源码，以文件 SHA-256 绑定。"
-      }
-    },
-    {
-      "id": "abogus-source",
-      "kind": "third-party-source",
-      "spdx": "GPL-3.0-only",
-      "license_files": [
-        "LICENSE"
-      ],
-      "source_hashes": {
-        "plugins/source.douyin/src/ohmymeme_plugin_douyin/abogus.py": "755aabb65f497bcbf16b964e2349a6248d524c6e56087052f5c193a8a8bbdd39"
-      },
-      "provenance": {
-        "status": "verified",
-        "files": [
-          "plugins/source.douyin/src/ohmymeme_plugin_douyin/abogus.py"
-        ],
-        "references": [
-          "https://github.com/JoeanAmier/TikTokDownloader",
-          "https://github.com/Evil0ctal/Douyin_TikTok_Download_API"
-        ],
-        "basis": "源码头保留 TikTokDownloader 原作者来源、Evil0ctal 修改来源及 tool-douyin-emoji 适配说明，声明 GPL v3.0。"
-      },
-      "notice": {
-        "status": "present",
-        "files": [
-          "LICENSE",
-          "plugins/source.douyin/src/ohmymeme_plugin_douyin/abogus.py"
-        ],
-        "basis": "保留源文件明确要求保留的许可和原作者信息。"
-      },
-      "source_offer": {
-        "status": "available",
-        "paths": [
-          "plugins/source.douyin"
-        ],
-        "basis": "本地实际 ABogus 衍生源码，以文件 SHA-256 绑定。"
-      }
-    },
-    {
-      "id": "wechat-helper",
-      "kind": "helper",
-      "spdx": "GPL-3.0-only",
-      "license_files": [
-        "LICENSE"
-      ],
-      "source_hashes": {
-        "src/ohmymeme/integrations/imports/wechat.py": "35da1d58faa245c311ed7f6e7659efe933affd96c4827f9f6252e8eb3dcf2bab",
-        "src/wechat_keyfinder/CMakeLists.txt": "3d558e79c3a687160b919be215f9b494a50199974eae68d3ce7080f5e5841c0b",
-        "src/wechat_keyfinder/wechat_keyfinder.cpp": "f05c5a591d146ec9ef328dc52f5c94e76fd8b9a0c7a4d7906677254338c67c48"
-      },
-      "provenance": {
-        "status": "verified",
-        "files": [
-          "src/wechat_keyfinder/CMakeLists.txt",
-          "src/wechat_keyfinder/wechat_keyfinder.cpp",
-          "src/ohmymeme/integrations/imports/wechat.py"
-        ],
-        "references": [],
-        "basis": "根 LICENSE 与 LICENSES/wechat-keyfinder-local-source.json 仅映射本地 tag 0.6.3 的 C++ 源码；git 历史显示 helper 由本项目在 2026-08-11 引入。外部 release hash 仍不宣称可复现绑定。"
-      },
-      "notice": {
-        "status": "present",
-        "files": [
-          "LICENSE",
-          "src/wechat_keyfinder/CMakeLists.txt",
-          "src/wechat_keyfinder/wechat_keyfinder.cpp",
-          "src/ohmymeme/integrations/imports/wechat.py"
-        ],
-        "basis": "根 GPL 文本与 LICENSES 本地源码映射保留；OpenSSL notice 因未固定版本和未构建 helper 保持阻塞。"
-      },
-      "source_offer": {
-        "status": "available",
-        "paths": [
-          "src/wechat_keyfinder",
-          "src/ohmymeme/integrations/imports/wechat.py"
-        ],
-        "basis": "本地 tag 0.6.3（287c5127915208e2ca647115de3eb664237d5554）和 source hashes 记录 local-source-only offer；不把外部 exe hash 声称为可复现构建。"
-      },
-      "source_revision": {
-        "tag": "0.6.3",
-        "commit": "287c5127915208e2ca647115de3eb664237d5554",
-        "root_license_sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
-        "source_binding": "local-source-only"
-      }
-    }
-  ],
   "dependencies": [
     {
-      "name": "basedpyright",
+      "approval": "not-shipped",
+      "basis": "仅开发质量工具，不作为官方运行时组件审批。",
       "declarations": [
         {
           "owner": "host",
@@ -673,14 +11,14 @@
           "requirement": "basedpyright==1.39.10"
         }
       ],
-      "approval": "not-shipped",
-      "spdx": "NOASSERTION",
       "license_files": [],
+      "name": "basedpyright",
       "provenance_file": null,
-      "basis": "仅开发质量工具，不作为官方运行时组件审批。"
+      "spdx": "NOASSERTION"
     },
     {
-      "name": "black",
+      "approval": "not-shipped",
+      "basis": "仅开发格式化工具。",
       "declarations": [
         {
           "owner": "host",
@@ -695,14 +33,14 @@
           "requirement": "black>=23.0.0"
         }
       ],
-      "approval": "not-shipped",
-      "spdx": "NOASSERTION",
       "license_files": [],
+      "name": "black",
       "provenance_file": null,
-      "basis": "仅开发格式化工具。"
+      "spdx": "NOASSERTION"
     },
     {
-      "name": "boto3",
+      "approval": "approved",
+      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "declarations": [
         {
           "owner": "host",
@@ -711,34 +49,34 @@
           "requirement": "boto3>=1.28.0"
         }
       ],
-      "approval": "approved",
-      "spdx": "Apache-2.0",
-      "license_files": [
-        "THIRD-PARTY-NOTICES/boto3/LICENSE",
-        "THIRD-PARTY-NOTICES/boto3/NOTICE"
-      ],
-      "provenance_file": "THIRD-PARTY-NOTICES/boto3/METADATA",
-      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "evidence": {
-        "installed_version": "1.43.94",
-        "metadata_path": "THIRD-PARTY-NOTICES/boto3/METADATA",
-        "metadata_sha256": "078e2ec9e5fee88345613a80eb555566e675d19351833e583de03e9d5b2a7f6f",
-        "project_url": "https://github.com/boto/boto3",
-        "source_url": "https://github.com/boto/boto3",
-        "metadata_license_field": "License",
-        "metadata_license": "Apache-2.0",
-        "spdx": "Apache-2.0",
+        "compatibility_rule": "Apache-2.0 permissive notice; compatible with the GPL host as an aggregate/runtime dependency.",
+        "evidence_expression": "Apache-2.0",
+        "evidence_expression_basis": "The retained full LICENSE is Apache License, Version 2.0; this is release evidence, not a synthesized PEP 639 metadata field.",
+        "installed_version": "1.43.97",
         "license_file_hashes": {
           "THIRD-PARTY-NOTICES/boto3/LICENSE": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
           "THIRD-PARTY-NOTICES/boto3/NOTICE": "04fb1e61484a7810f1ba09bb42bc01ca58c9af33927d7c5a21556e4c4d1c7fa4"
         },
-        "compatibility_rule": "Apache-2.0 permissive notice; compatible with the GPL host as an aggregate/runtime dependency.",
-        "evidence_expression": "Apache-2.0",
-        "evidence_expression_basis": "The retained full LICENSE is Apache License, Version 2.0; this is release evidence, not a synthesized PEP 639 metadata field."
-      }
+        "metadata_license": "Apache-2.0",
+        "metadata_license_field": "License",
+        "metadata_path": "THIRD-PARTY-NOTICES/boto3/METADATA",
+        "metadata_sha256": "b5fad9445c55222613838caa24650f89faa332b983bdac76c5f136d7667cae80",
+        "project_url": "https://github.com/boto/boto3",
+        "source_url": "https://github.com/boto/boto3",
+        "spdx": "Apache-2.0"
+      },
+      "license_files": [
+        "THIRD-PARTY-NOTICES/boto3/LICENSE",
+        "THIRD-PARTY-NOTICES/boto3/NOTICE"
+      ],
+      "name": "boto3",
+      "provenance_file": "THIRD-PARTY-NOTICES/boto3/METADATA",
+      "spdx": "Apache-2.0"
     },
     {
-      "name": "botocore",
+      "approval": "approved",
+      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "declarations": [
         {
           "owner": "sync.r2",
@@ -753,34 +91,34 @@
           "requirement": "botocore"
         }
       ],
-      "approval": "approved",
-      "spdx": "Apache-2.0",
-      "license_files": [
-        "THIRD-PARTY-NOTICES/botocore/LICENSE.txt",
-        "THIRD-PARTY-NOTICES/botocore/NOTICE"
-      ],
-      "provenance_file": "THIRD-PARTY-NOTICES/botocore/METADATA",
-      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "evidence": {
-        "installed_version": "1.43.94",
-        "metadata_path": "THIRD-PARTY-NOTICES/botocore/METADATA",
-        "metadata_sha256": "02b47103e3b6728d16e2c66de3f3063b38867a197311c722f5c9e6b7c74f667a",
-        "project_url": "https://github.com/boto/botocore",
-        "source_url": "https://github.com/boto/botocore",
-        "metadata_license_field": "License",
-        "metadata_license": "Apache-2.0",
-        "spdx": "Apache-2.0",
+        "compatibility_rule": "Apache-2.0 permissive notice; compatible with the GPL host as an aggregate/runtime dependency.",
+        "evidence_expression": "Apache-2.0",
+        "evidence_expression_basis": "The retained full LICENSE.txt is Apache License, Version 2.0; this is release evidence, not a synthesized PEP 639 metadata field.",
+        "installed_version": "1.43.97",
         "license_file_hashes": {
           "THIRD-PARTY-NOTICES/botocore/LICENSE.txt": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
           "THIRD-PARTY-NOTICES/botocore/NOTICE": "1d1c5a6f3d68cb11f4fad1afa86a7450d0286f15c176ef0ea048f255b46d95b0"
         },
-        "compatibility_rule": "Apache-2.0 permissive notice; compatible with the GPL host as an aggregate/runtime dependency.",
-        "evidence_expression": "Apache-2.0",
-        "evidence_expression_basis": "The retained full LICENSE.txt is Apache License, Version 2.0; this is release evidence, not a synthesized PEP 639 metadata field."
-      }
+        "metadata_license": "Apache-2.0",
+        "metadata_license_field": "License",
+        "metadata_path": "THIRD-PARTY-NOTICES/botocore/METADATA",
+        "metadata_sha256": "afc8177e124322cb35c84ca097e90522ccaa41bf7fe476fc3abd4e0e69440bdd",
+        "project_url": "https://github.com/boto/botocore",
+        "source_url": "https://github.com/boto/botocore",
+        "spdx": "Apache-2.0"
+      },
+      "license_files": [
+        "THIRD-PARTY-NOTICES/botocore/LICENSE.txt",
+        "THIRD-PARTY-NOTICES/botocore/NOTICE"
+      ],
+      "name": "botocore",
+      "provenance_file": "THIRD-PARTY-NOTICES/botocore/METADATA",
+      "spdx": "Apache-2.0"
     },
     {
-      "name": "bottle",
+      "approval": "approved",
+      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "declarations": [
         {
           "owner": "host",
@@ -795,32 +133,32 @@
           "requirement": "bottle>=0.13.0"
         }
       ],
-      "approval": "approved",
-      "spdx": "MIT",
-      "license_files": [
-        "THIRD-PARTY-NOTICES/bottle/LICENSE"
-      ],
-      "provenance_file": "THIRD-PARTY-NOTICES/bottle/METADATA",
-      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "evidence": {
+        "compatibility_rule": "MIT permission and notice preserved in the bundled license text.",
+        "evidence_expression": "MIT",
+        "evidence_expression_basis": "The retained full LICENSE contains the MIT permission and notice text.",
         "installed_version": "0.13.4",
+        "license_file_hashes": {
+          "THIRD-PARTY-NOTICES/bottle/LICENSE": "af150257b1f7cce92b6207854f2e8f90ea9ae52d7cac758d13a47bd12e2a2443"
+        },
+        "metadata_license": "MIT",
+        "metadata_license_field": "License",
         "metadata_path": "THIRD-PARTY-NOTICES/bottle/METADATA",
         "metadata_sha256": "441619180223f6ae8a92d1e88e4bbd48159c452bedae1e7c9c27f0673fa720d1",
         "project_url": "https://github.com/bottlepy/bottle",
         "source_url": "https://github.com/bottlepy/bottle",
-        "metadata_license_field": "License",
-        "metadata_license": "MIT",
-        "spdx": "MIT",
-        "license_file_hashes": {
-          "THIRD-PARTY-NOTICES/bottle/LICENSE": "af150257b1f7cce92b6207854f2e8f90ea9ae52d7cac758d13a47bd12e2a2443"
-        },
-        "compatibility_rule": "MIT permission and notice preserved in the bundled license text.",
-        "evidence_expression": "MIT",
-        "evidence_expression_basis": "The retained full LICENSE contains the MIT permission and notice text."
-      }
+        "spdx": "MIT"
+      },
+      "license_files": [
+        "THIRD-PARTY-NOTICES/bottle/LICENSE"
+      ],
+      "name": "bottle",
+      "provenance_file": "THIRD-PARTY-NOTICES/bottle/METADATA",
+      "spdx": "MIT"
     },
     {
-      "name": "cryptography",
+      "approval": "approved",
+      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "declarations": [
         {
           "owner": "host",
@@ -841,36 +179,36 @@
           "requirement": "cryptography>=41.0.0"
         }
       ],
-      "approval": "approved",
-      "spdx": "Apache-2.0 OR BSD-3-Clause",
-      "license_files": [
-        "THIRD-PARTY-NOTICES/cryptography/LICENSE",
-        "THIRD-PARTY-NOTICES/cryptography/LICENSE.APACHE",
-        "THIRD-PARTY-NOTICES/cryptography/LICENSE.BSD"
-      ],
-      "provenance_file": "THIRD-PARTY-NOTICES/cryptography/METADATA",
-      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "evidence": {
+        "compatibility_rule": "The package permits either Apache-2.0 or BSD-3-Clause; both license texts are bundled.",
+        "evidence_expression": "Apache-2.0 OR BSD-3-Clause",
+        "evidence_expression_basis": "The installed PEP 639 License-Expression and all retained license files state this expression.",
         "installed_version": "50.0.1",
-        "metadata_path": "THIRD-PARTY-NOTICES/cryptography/METADATA",
-        "metadata_sha256": "8e9b5570da4686848ee5c6bb83fffc224bcddf9793136731dd050ce0c05fffe2",
-        "project_url": "https://github.com/pyca/cryptography",
-        "source_url": "https://github.com/pyca/cryptography",
-        "metadata_license_field": "License-Expression",
-        "metadata_license": "Apache-2.0 OR BSD-3-Clause",
-        "spdx": "Apache-2.0 OR BSD-3-Clause",
         "license_file_hashes": {
           "THIRD-PARTY-NOTICES/cryptography/LICENSE": "3e0c7c091a948b82533ba98fd7cbb40432d6f1a9acbf85f5922d2f99a93ae6bb",
           "THIRD-PARTY-NOTICES/cryptography/LICENSE.APACHE": "aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe",
           "THIRD-PARTY-NOTICES/cryptography/LICENSE.BSD": "602c4c7482de6479dd2e9793cda275e5e63d773dacd1eca689232ab7008fb4fb"
         },
-        "compatibility_rule": "The package permits either Apache-2.0 or BSD-3-Clause; both license texts are bundled.",
-        "evidence_expression": "Apache-2.0 OR BSD-3-Clause",
-        "evidence_expression_basis": "The installed PEP 639 License-Expression and all retained license files state this expression."
-      }
+        "metadata_license": "Apache-2.0 OR BSD-3-Clause",
+        "metadata_license_field": "License-Expression",
+        "metadata_path": "THIRD-PARTY-NOTICES/cryptography/METADATA",
+        "metadata_sha256": "8e9b5570da4686848ee5c6bb83fffc224bcddf9793136731dd050ce0c05fffe2",
+        "project_url": "https://github.com/pyca/cryptography",
+        "source_url": "https://github.com/pyca/cryptography",
+        "spdx": "Apache-2.0 OR BSD-3-Clause"
+      },
+      "license_files": [
+        "THIRD-PARTY-NOTICES/cryptography/LICENSE",
+        "THIRD-PARTY-NOTICES/cryptography/LICENSE.APACHE",
+        "THIRD-PARTY-NOTICES/cryptography/LICENSE.BSD"
+      ],
+      "name": "cryptography",
+      "provenance_file": "THIRD-PARTY-NOTICES/cryptography/METADATA",
+      "spdx": "Apache-2.0 OR BSD-3-Clause"
     },
     {
-      "name": "curl-cffi",
+      "approval": "approved",
+      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "declarations": [
         {
           "owner": "host",
@@ -879,32 +217,32 @@
           "requirement": "curl_cffi>=0.7.4"
         }
       ],
-      "approval": "approved",
-      "spdx": "MIT",
-      "license_files": [
-        "THIRD-PARTY-NOTICES/curl-cffi/LICENSE"
-      ],
-      "provenance_file": "THIRD-PARTY-NOTICES/curl-cffi/METADATA",
-      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "evidence": {
+        "compatibility_rule": "MIT permission and notice preserved in the bundled license text.",
+        "evidence_expression": "MIT",
+        "evidence_expression_basis": "The installed PEP 639 License-Expression and retained distribution LICENSE state MIT; it does not separately license an internal DLL.",
         "installed_version": "0.16.3",
+        "license_file_hashes": {
+          "THIRD-PARTY-NOTICES/curl-cffi/LICENSE": "47e6ce96c02170758c16164e66f920620db614523d642eba5000ba0c7aa2be6e"
+        },
+        "metadata_license": "MIT",
+        "metadata_license_field": "License-Expression",
         "metadata_path": "THIRD-PARTY-NOTICES/curl-cffi/METADATA",
         "metadata_sha256": "d9194718d88bef3b8a798962115010edf0c4582d2f5fd70d2a360a80e236d309",
         "project_url": "https://github.com/lexiforest/curl_cffi",
         "source_url": "https://github.com/lexiforest/curl_cffi",
-        "metadata_license_field": "License-Expression",
-        "metadata_license": "MIT",
-        "spdx": "MIT",
-        "license_file_hashes": {
-          "THIRD-PARTY-NOTICES/curl-cffi/LICENSE": "47e6ce96c02170758c16164e66f920620db614523d642eba5000ba0c7aa2be6e"
-        },
-        "compatibility_rule": "MIT permission and notice preserved in the bundled license text.",
-        "evidence_expression": "MIT",
-        "evidence_expression_basis": "The installed PEP 639 License-Expression and retained distribution LICENSE state MIT; it does not separately license an internal DLL."
-      }
+        "spdx": "MIT"
+      },
+      "license_files": [
+        "THIRD-PARTY-NOTICES/curl-cffi/LICENSE"
+      ],
+      "name": "curl-cffi",
+      "provenance_file": "THIRD-PARTY-NOTICES/curl-cffi/METADATA",
+      "spdx": "MIT"
     },
     {
-      "name": "ffmpeg",
+      "approval": "not-shipped",
+      "basis": "Telegram 通过 shutil.which 使用用户系统 ffmpeg，仓库没有捆绑该可执行文件；不声明其版本或许可已审定。",
       "declarations": [
         {
           "owner": "source.telegram",
@@ -913,14 +251,14 @@
           "requirement": "ffmpeg"
         }
       ],
-      "approval": "not-shipped",
-      "spdx": "NOASSERTION",
       "license_files": [],
+      "name": "ffmpeg",
       "provenance_file": null,
-      "basis": "Telegram 通过 shutil.which 使用用户系统 ffmpeg，仓库没有捆绑该可执行文件；不声明其版本或许可已审定。"
+      "spdx": "NOASSERTION"
     },
     {
-      "name": "gmssl",
+      "approval": "frozen-disabled",
+      "basis": "已核实本地 gmssl 3.2.2 METADATA（License: BSD）及官方 v3.2.2 source tag/setup.py；wheel 与官方源码树均不含许可证正文，无法在不猜测的情况下映射到具体 SPDX 或生成完整 notice，因此 REJECTED。冻结 PyInstaller/Nuitka 显式排除它；source.douyin 描述符保留但 import 功能在 release scope 返回 unavailable sentinel。",
       "declarations": [
         {
           "owner": "host",
@@ -929,35 +267,35 @@
           "requirement": "gmssl>=3.2.2"
         }
       ],
-      "approval": "frozen-disabled",
-      "spdx": "NOASSERTION",
-      "license_files": [],
-      "provenance_file": "THIRD-PARTY-NOTICES/gmssl/METADATA",
-      "basis": "已核实本地 gmssl 3.2.2 METADATA（License: BSD）及官方 v3.2.2 source tag/setup.py；wheel 与官方源码树均不含许可证正文，无法在不猜测的情况下映射到具体 SPDX 或生成完整 notice，因此 REJECTED。冻结 PyInstaller/Nuitka 显式排除它；source.douyin 描述符保留但 import 功能在 release scope 返回 unavailable sentinel。",
       "evidence": {
-        "installed_version": "3.2.2",
-        "metadata_path": "THIRD-PARTY-NOTICES/gmssl/METADATA",
-        "metadata_sha256": "2ad6358f45069de4760f5d56e4368fec05ca23102aacd945d2a661cb183b224d",
-        "project_url": "https://github.com/duanhongyi/gmssl",
-        "source_url": "https://github.com/duanhongyi/gmssl",
-        "metadata_license_field": "License",
-        "metadata_license": "BSD",
-        "spdx": "NOASSERTION",
-        "license_file_hashes": {},
         "compatibility_rule": "BLOCKED: exact PyPI source archive and installed metadata contain no full license text; frozen release excludes gmssl.",
         "evidence_expression": "NOASSERTION",
         "evidence_expression_basis": "No complete license text establishes a precise evidence expression.",
+        "installed_version": "3.2.2",
+        "license_file_hashes": {},
+        "metadata_license": "BSD",
+        "metadata_license_field": "License",
+        "metadata_path": "THIRD-PARTY-NOTICES/gmssl/METADATA",
+        "metadata_sha256": "2ad6358f45069de4760f5d56e4368fec05ca23102aacd945d2a661cb183b224d",
+        "project_url": "https://github.com/duanhongyi/gmssl",
         "source_archive": {
-          "pypi_json_url": "https://pypi.org/pypi/gmssl/3.2.2/json",
           "filename": "gmssl-3.2.2.linux-x86_64.tar.gz",
-          "url": "https://files.pythonhosted.org/packages/06/29/008dc5071656ac522282f87accc837643be1fa9e7d021f890c1cdf390714/gmssl-3.2.2.linux-x86_64.tar.gz",
+          "inspection": "Downloaded via TLS from the PyPI JSON sdist URL during Todo14. The verified archive contains no LICENSE, COPYING, NOTICE, or other full license text; its PKG-INFO only says License: BSD and describes a class BSD license. No precise BSD expression is asserted.",
+          "pypi_json_url": "https://pypi.org/pypi/gmssl/3.2.2/json",
           "sha256": "f3d8c8c75dd34cd169f129c017f67fdd80cce2c67a13f9a0e3b1c58f8de6351e",
-          "inspection": "Downloaded via TLS from the PyPI JSON sdist URL during Todo14. The verified archive contains no LICENSE, COPYING, NOTICE, or other full license text; its PKG-INFO only says License: BSD and describes a class BSD license. No precise BSD expression is asserted."
-        }
-      }
+          "url": "https://files.pythonhosted.org/packages/06/29/008dc5071656ac522282f87accc837643be1fa9e7d021f890c1cdf390714/gmssl-3.2.2.linux-x86_64.tar.gz"
+        },
+        "source_url": "https://github.com/duanhongyi/gmssl",
+        "spdx": "NOASSERTION"
+      },
+      "license_files": [],
+      "name": "gmssl",
+      "provenance_file": "THIRD-PARTY-NOTICES/gmssl/METADATA",
+      "spdx": "NOASSERTION"
     },
     {
-      "name": "keyboard",
+      "approval": "approved",
+      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "declarations": [
         {
           "owner": "host",
@@ -978,32 +316,32 @@
           "requirement": "keyboard>=0.13.5"
         }
       ],
-      "approval": "approved",
-      "spdx": "MIT",
-      "license_files": [
-        "THIRD-PARTY-NOTICES/keyboard/LICENSE.txt"
-      ],
-      "provenance_file": "THIRD-PARTY-NOTICES/keyboard/METADATA",
-      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "evidence": {
+        "compatibility_rule": "MIT permission and notice preserved in the bundled license text.",
+        "evidence_expression": "MIT",
+        "evidence_expression_basis": "The retained legacy-installed LICENSE.txt contains the MIT text.",
         "installed_version": "0.13.5",
+        "license_file_hashes": {
+          "THIRD-PARTY-NOTICES/keyboard/LICENSE.txt": "2bf14a525555d05a801c2d2c28901504fb76abee7c2d7ebfb4cfc7508d7df0f7"
+        },
+        "metadata_license": "MIT",
+        "metadata_license_field": "License",
         "metadata_path": "THIRD-PARTY-NOTICES/keyboard/METADATA",
         "metadata_sha256": "a9d4d5166669be3803b7ae64ed319a9bbee0de28b0de8d69801af058344bfbac",
         "project_url": "https://github.com/boppreh/keyboard",
         "source_url": "https://github.com/boppreh/keyboard",
-        "metadata_license_field": "License",
-        "metadata_license": "MIT",
-        "spdx": "MIT",
-        "license_file_hashes": {
-          "THIRD-PARTY-NOTICES/keyboard/LICENSE.txt": "2bf14a525555d05a801c2d2c28901504fb76abee7c2d7ebfb4cfc7508d7df0f7"
-        },
-        "compatibility_rule": "MIT permission and notice preserved in the bundled license text.",
-        "evidence_expression": "MIT",
-        "evidence_expression_basis": "The retained legacy-installed LICENSE.txt contains the MIT text."
-      }
+        "spdx": "MIT"
+      },
+      "license_files": [
+        "THIRD-PARTY-NOTICES/keyboard/LICENSE.txt"
+      ],
+      "name": "keyboard",
+      "provenance_file": "THIRD-PARTY-NOTICES/keyboard/METADATA",
+      "spdx": "MIT"
     },
     {
-      "name": "ohmymeme-plugin-sync-s3",
+      "approval": "approved",
+      "basis": "真实官方 S3 分发同版本、同 GPL-3.0-only 许可，源码/metadata/frozen 记录交叉校验。",
       "declarations": [
         {
           "owner": "sync.r2",
@@ -1012,16 +350,16 @@
           "requirement": "ohmymeme-plugin-sync-s3==0.1.0"
         }
       ],
-      "approval": "approved",
-      "spdx": "GPL-3.0-only",
       "license_files": [
         "LICENSE"
       ],
+      "name": "ohmymeme-plugin-sync-s3",
       "provenance_file": "plugins/sync.s3/pyproject.toml",
-      "basis": "真实官方 S3 分发同版本、同 GPL-3.0-only 许可，源码/metadata/frozen 记录交叉校验。"
+      "spdx": "GPL-3.0-only"
     },
     {
-      "name": "openssl",
+      "approval": "rejected",
+      "basis": "CMake 实际使用 find_package(OpenSSL REQUIRED)、OPENSSL_USE_STATIC_LIBS 和 OpenSSL::Crypto；本 worktree/workflow 未固定 OpenSSL 版本、来源包或实际 libcrypto_static.lib hash，无法绑定对应 Apache-2.0 notice，REJECTED。该 helper build input 和 runtime-fetched helper 都不在 frozen release scope。",
       "declarations": [
         {
           "owner": "wechat-helper",
@@ -1030,14 +368,14 @@
           "requirement": "OpenSSL::Crypto"
         }
       ],
-      "approval": "rejected",
-      "spdx": "NOASSERTION",
       "license_files": [],
+      "name": "openssl",
       "provenance_file": null,
-      "basis": "CMake 实际使用 find_package(OpenSSL REQUIRED)、OPENSSL_USE_STATIC_LIBS 和 OpenSSL::Crypto；本 worktree/workflow 未固定 OpenSSL 版本、来源包或实际 libcrypto_static.lib hash，无法绑定对应 Apache-2.0 notice，REJECTED。该 helper build input 和 runtime-fetched helper 都不在 frozen release scope。"
+      "spdx": "NOASSERTION"
     },
     {
-      "name": "pillow",
+      "approval": "approved",
+      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "declarations": [
         {
           "owner": "host",
@@ -1052,32 +390,32 @@
           "requirement": "Pillow>=10.0.0"
         }
       ],
-      "approval": "approved",
-      "spdx": "MIT-CMU",
-      "license_files": [
-        "THIRD-PARTY-NOTICES/pillow/LICENSE"
-      ],
-      "provenance_file": "THIRD-PARTY-NOTICES/pillow/METADATA",
-      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "evidence": {
+        "compatibility_rule": "Pillow's declared MIT-CMU expression is accepted and its complete license text is bundled.",
+        "evidence_expression": "MIT-CMU",
+        "evidence_expression_basis": "The installed PEP 639 License-Expression is MIT-CMU and the complete 1617-line Pillow LICENSE is retained without reduction.",
         "installed_version": "12.3.0",
+        "license_file_hashes": {
+          "THIRD-PARTY-NOTICES/pillow/LICENSE": "4f7866a74802c6326f81faff59a56546b6aec2b10b91973e0e9308de95e79857"
+        },
+        "metadata_license": "MIT-CMU",
+        "metadata_license_field": "License-Expression",
         "metadata_path": "THIRD-PARTY-NOTICES/pillow/METADATA",
         "metadata_sha256": "2c4378001803cfac65809a50722d46e0da4ce8061e717f103e5d52734bab30f5",
         "project_url": "https://github.com/python-pillow/Pillow",
         "source_url": "https://github.com/python-pillow/Pillow",
-        "metadata_license_field": "License-Expression",
-        "metadata_license": "MIT-CMU",
-        "spdx": "MIT-CMU",
-        "license_file_hashes": {
-          "THIRD-PARTY-NOTICES/pillow/LICENSE": "4f7866a74802c6326f81faff59a56546b6aec2b10b91973e0e9308de95e79857"
-        },
-        "compatibility_rule": "Pillow's declared MIT-CMU expression is accepted and its complete license text is bundled.",
-        "evidence_expression": "MIT-CMU",
-        "evidence_expression_basis": "The installed PEP 639 License-Expression is MIT-CMU and the complete 1617-line Pillow LICENSE is retained without reduction."
-      }
+        "spdx": "MIT-CMU"
+      },
+      "license_files": [
+        "THIRD-PARTY-NOTICES/pillow/LICENSE"
+      ],
+      "name": "pillow",
+      "provenance_file": "THIRD-PARTY-NOTICES/pillow/METADATA",
+      "spdx": "MIT-CMU"
     },
     {
-      "name": "pydantic",
+      "approval": "approved",
+      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "declarations": [
         {
           "owner": "host",
@@ -1086,32 +424,32 @@
           "requirement": "pydantic==2.11.7"
         }
       ],
-      "approval": "approved",
-      "spdx": "MIT",
-      "license_files": [
-        "THIRD-PARTY-NOTICES/pydantic/LICENSE"
-      ],
-      "provenance_file": "THIRD-PARTY-NOTICES/pydantic/METADATA",
-      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "evidence": {
+        "compatibility_rule": "MIT permission and notice preserved in the bundled license text.",
+        "evidence_expression": "MIT",
+        "evidence_expression_basis": "The installed PEP 639 License-Expression and retained LICENSE state MIT.",
         "installed_version": "2.11.7",
+        "license_file_hashes": {
+          "THIRD-PARTY-NOTICES/pydantic/LICENSE": "a9e186f3ca16b5eef84318e7a701721351a00cb7b8ae3a4394b67b49e3529ef3"
+        },
+        "metadata_license": "MIT",
+        "metadata_license_field": "License-Expression",
         "metadata_path": "THIRD-PARTY-NOTICES/pydantic/METADATA",
         "metadata_sha256": "f791b40bde997db7ff175b238bff97d50cf9505a8aa307e0bf791d57ed1ae282",
         "project_url": "https://github.com/pydantic/pydantic",
         "source_url": "https://github.com/pydantic/pydantic",
-        "metadata_license_field": "License-Expression",
-        "metadata_license": "MIT",
-        "spdx": "MIT",
-        "license_file_hashes": {
-          "THIRD-PARTY-NOTICES/pydantic/LICENSE": "a9e186f3ca16b5eef84318e7a701721351a00cb7b8ae3a4394b67b49e3529ef3"
-        },
-        "compatibility_rule": "MIT permission and notice preserved in the bundled license text.",
-        "evidence_expression": "MIT",
-        "evidence_expression_basis": "The installed PEP 639 License-Expression and retained LICENSE state MIT."
-      }
+        "spdx": "MIT"
+      },
+      "license_files": [
+        "THIRD-PARTY-NOTICES/pydantic/LICENSE"
+      ],
+      "name": "pydantic",
+      "provenance_file": "THIRD-PARTY-NOTICES/pydantic/METADATA",
+      "spdx": "MIT"
     },
     {
-      "name": "pyinstaller",
+      "approval": "approved",
+      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "declarations": [
         {
           "owner": "host",
@@ -1120,32 +458,32 @@
           "requirement": "pyinstaller>=6.0.0"
         }
       ],
-      "approval": "approved",
-      "spdx": "GPL-2.0-or-later WITH Bootloader-exception",
-      "license_files": [
-        "THIRD-PARTY-NOTICES/pyinstaller/COPYING.txt"
-      ],
-      "provenance_file": "THIRD-PARTY-NOTICES/pyinstaller/METADATA",
-      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "evidence": {
+        "compatibility_rule": "PyInstaller's COPYING.txt grants the bootloader exception; the complete exception text is bundled.",
+        "evidence_expression": "GPL-2.0-or-later WITH Bootloader-exception",
+        "evidence_expression_basis": "The retained COPYING.txt states the Bootloader Exception and its file-specific Apache-2.0 and MIT scopes.",
         "installed_version": "6.22.3",
+        "license_file_hashes": {
+          "THIRD-PARTY-NOTICES/pyinstaller/COPYING.txt": "0598064c7d2718e38d7914a7d08343b2fa008e3bea9ebba2aa7a6ffa5900dd64"
+        },
+        "metadata_license": "GPLv2-or-later with a special exception which allows to use PyInstaller to build and distribute non-free programs (including commercial ones)",
+        "metadata_license_field": "License",
         "metadata_path": "THIRD-PARTY-NOTICES/pyinstaller/METADATA",
         "metadata_sha256": "2991d3dcd53fe9966b8c16586322a7f9bbc564dd4752c190bd4fe8d6747f7046",
         "project_url": "https://github.com/pyinstaller/pyinstaller",
         "source_url": "https://github.com/pyinstaller/pyinstaller",
-        "metadata_license_field": "License",
-        "metadata_license": "GPLv2-or-later with a special exception which allows to use PyInstaller to build and distribute non-free programs (including commercial ones)",
-        "spdx": "GPL-2.0-or-later WITH Bootloader-exception",
-        "license_file_hashes": {
-          "THIRD-PARTY-NOTICES/pyinstaller/COPYING.txt": "0598064c7d2718e38d7914a7d08343b2fa008e3bea9ebba2aa7a6ffa5900dd64"
-        },
-        "compatibility_rule": "PyInstaller's COPYING.txt grants the bootloader exception; the complete exception text is bundled.",
-        "evidence_expression": "GPL-2.0-or-later WITH Bootloader-exception",
-        "evidence_expression_basis": "The retained COPYING.txt states the Bootloader Exception and its file-specific Apache-2.0 and MIT scopes."
-      }
+        "spdx": "GPL-2.0-or-later WITH Bootloader-exception"
+      },
+      "license_files": [
+        "THIRD-PARTY-NOTICES/pyinstaller/COPYING.txt"
+      ],
+      "name": "pyinstaller",
+      "provenance_file": "THIRD-PARTY-NOTICES/pyinstaller/METADATA",
+      "spdx": "GPL-2.0-or-later WITH Bootloader-exception"
     },
     {
-      "name": "pyperclip",
+      "approval": "approved",
+      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "declarations": [
         {
           "owner": "host",
@@ -1160,34 +498,68 @@
           "requirement": "pyperclip>=1.8.2"
         }
       ],
-      "approval": "approved",
-      "spdx": "BSD-3-Clause",
-      "license_files": [
-        "THIRD-PARTY-NOTICES/pyperclip/LICENSE.txt",
-        "THIRD-PARTY-NOTICES/pyperclip/AUTHORS.txt"
-      ],
-      "provenance_file": "THIRD-PARTY-NOTICES/pyperclip/METADATA",
-      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "evidence": {
+        "compatibility_rule": "The bundled BSD text contains the three-clause no-endorsement condition and is retained verbatim.",
+        "evidence_expression": "BSD-3-Clause",
+        "evidence_expression_basis": "The retained full LICENSE.txt has the three redistribution clauses, including the no-endorsement clause.",
         "installed_version": "1.11.0",
+        "license_file_hashes": {
+          "THIRD-PARTY-NOTICES/pyperclip/AUTHORS.txt": "df4ed864ae3275816030fadb3c89a3b72a30de0973325f8faea5414bdd8e6ceb",
+          "THIRD-PARTY-NOTICES/pyperclip/LICENSE.txt": "a72b0acc9389e4c17ced890ef1b03455e04978d39e25636099b93efb76b74ead"
+        },
+        "metadata_license": "BSD",
+        "metadata_license_field": "License",
         "metadata_path": "THIRD-PARTY-NOTICES/pyperclip/METADATA",
         "metadata_sha256": "2493839e0751761f27d39aa6d5c5dfd1df839c45da8f328aba4ae4102868b825",
         "project_url": "https://github.com/asweigart/pyperclip",
         "source_url": "https://github.com/asweigart/pyperclip",
-        "metadata_license_field": "License",
-        "metadata_license": "BSD",
-        "spdx": "BSD-3-Clause",
-        "license_file_hashes": {
-          "THIRD-PARTY-NOTICES/pyperclip/LICENSE.txt": "a72b0acc9389e4c17ced890ef1b03455e04978d39e25636099b93efb76b74ead",
-          "THIRD-PARTY-NOTICES/pyperclip/AUTHORS.txt": "df4ed864ae3275816030fadb3c89a3b72a30de0973325f8faea5414bdd8e6ceb"
-        },
-        "compatibility_rule": "The bundled BSD text contains the three-clause no-endorsement condition and is retained verbatim.",
-        "evidence_expression": "BSD-3-Clause",
-        "evidence_expression_basis": "The retained full LICENSE.txt has the three redistribution clauses, including the no-endorsement clause."
-      }
+        "spdx": "BSD-3-Clause"
+      },
+      "license_files": [
+        "THIRD-PARTY-NOTICES/pyperclip/LICENSE.txt",
+        "THIRD-PARTY-NOTICES/pyperclip/AUTHORS.txt"
+      ],
+      "name": "pyperclip",
+      "provenance_file": "THIRD-PARTY-NOTICES/pyperclip/METADATA",
+      "spdx": "BSD-3-Clause"
     },
     {
-      "name": "pystray",
+      "approval": "approved",
+      "basis": "Current local METADATA and copied license evidence follow the fixed compatibility rule.",
+      "declarations": [
+        {
+          "owner": "host",
+          "source": "requirements.txt",
+          "scope": "runtime",
+          "requirement": "pypinyin>=0.50.0"
+        }
+      ],
+      "evidence": {
+        "compatibility_rule": "MIT permission and notice preserved in the bundled license text.",
+        "evidence_expression": "MIT",
+        "evidence_expression_basis": "The retained legacy License field and installed LICENSE.txt state MIT.",
+        "installed_version": "0.55.0",
+        "license_file_hashes": {
+          "THIRD-PARTY-NOTICES/pypinyin/LICENSE.txt": "1e6c90014b4912815c296ee64bb6f6280af47e6d4c5d80e86232dfc5defe764c"
+        },
+        "metadata_license": "MIT",
+        "metadata_license_field": "License",
+        "metadata_path": "THIRD-PARTY-NOTICES/pypinyin/METADATA",
+        "metadata_sha256": "82ac94eb74fa0eb500355219bc585228716759ed255c385c5e32dd28ddbaf03f",
+        "project_url": "https://github.com/mozillazg/python-pinyin",
+        "source_url": "https://github.com/mozillazg/python-pinyin",
+        "spdx": "MIT"
+      },
+      "license_files": [
+        "THIRD-PARTY-NOTICES/pypinyin/LICENSE.txt"
+      ],
+      "name": "pypinyin",
+      "provenance_file": "THIRD-PARTY-NOTICES/pypinyin/METADATA",
+      "spdx": "MIT"
+    },
+    {
+      "approval": "approved",
+      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "declarations": [
         {
           "owner": "host",
@@ -1202,34 +574,34 @@
           "requirement": "pystray>=0.19.0"
         }
       ],
-      "approval": "approved",
-      "spdx": "LGPL-3.0-only",
-      "license_files": [
-        "THIRD-PARTY-NOTICES/pystray/COPYING",
-        "THIRD-PARTY-NOTICES/pystray/COPYING.LGPL"
-      ],
-      "provenance_file": "THIRD-PARTY-NOTICES/pystray/METADATA",
-      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "evidence": {
+        "compatibility_rule": "The retained full COPYING.LGPL is LGPL-3.0-only evidence; legacy metadata remains License: LGPLv3.",
+        "evidence_expression": "LGPL-3.0-only",
+        "evidence_expression_basis": "The retained COPYING.LGPL is the complete GNU Lesser General Public License Version 3 text. This does not add a PEP 639 field to legacy metadata.",
         "installed_version": "0.19.5",
-        "metadata_path": "THIRD-PARTY-NOTICES/pystray/METADATA",
-        "metadata_sha256": "073b0620fe49a47061d336d7110779e6ca808e8294b0aa5cd9d437b1979d8fb1",
-        "project_url": "https://github.com/moses-palmer/pystray",
-        "source_url": "https://github.com/moses-palmer/pystray",
-        "metadata_license_field": "License",
-        "metadata_license": "LGPLv3",
-        "spdx": "LGPL-3.0-only",
         "license_file_hashes": {
           "THIRD-PARTY-NOTICES/pystray/COPYING": "1e4d0c2eb111b851de12d7b2737195b950fae3620d2a23a474ce8d46e1d2e4b6",
           "THIRD-PARTY-NOTICES/pystray/COPYING.LGPL": "e583ee8a64cd2ae744422bf76a1295838acae3698347f3a2af07462ddfaf0d2d"
         },
-        "compatibility_rule": "The retained full COPYING.LGPL is LGPL-3.0-only evidence; legacy metadata remains License: LGPLv3.",
-        "evidence_expression": "LGPL-3.0-only",
-        "evidence_expression_basis": "The retained COPYING.LGPL is the complete GNU Lesser General Public License Version 3 text. This does not add a PEP 639 field to legacy metadata."
-      }
+        "metadata_license": "LGPLv3",
+        "metadata_license_field": "License",
+        "metadata_path": "THIRD-PARTY-NOTICES/pystray/METADATA",
+        "metadata_sha256": "073b0620fe49a47061d336d7110779e6ca808e8294b0aa5cd9d437b1979d8fb1",
+        "project_url": "https://github.com/moses-palmer/pystray",
+        "source_url": "https://github.com/moses-palmer/pystray",
+        "spdx": "LGPL-3.0-only"
+      },
+      "license_files": [
+        "THIRD-PARTY-NOTICES/pystray/COPYING",
+        "THIRD-PARTY-NOTICES/pystray/COPYING.LGPL"
+      ],
+      "name": "pystray",
+      "provenance_file": "THIRD-PARTY-NOTICES/pystray/METADATA",
+      "spdx": "LGPL-3.0-only"
     },
     {
-      "name": "pytest",
+      "approval": "not-shipped",
+      "basis": "仅开发测试工具。",
       "declarations": [
         {
           "owner": "host",
@@ -1244,14 +616,14 @@
           "requirement": "pytest>=7.0.0"
         }
       ],
-      "approval": "not-shipped",
-      "spdx": "NOASSERTION",
       "license_files": [],
+      "name": "pytest",
       "provenance_file": null,
-      "basis": "仅开发测试工具。"
+      "spdx": "NOASSERTION"
     },
     {
-      "name": "pywebview",
+      "approval": "approved",
+      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "declarations": [
         {
           "owner": "host",
@@ -1266,32 +638,32 @@
           "requirement": "pywebview>=6.0.0"
         }
       ],
-      "approval": "approved",
-      "spdx": "BSD-3-Clause",
-      "license_files": [
-        "THIRD-PARTY-NOTICES/pywebview/LICENSE"
-      ],
-      "provenance_file": "THIRD-PARTY-NOTICES/pywebview/METADATA",
-      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "evidence": {
+        "compatibility_rule": "The bundled BSD 3-Clause text preserves the binary redistribution notice.",
+        "evidence_expression": "BSD-3-Clause",
+        "evidence_expression_basis": "The retained full LICENSE is headed BSD 3-Clause License and contains all three clauses.",
         "installed_version": "6.2.1",
+        "license_file_hashes": {
+          "THIRD-PARTY-NOTICES/pywebview/LICENSE": "4a988dd3598832cd3653de20dc33cb677d0fb53ab5551c879ca31280ae653675"
+        },
+        "metadata_license": "BSD 3-Clause License",
+        "metadata_license_field": "License",
         "metadata_path": "THIRD-PARTY-NOTICES/pywebview/METADATA",
         "metadata_sha256": "8e7f87b5e50b992bc44d9f1dc03fb5218f0b6da5d6c4b9f21f93916bf44569c7",
         "project_url": "https://github.com/r0x0r/pywebview",
         "source_url": "https://github.com/r0x0r/pywebview",
-        "metadata_license_field": "License",
-        "metadata_license": "BSD 3-Clause License",
-        "spdx": "BSD-3-Clause",
-        "license_file_hashes": {
-          "THIRD-PARTY-NOTICES/pywebview/LICENSE": "4a988dd3598832cd3653de20dc33cb677d0fb53ab5551c879ca31280ae653675"
-        },
-        "compatibility_rule": "The bundled BSD 3-Clause text preserves the binary redistribution notice.",
-        "evidence_expression": "BSD-3-Clause",
-        "evidence_expression_basis": "The retained full LICENSE is headed BSD 3-Clause License and contains all three clauses."
-      }
+        "spdx": "BSD-3-Clause"
+      },
+      "license_files": [
+        "THIRD-PARTY-NOTICES/pywebview/LICENSE"
+      ],
+      "name": "pywebview",
+      "provenance_file": "THIRD-PARTY-NOTICES/pywebview/METADATA",
+      "spdx": "BSD-3-Clause"
     },
     {
-      "name": "ruff",
+      "approval": "not-shipped",
+      "basis": "仅开发 lint 工具。",
       "declarations": [
         {
           "owner": "host",
@@ -1306,14 +678,14 @@
           "requirement": "ruff>=0.1.0"
         }
       ],
-      "approval": "not-shipped",
-      "spdx": "NOASSERTION",
       "license_files": [],
+      "name": "ruff",
       "provenance_file": null,
-      "basis": "仅开发 lint 工具。"
+      "spdx": "NOASSERTION"
     },
     {
-      "name": "setuptools",
+      "approval": "not-shipped",
+      "basis": "九包元数据构建工具，非 provider 运行时依赖；PyInstaller 显式排除 setuptools。",
       "declarations": [
         {
           "owner": "source.douyin",
@@ -1370,14 +742,14 @@
           "requirement": "setuptools>=68"
         }
       ],
-      "approval": "not-shipped",
-      "spdx": "NOASSERTION",
       "license_files": [],
+      "name": "setuptools",
       "provenance_file": null,
-      "basis": "九包元数据构建工具，非 provider 运行时依赖；PyInstaller 显式排除 setuptools。"
+      "spdx": "NOASSERTION"
     },
     {
-      "name": "tgcrypto",
+      "approval": "approved",
+      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "declarations": [
         {
           "owner": "host",
@@ -1386,62 +758,505 @@
           "requirement": "tgcrypto>=1.2.5"
         }
       ],
-      "approval": "approved",
-      "spdx": "LGPL-3.0-or-later",
-      "license_files": [
-        "THIRD-PARTY-NOTICES/tgcrypto/COPYING",
-        "THIRD-PARTY-NOTICES/tgcrypto/COPYING.lesser",
-        "THIRD-PARTY-NOTICES/tgcrypto/NOTICE"
-      ],
-      "provenance_file": "THIRD-PARTY-NOTICES/tgcrypto/METADATA",
-      "basis": "当前 .venv 实际 METADATA、对应随分发许可证/NOTICE 文件及固定离线兼容规则；仅工程记录，不构成法律保证。",
       "evidence": {
+        "compatibility_rule": "The package declares LGPLv3+ and bundles COPYING, COPYING.lesser and NOTICE.",
+        "evidence_expression": "LGPL-3.0-or-later",
+        "evidence_expression_basis": "The retained NOTICE says LGPL version 3 or, at the recipient option, any later version; COPYING and COPYING.lesser are retained.",
         "installed_version": "1.2.5",
-        "metadata_path": "THIRD-PARTY-NOTICES/tgcrypto/METADATA",
-        "metadata_sha256": "1ab02ee318ffb935e1909d754936a82c93f218c5590c01fa06b4e29ee4f0d2ff",
-        "project_url": "https://github.com/pyrogram/tgcrypto",
-        "source_url": "https://github.com/pyrogram/tgcrypto",
-        "metadata_license_field": "License",
-        "metadata_license": "LGPLv3+",
-        "spdx": "LGPL-3.0-or-later",
         "license_file_hashes": {
           "THIRD-PARTY-NOTICES/tgcrypto/COPYING": "8b1ba204bb69a0ade2bfcf65ef294a920f6bb361b317dba43c7ef29d96332b9b",
           "THIRD-PARTY-NOTICES/tgcrypto/COPYING.lesser": "a5681bf9b05db14d86776930017c647ad9e6e56ff6bbcfdf21e5848288dfaf1b",
           "THIRD-PARTY-NOTICES/tgcrypto/NOTICE": "40bde225d79587f66a45965c872aee4227396d8516771df29743a44940b63d07"
         },
-        "compatibility_rule": "The package declares LGPLv3+ and bundles COPYING, COPYING.lesser and NOTICE.",
-        "evidence_expression": "LGPL-3.0-or-later",
-        "evidence_expression_basis": "The retained NOTICE says LGPL version 3 or, at the recipient option, any later version; COPYING and COPYING.lesser are retained."
-      }
+        "metadata_license": "LGPLv3+",
+        "metadata_license_field": "License",
+        "metadata_path": "THIRD-PARTY-NOTICES/tgcrypto/METADATA",
+        "metadata_sha256": "1ab02ee318ffb935e1909d754936a82c93f218c5590c01fa06b4e29ee4f0d2ff",
+        "project_url": "https://github.com/pyrogram/tgcrypto",
+        "source_url": "https://github.com/pyrogram/tgcrypto",
+        "spdx": "LGPL-3.0-or-later"
+      },
+      "license_files": [
+        "THIRD-PARTY-NOTICES/tgcrypto/COPYING",
+        "THIRD-PARTY-NOTICES/tgcrypto/COPYING.lesser",
+        "THIRD-PARTY-NOTICES/tgcrypto/NOTICE"
+      ],
+      "name": "tgcrypto",
+      "provenance_file": "THIRD-PARTY-NOTICES/tgcrypto/METADATA",
+      "spdx": "LGPL-3.0-or-later"
     }
   ],
-  "provider_extras": {
-    "source.qqnt": [],
-    "source.telegram": [
-      "Pillow>=10.0.0",
-      "cryptography>=41.0.0",
-      "ffmpeg",
-      "tgcrypto>=1.2.5"
-    ],
-    "source.douyin": [
-      "curl_cffi>=0.7.4",
-      "gmssl>=3.2.2"
-    ],
-    "source.wechat": [
-      "cryptography>=41.0.0"
-    ],
-    "sync.ftp": [],
-    "sync.s3": [
-      "boto3>=1.28.0",
-      "botocore"
-    ],
-    "sync.r2": [
-      "boto3>=1.28.0",
-      "botocore"
-    ],
-    "sync.webdav": [],
-    "transport.lan": []
-  },
+  "distributions": [
+    {
+      "dependencies": [],
+      "dependency_approval": {
+        "basis": "pyproject 无直接第三方依赖；QQNT 衍生来源另列，宿主依赖审批不由此空集替代。",
+        "status": "approved"
+      },
+      "distribution": "ohmymeme-plugin-qqnt",
+      "factory": "ohmymeme_plugin_qqnt:create_plugin",
+      "frozen_license_files": [
+        "LICENSE"
+      ],
+      "id": "source.qqnt",
+      "license_files": [
+        "LICENSE"
+      ],
+      "module": "ohmymeme_plugin_qqnt",
+      "notice": {
+        "basis": "共享根 LICENSE 和保留的原作者/修改说明；包内独立 license_files 为空，不冒称已复制。",
+        "files": [
+          "LICENSE",
+          "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py"
+        ],
+        "status": "present"
+      },
+      "package_license_files": [
+        "LICENSE"
+      ],
+      "provenance": {
+        "basis": "真实分发元数据与算法源码；QQFavoriteExtract 署名见 qqnt-source。",
+        "files": [
+          "plugins/source.qqnt/pyproject.toml",
+          "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py"
+        ],
+        "references": [],
+        "status": "verified"
+      },
+      "pyproject": "plugins/source.qqnt/pyproject.toml",
+      "source_hashes": {
+        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+        "plugins/source.qqnt/pyproject.toml": "afbdf93d23403d2a2ee3b6a99a3817039371d0219878f657092c1c0e8d0543b4",
+        "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py": "ca1dde169d0badfb2b0d9bef467110eb84f9202c17e24ffc5e68b6f32c0cc6db"
+      },
+      "source_offer": {
+        "basis": "本地分发源码可用；独立发布仍需包含许可文本。",
+        "paths": [
+          "plugins/source.qqnt"
+        ],
+        "status": "available"
+      },
+      "spdx": "GPL-3.0-only",
+      "version": "0.1.0"
+    },
+    {
+      "dependencies": [],
+      "dependency_approval": {
+        "basis": "仅确认 pyproject 直接依赖空集；Pillow/cryptography/tgcrypto 的宿主供应及未决审批单列。",
+        "status": "approved"
+      },
+      "distribution": "ohmymeme-plugin-telegram",
+      "factory": "ohmymeme_plugin_telegram:create_plugin",
+      "frozen_license_files": [
+        "LICENSE"
+      ],
+      "id": "source.telegram",
+      "license_files": [
+        "LICENSE"
+      ],
+      "module": "ohmymeme_plugin_telegram",
+      "notice": {
+        "basis": "官方 frozen 使用宿主共享许可文本；独立包未包含单独 license file。",
+        "files": [
+          "LICENSE"
+        ],
+        "status": "present"
+      },
+      "package_license_files": [
+        "LICENSE"
+      ],
+      "provenance": {
+        "basis": "真实分发元数据与本仓库源码，未重新标记许可。",
+        "files": [
+          "plugins/source.telegram/pyproject.toml",
+          "plugins/source.telegram/src/ohmymeme_plugin_telegram/__init__.py"
+        ],
+        "references": [],
+        "status": "verified"
+      },
+      "pyproject": "plugins/source.telegram/pyproject.toml",
+      "source_hashes": {
+        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+        "plugins/source.telegram/pyproject.toml": "b017a5d307dc29b9fab7f07e1c4465e8f965be4c092f3d7a55946559e000bad0",
+        "plugins/source.telegram/src/ohmymeme_plugin_telegram/__init__.py": "f13c427cea922b2eb32a8fc6ce8b7557a1147a8469299b065e67d6bef8da6e67"
+      },
+      "source_offer": {
+        "basis": "本地对应分发源码位置。",
+        "paths": [
+          "plugins/source.telegram"
+        ],
+        "status": "available"
+      },
+      "spdx": "GPL-3.0-only",
+      "version": "0.1.0"
+    },
+    {
+      "dependencies": [],
+      "dependency_approval": {
+        "basis": "仅确认 pyproject 空集；curl_cffi/gmssl 的实际来源与审批另列，ABogus GPL 来源单列。",
+        "status": "approved"
+      },
+      "distribution": "ohmymeme-plugin-douyin",
+      "factory": "ohmymeme_plugin_douyin:create_plugin",
+      "frozen_license_files": [
+        "LICENSE"
+      ],
+      "id": "source.douyin",
+      "license_files": [
+        "LICENSE"
+      ],
+      "module": "ohmymeme_plugin_douyin",
+      "notice": {
+        "basis": "共享 GPL 文本与原作者/修改者说明均保留。",
+        "files": [
+          "LICENSE",
+          "plugins/source.douyin/src/ohmymeme_plugin_douyin/abogus.py"
+        ],
+        "status": "present"
+      },
+      "package_license_files": [
+        "LICENSE"
+      ],
+      "provenance": {
+        "basis": "真实分发和算法源码，保留 ABogus 原始来源。",
+        "files": [
+          "plugins/source.douyin/pyproject.toml",
+          "plugins/source.douyin/src/ohmymeme_plugin_douyin/__init__.py",
+          "plugins/source.douyin/src/ohmymeme_plugin_douyin/abogus.py"
+        ],
+        "references": [],
+        "status": "verified"
+      },
+      "pyproject": "plugins/source.douyin/pyproject.toml",
+      "source_hashes": {
+        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+        "plugins/source.douyin/pyproject.toml": "f3f14714bb5c2069dc32512215c7d0b8cfc968aa424d9ecc3338b8fd3799d4fb",
+        "plugins/source.douyin/src/ohmymeme_plugin_douyin/__init__.py": "c2358263b6d6bf21422dcbc4e7f4e4627892292c039c36aae8b2a7c042f9b389",
+        "plugins/source.douyin/src/ohmymeme_plugin_douyin/abogus.py": "bbd5be62756236b5d47d70afca6704abc5b6494f3cd198ff4a4c39b18a554aba"
+      },
+      "source_offer": {
+        "basis": "本地对应分发及 ABogus 源码位置。",
+        "paths": [
+          "plugins/source.douyin"
+        ],
+        "status": "available"
+      },
+      "spdx": "GPL-3.0-only",
+      "version": "0.1.0"
+    },
+    {
+      "dependencies": [],
+      "dependency_approval": {
+        "basis": "仅确认 pyproject 空集；cryptography 和独立 helper/OpenSSL 均有单列未决记录。",
+        "status": "approved"
+      },
+      "distribution": "ohmymeme-plugin-wechat",
+      "factory": "ohmymeme_plugin_wechat:create_plugin",
+      "frozen_license_files": [
+        "LICENSE"
+      ],
+      "id": "source.wechat",
+      "license_files": [
+        "LICENSE"
+      ],
+      "module": "ohmymeme_plugin_wechat",
+      "notice": {
+        "basis": "Python 插件使用官方 frozen 共享许可文本。",
+        "files": [
+          "LICENSE"
+        ],
+        "status": "present"
+      },
+      "package_license_files": [
+        "LICENSE"
+      ],
+      "provenance": {
+        "basis": "本仓库 Python 插件元数据与源码；不据此给外部 helper 二进制重新授权。",
+        "files": [
+          "plugins/source.wechat/pyproject.toml",
+          "plugins/source.wechat/src/ohmymeme_plugin_wechat/__init__.py"
+        ],
+        "references": [],
+        "status": "verified"
+      },
+      "pyproject": "plugins/source.wechat/pyproject.toml",
+      "source_hashes": {
+        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+        "plugins/source.wechat/pyproject.toml": "80d2b00cdbd017f8554d4ee8f74e7d22208bad979260a85781ce4224a2d842de",
+        "plugins/source.wechat/src/ohmymeme_plugin_wechat/__init__.py": "f2c027c4804a665711d7a3ac33c34ca719d1c51b377065ff9dc1eecd437d996b"
+      },
+      "source_offer": {
+        "basis": "本地 Python 插件源码位置；helper 对应源码绑定仍未决。",
+        "paths": [
+          "plugins/source.wechat"
+        ],
+        "status": "available"
+      },
+      "spdx": "GPL-3.0-only",
+      "version": "0.1.0"
+    },
+    {
+      "dependencies": [],
+      "dependency_approval": {
+        "basis": "标准库网络实现，pyproject 无直接第三方依赖。",
+        "status": "approved"
+      },
+      "distribution": "ohmymeme-plugin-sync-ftp",
+      "factory": "ohmymeme_plugin_sync_ftp:create_plugin",
+      "frozen_license_files": [
+        "LICENSE"
+      ],
+      "id": "sync.ftp",
+      "license_files": [
+        "LICENSE"
+      ],
+      "module": "ohmymeme_plugin_sync_ftp",
+      "notice": {
+        "basis": "官方 frozen 共享许可文本。",
+        "files": [
+          "LICENSE"
+        ],
+        "status": "present"
+      },
+      "package_license_files": [
+        "LICENSE"
+      ],
+      "provenance": {
+        "basis": "真实官方分发与本仓库源码。",
+        "files": [
+          "plugins/sync.ftp/pyproject.toml",
+          "plugins/sync.ftp/src/ohmymeme_plugin_sync_ftp/__init__.py"
+        ],
+        "references": [],
+        "status": "verified"
+      },
+      "pyproject": "plugins/sync.ftp/pyproject.toml",
+      "source_hashes": {
+        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+        "plugins/sync.ftp/pyproject.toml": "493aea3133d592c9bab225a9d557b5a04f550f70c9394bc491b94aee9d363102",
+        "plugins/sync.ftp/src/ohmymeme_plugin_sync_ftp/__init__.py": "a5234a699198c7da62250e27698a2f044faa3b090a7d9a670cbbbf5e1fe20680"
+      },
+      "source_offer": {
+        "basis": "本地对应分发源码位置。",
+        "paths": [
+          "plugins/sync.ftp"
+        ],
+        "status": "available"
+      },
+      "spdx": "GPL-3.0-only",
+      "version": "0.1.0"
+    },
+    {
+      "dependencies": [],
+      "dependency_approval": {
+        "basis": "仅确认 pyproject 空集；实际 boto3 extra 由宿主 requirements 供应，审批另列。",
+        "status": "approved"
+      },
+      "distribution": "ohmymeme-plugin-sync-s3",
+      "factory": "ohmymeme_plugin_sync_s3:create_plugin",
+      "frozen_license_files": [
+        "LICENSE"
+      ],
+      "id": "sync.s3",
+      "license_files": [
+        "LICENSE"
+      ],
+      "module": "ohmymeme_plugin_sync_s3",
+      "notice": {
+        "basis": "官方 frozen 共享许可文本。",
+        "files": [
+          "LICENSE"
+        ],
+        "status": "present"
+      },
+      "package_license_files": [
+        "LICENSE"
+      ],
+      "provenance": {
+        "basis": "真实官方分发与本仓库源码。",
+        "files": [
+          "plugins/sync.s3/pyproject.toml",
+          "plugins/sync.s3/src/ohmymeme_plugin_sync_s3/__init__.py"
+        ],
+        "references": [],
+        "status": "verified"
+      },
+      "pyproject": "plugins/sync.s3/pyproject.toml",
+      "source_hashes": {
+        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+        "plugins/sync.s3/pyproject.toml": "a17e52582dc48ffff69f9e481b68c8196236963dc496167a78030556b2419c50",
+        "plugins/sync.s3/src/ohmymeme_plugin_sync_s3/__init__.py": "883872ca0bdd5d17b1762cf13db52b33aed962871947d3b2a2ea6f436383c01a"
+      },
+      "source_offer": {
+        "basis": "本地对应分发源码位置。",
+        "paths": [
+          "plugins/sync.s3"
+        ],
+        "status": "available"
+      },
+      "spdx": "GPL-3.0-only",
+      "version": "0.1.0"
+    },
+    {
+      "dependencies": [
+        "ohmymeme-plugin-sync-s3==0.1.0"
+      ],
+      "dependency_approval": {
+        "basis": "精确依赖同版本 GPL-3.0-only 官方 S3 分发；不改变 R2 provider 身份，boto3 审批另列。",
+        "status": "approved"
+      },
+      "distribution": "ohmymeme-plugin-sync-r2",
+      "factory": "ohmymeme_plugin_sync_r2:create_plugin",
+      "frozen_license_files": [
+        "LICENSE"
+      ],
+      "id": "sync.r2",
+      "license_files": [
+        "LICENSE"
+      ],
+      "module": "ohmymeme_plugin_sync_r2",
+      "notice": {
+        "basis": "官方 frozen 共享许可文本。",
+        "files": [
+          "LICENSE"
+        ],
+        "status": "present"
+      },
+      "package_license_files": [
+        "LICENSE"
+      ],
+      "provenance": {
+        "basis": "真实官方分发及固定 S3 代码复用声明。",
+        "files": [
+          "plugins/sync.r2/pyproject.toml",
+          "plugins/sync.r2/src/ohmymeme_plugin_sync_r2/__init__.py"
+        ],
+        "references": [],
+        "status": "verified"
+      },
+      "pyproject": "plugins/sync.r2/pyproject.toml",
+      "source_hashes": {
+        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+        "plugins/sync.r2/pyproject.toml": "235c3cbd965d8aa5ded34f698a7da6b4e806984494bcbfa35e546f06840181c9",
+        "plugins/sync.r2/src/ohmymeme_plugin_sync_r2/__init__.py": "8b3d3638d7787bc488da8ec76c76c6fcfecf4e10e8d9feffb63bacb14ed7df86"
+      },
+      "source_offer": {
+        "basis": "本地对应分发源码位置，依赖源码在 sync.s3 记录。",
+        "paths": [
+          "plugins/sync.r2"
+        ],
+        "status": "available"
+      },
+      "spdx": "GPL-3.0-only",
+      "version": "0.1.0"
+    },
+    {
+      "dependencies": [],
+      "dependency_approval": {
+        "basis": "标准库网络实现，pyproject 无直接第三方依赖。",
+        "status": "approved"
+      },
+      "distribution": "ohmymeme-plugin-sync-webdav",
+      "factory": "ohmymeme_plugin_sync_webdav:create_plugin",
+      "frozen_license_files": [
+        "LICENSE"
+      ],
+      "id": "sync.webdav",
+      "license_files": [
+        "LICENSE"
+      ],
+      "module": "ohmymeme_plugin_sync_webdav",
+      "notice": {
+        "basis": "官方 frozen 共享许可文本。",
+        "files": [
+          "LICENSE"
+        ],
+        "status": "present"
+      },
+      "package_license_files": [
+        "LICENSE"
+      ],
+      "provenance": {
+        "basis": "真实官方分发与本仓库源码。",
+        "files": [
+          "plugins/sync.webdav/pyproject.toml",
+          "plugins/sync.webdav/src/ohmymeme_plugin_sync_webdav/__init__.py"
+        ],
+        "references": [],
+        "status": "verified"
+      },
+      "pyproject": "plugins/sync.webdav/pyproject.toml",
+      "source_hashes": {
+        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+        "plugins/sync.webdav/pyproject.toml": "2642981e557b80ae593a3c220d8b760da25775b47266fc518759e2679c6bbf1f",
+        "plugins/sync.webdav/src/ohmymeme_plugin_sync_webdav/__init__.py": "5ee971285a75be5bdfb435f247fb9c94934d2b0275d322b78c9011b8e93fafe8"
+      },
+      "source_offer": {
+        "basis": "本地对应分发源码位置。",
+        "paths": [
+          "plugins/sync.webdav"
+        ],
+        "status": "available"
+      },
+      "spdx": "GPL-3.0-only",
+      "version": "0.1.0"
+    },
+    {
+      "dependencies": [],
+      "dependency_approval": {
+        "basis": "socket 字节传输使用标准库；安全与 cryptography 仍在宿主，pyproject 无直接第三方依赖。",
+        "status": "approved"
+      },
+      "distribution": "ohmymeme-plugin-lan",
+      "factory": "ohmymeme_plugin_lan:create_plugin",
+      "frozen_license_files": [
+        "LICENSE"
+      ],
+      "id": "transport.lan",
+      "license_files": [
+        "LICENSE"
+      ],
+      "module": "ohmymeme_plugin_lan",
+      "notice": {
+        "basis": "官方 frozen 共享许可文本。",
+        "files": [
+          "LICENSE"
+        ],
+        "status": "present"
+      },
+      "package_license_files": [
+        "LICENSE"
+      ],
+      "provenance": {
+        "basis": "真实官方分发与本仓库源码。",
+        "files": [
+          "plugins/transport.lan/pyproject.toml",
+          "plugins/transport.lan/src/ohmymeme_plugin_lan/__init__.py"
+        ],
+        "references": [],
+        "status": "verified"
+      },
+      "pyproject": "plugins/transport.lan/pyproject.toml",
+      "source_hashes": {
+        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+        "plugins/transport.lan/pyproject.toml": "0ebca340005a5f6b0563bc9c35d76e471e8ab6411262b0fe9a38a50eb55e139e",
+        "plugins/transport.lan/src/ohmymeme_plugin_lan/__init__.py": "6ecb9e678e3dd6aaaf88ee480d77b2cfb7d5ac06605843716a833e6d2b81b9a2"
+      },
+      "source_offer": {
+        "basis": "本地对应分发源码位置。",
+        "paths": [
+          "plugins/transport.lan"
+        ],
+        "status": "available"
+      },
+      "spdx": "GPL-3.0-only",
+      "version": "0.1.0"
+    }
+  ],
+  "excluded_distributions": [
+    "adb.qq",
+    "qq.mobile"
+  ],
   "frozen_official_set": {
     "staging_manifest": "fixtures/plugin-parity/frozen-staging/staging-manifest.json",
     "frozen_manifest": "fixtures/plugin-parity/frozen-staging/ohmymeme/config/plugin-manifest.json",
@@ -1458,7 +1273,7 @@
       "transport.lan"
     ],
     "manifest_sha256": "d39856002f56a78347f5a337113e280a08ab94a74537d841e398e84d3b4087a2",
-    "staging_manifest_sha256": "35f2f2fc32baa90cb2f39750f99c1988ea852a37800e4b56d64410c89e9848df",
+    "staging_manifest_sha256": "9a0e3e65808bc8602b195fb0234afab0aba136443fb0b4bb1a4bcf52b2e92aa5",
     "shared_license_target": "ohmymeme/LICENSE",
     "distributions": [
       {
@@ -1480,8 +1295,15 @@
           "LICENSE"
         ],
         "license_files_disabled": false,
-        "metadata_sha256": "5d221f22502461fc3bba70cb46aca2605dc5c46fa14ce1b29854fba70d8bbb62",
-        "entry_points_sha256": "0816d6546e77b67a1002a83216ffbe716a05272e6a2841b514d64f2cb0b8621a"
+        "metadata_sha256": "5daabf0f65a62b90c42a8cf0bd3211ab992c1531ae397395a22db48befb7701d",
+        "entry_points_sha256": "0816d6546e77b67a1002a83216ffbe716a05272e6a2841b514d64f2cb0b8621a",
+        "entry_points": [
+          [
+            "ohmymeme.plugins.v1",
+            "source.qqnt",
+            "ohmymeme_plugin_qqnt:create_plugin"
+          ]
+        ]
       },
       {
         "id": "source.telegram",
@@ -1502,8 +1324,15 @@
           "LICENSE"
         ],
         "license_files_disabled": false,
-        "metadata_sha256": "9272c74e3e8f4b37a9128f3196e8ee6a2ab211c7b77d87fe6cd6b16db05f0eb5",
-        "entry_points_sha256": "091e1ac887bd86da9bc3ad80e99e3eac6c8577510ae929cb2629b493637f337f"
+        "metadata_sha256": "f69f5ce5c057d9bf748fd1caf71813d4576a19a95531819f76c58701ab8c134a",
+        "entry_points_sha256": "091e1ac887bd86da9bc3ad80e99e3eac6c8577510ae929cb2629b493637f337f",
+        "entry_points": [
+          [
+            "ohmymeme.plugins.v1",
+            "source.telegram",
+            "ohmymeme_plugin_telegram:create_plugin"
+          ]
+        ]
       },
       {
         "id": "source.douyin",
@@ -1525,8 +1354,15 @@
           "LICENSE"
         ],
         "license_files_disabled": false,
-        "metadata_sha256": "a62f51dd2390ad01daa067bbf14a86c4f13978708e09c5739ccab02384bd12b4",
-        "entry_points_sha256": "4500cf8d622425a747b194e67107f7fd0e704e3fda47aca38028821d9e133717"
+        "metadata_sha256": "8888161f4956bdcb0458274b1caaf0067360137e1c828a21a67754783bd651d2",
+        "entry_points_sha256": "4500cf8d622425a747b194e67107f7fd0e704e3fda47aca38028821d9e133717",
+        "entry_points": [
+          [
+            "ohmymeme.plugins.v1",
+            "source.douyin",
+            "ohmymeme_plugin_douyin:create_plugin"
+          ]
+        ]
       },
       {
         "id": "source.wechat",
@@ -1547,8 +1383,15 @@
           "LICENSE"
         ],
         "license_files_disabled": false,
-        "metadata_sha256": "860f8a868a93170b996afdc26018c30ebdd8c20d2f38765387228a0329b97d81",
-        "entry_points_sha256": "321e259ddc23f32fefbc7019b204334d8216781e601bff80222befdd964f3e6f"
+        "metadata_sha256": "6851d33a8bddec01e3549e935c85e09f8787357a53c44f0580726b15555bec87",
+        "entry_points_sha256": "321e259ddc23f32fefbc7019b204334d8216781e601bff80222befdd964f3e6f",
+        "entry_points": [
+          [
+            "ohmymeme.plugins.v1",
+            "source.wechat",
+            "ohmymeme_plugin_wechat:create_plugin"
+          ]
+        ]
       },
       {
         "id": "sync.ftp",
@@ -1569,8 +1412,15 @@
           "LICENSE"
         ],
         "license_files_disabled": false,
-        "metadata_sha256": "a8146eddbb2836e647ebc64809e3bf943984a04c3f786dc4892fe26ed472277a",
-        "entry_points_sha256": "341b2493e4c5f0996ae42a6b6b589d34ff2df27090c423fb0e0f96e11dd4c60e"
+        "metadata_sha256": "9195d838673162270eeb82518035d4b20b51302615011e3fa0727953c7c5a5cd",
+        "entry_points_sha256": "341b2493e4c5f0996ae42a6b6b589d34ff2df27090c423fb0e0f96e11dd4c60e",
+        "entry_points": [
+          [
+            "ohmymeme.plugins.v1",
+            "sync.ftp",
+            "ohmymeme_plugin_sync_ftp:create_plugin"
+          ]
+        ]
       },
       {
         "id": "sync.s3",
@@ -1591,8 +1441,15 @@
           "LICENSE"
         ],
         "license_files_disabled": false,
-        "metadata_sha256": "79b6e78bda0938c4dfbf44169b063ee6658b825515f84ed6bbd61a682f3ffe86",
-        "entry_points_sha256": "6892eedfbe8ff00fd62f3b06987469b6c3a5e1a89c1a651b04bf7c9a6f520fca"
+        "metadata_sha256": "e40720ccdc800cf3f2180d5a83ed0297176be48a481882cd0b0c56f3171c068c",
+        "entry_points_sha256": "6892eedfbe8ff00fd62f3b06987469b6c3a5e1a89c1a651b04bf7c9a6f520fca",
+        "entry_points": [
+          [
+            "ohmymeme.plugins.v1",
+            "sync.s3",
+            "ohmymeme_plugin_sync_s3:create_plugin"
+          ]
+        ]
       },
       {
         "id": "sync.r2",
@@ -1615,8 +1472,15 @@
           "LICENSE"
         ],
         "license_files_disabled": false,
-        "metadata_sha256": "31ee5cd5dc8f2aeaa000023012d83245da08b150cb0ed3efc5a271e4fe4e6cd6",
-        "entry_points_sha256": "8c3d329be899439c3d24192e398487e770ace4bca4fb78d67bdab180edbfc798"
+        "metadata_sha256": "e49cef3933c4a0a55cf392d9b303e15758abb3e320efb0e26ed4b503bb5d4451",
+        "entry_points_sha256": "8c3d329be899439c3d24192e398487e770ace4bca4fb78d67bdab180edbfc798",
+        "entry_points": [
+          [
+            "ohmymeme.plugins.v1",
+            "sync.r2",
+            "ohmymeme_plugin_sync_r2:create_plugin"
+          ]
+        ]
       },
       {
         "id": "sync.webdav",
@@ -1637,8 +1501,15 @@
           "LICENSE"
         ],
         "license_files_disabled": false,
-        "metadata_sha256": "67732947db4fe30d1d5d5ac7e8f0b5599a7f9d74b8017f426881af2ef80ec63d",
-        "entry_points_sha256": "564e59e2c7bc3799d8f7acf218fab23e1f2eb4c527c1fdba12ebbd5b3bc4507b"
+        "metadata_sha256": "985f7888b8acfb8b22f32bcc91d057705807a581783587da79f4f1317d5fe9b3",
+        "entry_points_sha256": "564e59e2c7bc3799d8f7acf218fab23e1f2eb4c527c1fdba12ebbd5b3bc4507b",
+        "entry_points": [
+          [
+            "ohmymeme.plugins.v1",
+            "sync.webdav",
+            "ohmymeme_plugin_sync_webdav:create_plugin"
+          ]
+        ]
       },
       {
         "id": "transport.lan",
@@ -1659,115 +1530,187 @@
           "LICENSE"
         ],
         "license_files_disabled": false,
-        "metadata_sha256": "15188ee75dfbd2d261271f823a21c73507b22c0d3552e25e0189310f64a95c06",
-        "entry_points_sha256": "4d76cddd2a26dde4762ce036701257dec262f7c6beea3b6d2d22e3f3caea92ec"
+        "metadata_sha256": "9f39c519f7a9bc941bd3c3269e7573b7a39fa7215a25f8275e9136cb8d340b5b",
+        "entry_points_sha256": "4d76cddd2a26dde4762ce036701257dec262f7c6beea3b6d2d22e3f3caea92ec",
+        "entry_points": [
+          [
+            "ohmymeme.plugins.v1",
+            "transport.lan",
+            "ohmymeme_plugin_lan:create_plugin"
+          ]
+        ]
       }
     ]
   },
-  "notice_bundle": {
-    "path": "THIRD-PARTY-NOTICES/license-evidence.json",
-    "index_sha256": "1db6ceca128c4babc33b33010adbf9fdc9bfdf5b29ffb3721e8efc2f0f6a862c",
-    "content_sha256": "c1e4bc8f5cc21bc994386fcd17f1976e4401b65f2fd31fbdc30fe868da8e6c9b",
-    "bundle_version": "todo14-wave5-2026-09-18-r3"
+  "hash_policy": {
+    "id": "todo14-path-policy-v1",
+    "hash_mode": "path-policy-v1",
+    "text_hash_mode": "utf8-lf-normalized",
+    "raw_hash_mode": "raw-bytes",
+    "canonical_manifest_hash_mode": "raw-bytes",
+    "canonical_manifest_path": "config/plugin-manifest.json",
+    "input_hash_modes": {
+      "LICENSE": "raw-bytes",
+      "LICENSES/GPL-3.0-only.txt": "raw-bytes",
+      "LICENSES/README.md": "raw-bytes",
+      "NOTICE": "raw-bytes",
+      "README.md": "utf8-lf-normalized",
+      "THIRD-PARTY-NOTICES/license-evidence.json": "raw-bytes",
+      "config/plugin-manifest.json": "raw-bytes",
+      "environment.yml": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme/config/plugin-manifest.json": "raw-bytes",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_douyin-0.1.0.dist-info/METADATA": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_douyin-0.1.0.dist-info/entry_points.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_douyin-0.1.0.dist-info/licenses/LICENSE": "raw-bytes",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_douyin-0.1.0.dist-info/top_level.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_douyin/__init__.py": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_douyin/abogus.py": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_lan-0.1.0.dist-info/METADATA": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_lan-0.1.0.dist-info/entry_points.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_lan-0.1.0.dist-info/licenses/LICENSE": "raw-bytes",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_lan-0.1.0.dist-info/top_level.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_lan/__init__.py": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_qqnt-0.1.0.dist-info/METADATA": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_qqnt-0.1.0.dist-info/entry_points.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_qqnt-0.1.0.dist-info/licenses/LICENSE": "raw-bytes",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_qqnt-0.1.0.dist-info/top_level.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_qqnt/__init__.py": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_ftp-0.1.0.dist-info/METADATA": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_ftp-0.1.0.dist-info/entry_points.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_ftp-0.1.0.dist-info/licenses/LICENSE": "raw-bytes",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_ftp-0.1.0.dist-info/top_level.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_ftp/__init__.py": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_r2-0.1.0.dist-info/METADATA": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_r2-0.1.0.dist-info/entry_points.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_r2-0.1.0.dist-info/licenses/LICENSE": "raw-bytes",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_r2-0.1.0.dist-info/top_level.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_r2/__init__.py": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_s3-0.1.0.dist-info/METADATA": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_s3-0.1.0.dist-info/entry_points.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_s3-0.1.0.dist-info/licenses/LICENSE": "raw-bytes",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_s3-0.1.0.dist-info/top_level.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_s3/__init__.py": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_webdav-0.1.0.dist-info/METADATA": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_webdav-0.1.0.dist-info/entry_points.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_webdav-0.1.0.dist-info/licenses/LICENSE": "raw-bytes",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_webdav-0.1.0.dist-info/top_level.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_sync_webdav/__init__.py": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_telegram-0.1.0.dist-info/METADATA": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_telegram-0.1.0.dist-info/entry_points.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_telegram-0.1.0.dist-info/licenses/LICENSE": "raw-bytes",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_telegram-0.1.0.dist-info/top_level.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_telegram/__init__.py": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_wechat-0.1.0.dist-info/METADATA": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_wechat-0.1.0.dist-info/entry_points.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_wechat-0.1.0.dist-info/licenses/LICENSE": "raw-bytes",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_wechat-0.1.0.dist-info/top_level.txt": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/ohmymeme_plugin_wechat/__init__.py": "utf8-lf-normalized",
+      "fixtures/plugin-parity/frozen-staging/staging-manifest.json": "utf8-lf-normalized",
+      "plugins/source.douyin/pyproject.toml": "utf8-lf-normalized",
+      "plugins/source.douyin/src/ohmymeme_plugin_douyin/__init__.py": "utf8-lf-normalized",
+      "plugins/source.douyin/src/ohmymeme_plugin_douyin/abogus.py": "utf8-lf-normalized",
+      "plugins/source.qqnt/pyproject.toml": "utf8-lf-normalized",
+      "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py": "utf8-lf-normalized",
+      "plugins/source.telegram/pyproject.toml": "utf8-lf-normalized",
+      "plugins/source.telegram/src/ohmymeme_plugin_telegram/__init__.py": "utf8-lf-normalized",
+      "plugins/source.wechat/pyproject.toml": "utf8-lf-normalized",
+      "plugins/source.wechat/src/ohmymeme_plugin_wechat/__init__.py": "utf8-lf-normalized",
+      "plugins/sync.ftp/pyproject.toml": "utf8-lf-normalized",
+      "plugins/sync.ftp/src/ohmymeme_plugin_sync_ftp/__init__.py": "utf8-lf-normalized",
+      "plugins/sync.r2/pyproject.toml": "utf8-lf-normalized",
+      "plugins/sync.r2/src/ohmymeme_plugin_sync_r2/__init__.py": "utf8-lf-normalized",
+      "plugins/sync.s3/pyproject.toml": "utf8-lf-normalized",
+      "plugins/sync.s3/src/ohmymeme_plugin_sync_s3/__init__.py": "utf8-lf-normalized",
+      "plugins/sync.webdav/pyproject.toml": "utf8-lf-normalized",
+      "plugins/sync.webdav/src/ohmymeme_plugin_sync_webdav/__init__.py": "utf8-lf-normalized",
+      "plugins/transport.lan/pyproject.toml": "utf8-lf-normalized",
+      "plugins/transport.lan/src/ohmymeme_plugin_lan/__init__.py": "utf8-lf-normalized",
+      "pyproject.toml": "utf8-lf-normalized",
+      "requirements-dev.txt": "utf8-lf-normalized",
+      "requirements.txt": "utf8-lf-normalized",
+      "scripts/build.py": "utf8-lf-normalized",
+      "scripts/nuitka/build.py": "utf8-lf-normalized",
+      "scripts/package_smoke.py": "utf8-lf-normalized",
+      "setup.py": "utf8-lf-normalized",
+      "src/ohmymeme/__init__.py": "utf8-lf-normalized",
+      "src/ohmymeme/integrations/imports/wechat.py": "utf8-lf-normalized",
+      "src/wechat_keyfinder/CMakeLists.txt": "utf8-lf-normalized",
+      "src/wechat_keyfinder/wechat_keyfinder.cpp": "utf8-lf-normalized"
+    }
   },
-  "release_scope": {
-    "targets": [
-      {
-        "id": "pyinstaller",
-        "data_targets": [
-          "ohmymeme/LICENSE",
-          "ohmymeme/NOTICE",
-          "ohmymeme/LICENSES",
-          "ohmymeme/THIRD-PARTY-NOTICES"
-        ],
-        "excluded_modules": [
-          "gmssl"
-        ]
-      },
-      {
-        "id": "nuitka",
-        "data_targets": [
-          "ohmymeme/LICENSE",
-          "ohmymeme/NOTICE",
-          "ohmymeme/LICENSES",
-          "ohmymeme/THIRD-PARTY-NOTICES"
-        ],
-        "excluded_modules": [
-          "gmssl"
-        ]
-      }
+  "host": {
+    "distribution": "ohmymeme",
+    "frozen_license_files": [
+      "ohmymeme/LICENSE",
+      "ohmymeme/NOTICE",
+      "ohmymeme/LICENSES/GPL-3.0-only.txt"
     ],
-    "feature_availability": [
-      {
-        "provider": "source.douyin",
-        "feature": "import",
-        "status": "runtime_unavailable",
-        "reason": "gmssl is excluded because its exact license text is unresolved; the descriptor remains and the registry returns its existing provider_unavailable sentinel. curl_cffi remains shipped as a distribution-covered wheel."
-      },
-      {
-        "provider": "source.wechat",
-        "feature": "encrypted-index-helper",
-        "status": "external_runtime_not_shipped",
-        "reason": "The helper is fetched at runtime and is not included in the frozen release scope."
-      }
+    "license_files": [
+      "LICENSE"
     ],
-    "components": [
-      {
-        "id": "gmssl-distribution",
-        "scope": "external_runtime_not_shipped",
-        "owner": "source.douyin",
-        "excluded_from_targets": [
-          "pyinstaller",
-          "nuitka"
-        ],
-        "notice_status": "NOASSERTION",
-        "reason": "The installed distribution has only legacy License: BSD metadata, no License-Expression, no License-File, and no installed license file. The official PyPI metadata reports the same legacy label. The upstream v3.2.2, 3.2.2, and master LICENSE raw URL probes returned 404. The upstream master setup.py did return version 3.2.2 with license='BSD', but that does not identify a precise SPDX BSD variant or supply a license text. The exact PyPI source archive was additionally verified and contained no complete license text.",
-        "source_path": ".venv/Lib/site-packages/gmssl-3.2.2.dist-info/METADATA",
-        "sha256": "2ad6358f45069de4760f5d56e4368fec05ca23102aacd945d2a661cb183b224d",
-        "source_archive": {
-          "pypi_json_url": "https://pypi.org/pypi/gmssl/3.2.2/json",
-          "filename": "gmssl-3.2.2.linux-x86_64.tar.gz",
-          "url": "https://files.pythonhosted.org/packages/06/29/008dc5071656ac522282f87accc837643be1fa9e7d021f890c1cdf390714/gmssl-3.2.2.linux-x86_64.tar.gz",
-          "sha256": "f3d8c8c75dd34cd169f129c017f67fdd80cce2c67a13f9a0e3b1c58f8de6351e",
-          "inspection": "Downloaded via TLS from the PyPI JSON sdist URL during Todo14. The verified archive contains no LICENSE, COPYING, NOTICE, or other full license text; its PKG-INFO only says License: BSD and describes a class BSD license. No precise BSD expression is asserted."
-        },
-        "index_component_sha256": "527070853ab586a12f29f194312100c443de7be571bbcf0dec2699682a8f4df3"
-      },
-      {
-        "id": "wechat-helper-openssl",
-        "scope": "helper_build_input_not_reproducible",
-        "owner": "source.wechat",
-        "excluded_from_targets": [
-          "pyinstaller",
-          "nuitka"
-        ],
-        "notice_status": "NOASSERTION",
-        "reason": "CMake requests a static OpenSSL::Crypto target but fixes neither version nor OpenSSL root/source archive/hash. No CMakeCache, static library, helper executable, or build attestation is in the worktree. The cryptography wheel SBOM's OpenSSL 4.0.2 record is intentionally not reused for this independent CMake dependency.",
-        "source_path": "src/wechat_keyfinder/CMakeLists.txt",
-        "sha256": "3d558e79c3a687160b919be215f9b494a50199974eae68d3ce7080f5e5841c0b",
-        "index_component_sha256": "d8baa6a01c550a5bb7271b81e8142221c39c2ea607a5fcb754b0b4a11cc39c21"
-      },
-      {
-        "id": "wechat-keyfinder-downloaded-binary",
-        "scope": "external_runtime_not_shipped",
-        "owner": "source.wechat",
-        "excluded_from_targets": [
-          "pyinstaller",
-          "nuitka"
-        ],
-        "notice_status": "unverified_external_binary",
-        "reason": "The local helper CMake/CPP files match local tag 0.6.3, but the configured ZE514 v0.6.3 release/tag raw paths returned 404 and GitHub release/tag API calls returned 403. ZE514 dev raw LICENSE/CMake/CPP files were retrievable, yet no signed provenance, build log, artifact manifest, or independently reproducible build output links the configured executable SHA-256 to the source.",
-        "sha256": "72f281c6b7638735b13c2c80f8de92034f49ce0e20d75feb6640c8c6e0dd4e31",
-        "source_binding": "not-reproducible",
-        "url": "https://github.com/ZE514/OhMyMeme/releases/download/v0.6.3/wechat_keyfinder-windows-x64.exe",
-        "index_component_sha256": "cf53b38b8cd5f1b9b9e9add310df6ffe1b7701d6c08dec981a2f2328fb825d5b"
-      }
-    ]
+    "metadata_license_expression": "GPL-3.0-only",
+    "metadata_license_files": [
+      "LICENSE"
+    ],
+    "metadata_source": "setup.py",
+    "notice": {
+      "basis": "根许可、NOTICE 和 owned LICENSES inventory 均映射到 PyInstaller/Nuitka frozen data targets；本记录不替代真实制品检查。",
+      "files": [
+        "LICENSE",
+        "NOTICE",
+        "LICENSES/GPL-3.0-only.txt"
+      ],
+      "status": "present"
+    },
+    "provenance": {
+      "basis": "根 LICENSE 的 GPL v3 文本、README 项目声明和 setup.py 元数据；不授予第三方源码的新许可。",
+      "files": [
+        "LICENSE",
+        "setup.py",
+        "README.md"
+      ],
+      "references": [
+        "https://github.com/OhMyMeme/OhMyMeme"
+      ],
+      "status": "verified"
+    },
+    "requirement_includes": {
+      "requirements.txt": [],
+      "requirements-dev.txt": [
+        "requirements.txt"
+      ],
+      "environment.yml": [
+        "requirements-dev.txt"
+      ]
+    },
+    "source_hashes": {
+      "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+      "LICENSES/GPL-3.0-only.txt": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+      "LICENSES/README.md": "878a849c18cc94f25dc9f634cacf2f85f24fd018cb653c6bc834f9327d5a9983",
+      "NOTICE": "4656814e351737c81d107688e3e77431fadcb547077dce3140e532e51b5414e4",
+      "README.md": "b0c32b9f1f9051ec68f387a1996792e26e51fb7e971fc7cd36b40f84f9faed2a",
+      "environment.yml": "a41e3e09ded119204d6259f18e94197d0a203ca2382e6b2a106a43a92cd37ab5",
+      "pyproject.toml": "233b59d7b3c8e1d48a85ebfdc688b8c07eed7d85649dcd8389859786cfbb0690",
+      "requirements-dev.txt": "94a2fb418b49844f301bc717dd7800160a13021f24689bdbb2110f9d3d9094c2",
+      "requirements.txt": "3f4297495687e58ee68e37663281cd83738eecdad730c7d507df48694ff974e7",
+      "scripts/build.py": "d7b3ac3e964f1ed2f917c311ab0c025211543838db685ef105d0391576d3a72c",
+      "scripts/nuitka/build.py": "27a168fc129a20c08e10331526cea07a2ddcc884f982e61962906ea88ca007a8",
+      "scripts/package_smoke.py": "d9526a299d7d79452aebc3d39c49010f2574ea7bc55ab273a1147c905c21ac5f",
+      "setup.py": "f297aa766b7da03759001eeeaff10445028bf4d6e60fb0818a6e7e3a7b9fc62d",
+      "src/ohmymeme/__init__.py": "dda806c7d884f74fcc6b091299147dbf5f33eec142c09a17b557067e2051b849"
+    },
+    "source_offer": {
+      "basis": "本地对应源码位置及 source_hashes；不是已发布制品的源码交付证明。",
+      "paths": [
+        "src/ohmymeme",
+        "scripts",
+        "setup.py",
+        "LICENSES"
+      ],
+      "status": "available"
+    },
+    "spdx": "GPL-3.0-only"
   },
-  "excluded_distributions": [
-    "adb.qq",
-    "qq.mobile"
-  ],
   "native_distributions": [
     {
       "id": "cryptography-wheel",
@@ -1914,7 +1857,7 @@
       "record": {
         "source_path": ".venv/Lib/site-packages/curl_cffi-0.16.3.dist-info/RECORD",
         "bundle_path": "THIRD-PARTY-NOTICES/curl-cffi/RECORD",
-        "sha256": "a8ae7f4581aee9df62397bc6a6793086a26e74506a684572d91bcfb6ac945886"
+        "sha256": "08f043276ab2667ae98256770432bc69d9d155f3297e8da5035f92603d80dbc3"
       },
       "wheel_metadata": {
         "source_path": ".venv/Lib/site-packages/curl_cffi-0.16.3.dist-info/WHEEL",
@@ -1949,6 +1892,12 @@
       "limitation": "The DLL and wrapper are covered by the exact installed curl-cffi wheel RECORD and the retained full distribution LICENSE. No exact curl-impersonate source revision or separate component notice set is bound to this DLL, so it is not asserted to be independently MIT."
     }
   ],
+  "notice_bundle": {
+    "path": "THIRD-PARTY-NOTICES/license-evidence.json",
+    "index_sha256": "2415ae0a7461da9035139ed4ec6fac00c3e8733f239971a98be29a4ae85c26f7",
+    "content_sha256": "be60e4975630221d00cf9707d190670148128e7c6fdc901d2d6d6dfb687b873a",
+    "bundle_version": "todo14-final-2026-09-18-r4"
+  },
   "owned_source_mapping": {
     "id": "wechat-keyfinder-local-source",
     "scope": "local-source-only",
@@ -1963,12 +1912,256 @@
       "src/wechat_keyfinder/wechat_keyfinder.cpp"
     ],
     "source_hashes": {
-      "src/wechat_keyfinder/CMakeLists.txt": "3d558e79c3a687160b919be215f9b494a50199974eae68d3ce7080f5e5841c0b",
-      "src/wechat_keyfinder/wechat_keyfinder.cpp": "f05c5a591d146ec9ef328dc52f5c94e76fd8b9a0c7a4d7906677254338c67c48"
+      "src/wechat_keyfinder/CMakeLists.txt": "83d9ab16dad70d34d34f83db0c03b54a25b459ec3e5365ce44351501c104d128",
+      "src/wechat_keyfinder/wechat_keyfinder.cpp": "9fc47dfc690a38f22d4515707baa8075ddff5169913421e75e69df93425c0a89"
     },
     "local_tag": "0.6.3",
     "local_tag_commit": "287c5127915208e2ca647115de3eb664237d5554",
     "binary_binding": "not-reproducible",
     "limitation": "The root GPL text and local tag map only the repository-local C++ source. They do not attest that the separately fetched helper executable was built from this source or from any particular OpenSSL."
-  }
+  },
+  "provider_extras": {
+    "source.qqnt": [],
+    "source.telegram": [
+      "Pillow>=10.0.0",
+      "cryptography>=41.0.0",
+      "ffmpeg",
+      "tgcrypto>=1.2.5"
+    ],
+    "source.douyin": [
+      "curl_cffi>=0.7.4",
+      "gmssl>=3.2.2"
+    ],
+    "source.wechat": [
+      "cryptography>=41.0.0"
+    ],
+    "sync.ftp": [],
+    "sync.s3": [
+      "boto3>=1.28.0",
+      "botocore"
+    ],
+    "sync.r2": [
+      "boto3>=1.28.0",
+      "botocore"
+    ],
+    "sync.webdav": [],
+    "transport.lan": []
+  },
+  "release_scope": {
+    "targets": [
+      {
+        "id": "pyinstaller",
+        "data_targets": [
+          "ohmymeme/LICENSE",
+          "ohmymeme/NOTICE",
+          "ohmymeme/LICENSES",
+          "ohmymeme/THIRD-PARTY-NOTICES"
+        ],
+        "excluded_modules": [
+          "gmssl"
+        ]
+      },
+      {
+        "id": "nuitka",
+        "data_targets": [
+          "ohmymeme/LICENSE",
+          "ohmymeme/NOTICE",
+          "ohmymeme/LICENSES",
+          "ohmymeme/THIRD-PARTY-NOTICES"
+        ],
+        "excluded_modules": [
+          "gmssl"
+        ]
+      }
+    ],
+    "feature_availability": [
+      {
+        "provider": "source.douyin",
+        "feature": "import",
+        "status": "runtime_unavailable",
+        "reason": "gmssl is excluded because its exact license text is unresolved; the descriptor remains and the registry returns its existing provider_unavailable sentinel. curl_cffi remains shipped as a distribution-covered wheel."
+      },
+      {
+        "provider": "source.wechat",
+        "feature": "encrypted-index-helper",
+        "status": "external_runtime_not_shipped",
+        "reason": "The helper is fetched at runtime and is not included in the frozen release scope."
+      }
+    ],
+    "components": [
+      {
+        "id": "gmssl-distribution",
+        "scope": "external_runtime_not_shipped",
+        "owner": "source.douyin",
+        "excluded_from_targets": [
+          "pyinstaller",
+          "nuitka"
+        ],
+        "notice_status": "NOASSERTION",
+        "reason": "The installed distribution has only legacy License: BSD metadata, no License-Expression, no License-File, and no installed license file. The official PyPI metadata reports the same legacy label. The upstream v3.2.2, 3.2.2, and master LICENSE raw URL probes returned 404. The upstream master setup.py did return version 3.2.2 with license='BSD', but that does not identify a precise SPDX BSD variant or supply a license text. The exact PyPI source archive was additionally verified and contained no complete license text.",
+        "source_path": ".venv/Lib/site-packages/gmssl-3.2.2.dist-info/METADATA",
+        "sha256": "2ad6358f45069de4760f5d56e4368fec05ca23102aacd945d2a661cb183b224d",
+        "source_archive": {
+          "pypi_json_url": "https://pypi.org/pypi/gmssl/3.2.2/json",
+          "filename": "gmssl-3.2.2.linux-x86_64.tar.gz",
+          "url": "https://files.pythonhosted.org/packages/06/29/008dc5071656ac522282f87accc837643be1fa9e7d021f890c1cdf390714/gmssl-3.2.2.linux-x86_64.tar.gz",
+          "sha256": "f3d8c8c75dd34cd169f129c017f67fdd80cce2c67a13f9a0e3b1c58f8de6351e",
+          "inspection": "Downloaded via TLS from the PyPI JSON sdist URL during Todo14. The verified archive contains no LICENSE, COPYING, NOTICE, or other full license text; its PKG-INFO only says License: BSD and describes a class BSD license. No precise BSD expression is asserted."
+        },
+        "index_component_sha256": "527070853ab586a12f29f194312100c443de7be571bbcf0dec2699682a8f4df3"
+      },
+      {
+        "id": "wechat-helper-openssl",
+        "scope": "helper_build_input_not_reproducible",
+        "owner": "source.wechat",
+        "excluded_from_targets": [
+          "pyinstaller",
+          "nuitka"
+        ],
+        "notice_status": "NOASSERTION",
+        "reason": "CMake requests a static OpenSSL::Crypto target but fixes neither version nor OpenSSL root/source archive/hash. No CMakeCache, static library, helper executable, or build attestation is in the worktree. The cryptography wheel SBOM's OpenSSL 4.0.2 record is intentionally not reused for this independent CMake dependency.",
+        "source_path": "src/wechat_keyfinder/CMakeLists.txt",
+        "sha256": "83d9ab16dad70d34d34f83db0c03b54a25b459ec3e5365ce44351501c104d128",
+        "index_component_sha256": "fc2f2ec9e25ea51e5538ea9cc94cbd6d867311a28a7bccd573afe8e7d2859b48"
+      },
+      {
+        "id": "wechat-keyfinder-downloaded-binary",
+        "scope": "external_runtime_not_shipped",
+        "owner": "source.wechat",
+        "excluded_from_targets": [
+          "pyinstaller",
+          "nuitka"
+        ],
+        "notice_status": "unverified_external_binary",
+        "reason": "The local helper CMake/CPP files match local tag 0.6.3, but the configured ZE514 v0.6.3 release/tag raw paths returned 404 and GitHub release/tag API calls returned 403. ZE514 dev raw LICENSE/CMake/CPP files were retrievable, yet no signed provenance, build log, artifact manifest, or independently reproducible build output links the configured executable SHA-256 to the source.",
+        "sha256": "72f281c6b7638735b13c2c80f8de92034f49ce0e20d75feb6640c8c6e0dd4e31",
+        "source_binding": "not-reproducible",
+        "url": "https://github.com/ZE514/OhMyMeme/releases/download/v0.6.3/wechat_keyfinder-windows-x64.exe",
+        "index_component_sha256": "cf53b38b8cd5f1b9b9e9add310df6ffe1b7701d6c08dec981a2f2328fb825d5b"
+      }
+    ]
+  },
+  "schema_version": 2,
+  "source_components": [
+    {
+      "id": "qqnt-source",
+      "kind": "third-party-source",
+      "license_files": [
+        "LICENSE"
+      ],
+      "notice": {
+        "basis": "保留原作者、原文件版本、修改说明和 GPL notice。",
+        "files": [
+          "LICENSE",
+          "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py"
+        ],
+        "status": "present"
+      },
+      "provenance": {
+        "basis": "源码头记录香草味的纳西妲、main_gui.py v1.4.3、GPL v3 及本地修改说明；未做公网再认证。",
+        "files": [
+          "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py"
+        ],
+        "references": [
+          "https://github.com/VanillaNahida/QQFavoriteExtract"
+        ],
+        "status": "verified"
+      },
+      "source_hashes": {
+        "plugins/source.qqnt/src/ohmymeme_plugin_qqnt/__init__.py": "ca1dde169d0badfb2b0d9bef467110eb84f9202c17e24ffc5e68b6f32c0cc6db"
+      },
+      "source_offer": {
+        "basis": "本地实际衍生源码，以文件 SHA-256 绑定。",
+        "paths": [
+          "plugins/source.qqnt"
+        ],
+        "status": "available"
+      },
+      "spdx": "GPL-3.0-only"
+    },
+    {
+      "id": "abogus-source",
+      "kind": "third-party-source",
+      "license_files": [
+        "LICENSE"
+      ],
+      "notice": {
+        "basis": "保留源文件明确要求保留的许可和原作者信息。",
+        "files": [
+          "LICENSE",
+          "plugins/source.douyin/src/ohmymeme_plugin_douyin/abogus.py"
+        ],
+        "status": "present"
+      },
+      "provenance": {
+        "basis": "源码头保留 TikTokDownloader 原作者来源、Evil0ctal 修改来源及 tool-douyin-emoji 适配说明，声明 GPL v3.0。",
+        "files": [
+          "plugins/source.douyin/src/ohmymeme_plugin_douyin/abogus.py"
+        ],
+        "references": [
+          "https://github.com/JoeanAmier/TikTokDownloader",
+          "https://github.com/Evil0ctal/Douyin_TikTok_Download_API"
+        ],
+        "status": "verified"
+      },
+      "source_hashes": {
+        "plugins/source.douyin/src/ohmymeme_plugin_douyin/abogus.py": "bbd5be62756236b5d47d70afca6704abc5b6494f3cd198ff4a4c39b18a554aba"
+      },
+      "source_offer": {
+        "basis": "本地实际 ABogus 衍生源码，以文件 SHA-256 绑定。",
+        "paths": [
+          "plugins/source.douyin"
+        ],
+        "status": "available"
+      },
+      "spdx": "GPL-3.0-only"
+    },
+    {
+      "id": "wechat-helper",
+      "kind": "helper",
+      "license_files": [
+        "LICENSE"
+      ],
+      "notice": {
+        "basis": "根 GPL 文本与 LICENSES 本地源码映射保留；OpenSSL notice 因未固定版本和未构建 helper 保持阻塞。",
+        "files": [
+          "LICENSE",
+          "src/wechat_keyfinder/CMakeLists.txt",
+          "src/wechat_keyfinder/wechat_keyfinder.cpp",
+          "src/ohmymeme/integrations/imports/wechat.py"
+        ],
+        "status": "present"
+      },
+      "provenance": {
+        "basis": "根 LICENSE 与 LICENSES/wechat-keyfinder-local-source.json 仅映射本地 tag 0.6.3 的 C++ 源码；git 历史显示 helper 由本项目在 2026-08-11 引入。外部 release hash 仍不宣称可复现绑定。",
+        "files": [
+          "src/wechat_keyfinder/CMakeLists.txt",
+          "src/wechat_keyfinder/wechat_keyfinder.cpp",
+          "src/ohmymeme/integrations/imports/wechat.py"
+        ],
+        "references": [],
+        "status": "verified"
+      },
+      "source_hashes": {
+        "src/ohmymeme/integrations/imports/wechat.py": "363964199e8679de3c62047b400c526307145a0718d3acb187290b2dd99b6e2b",
+        "src/wechat_keyfinder/CMakeLists.txt": "83d9ab16dad70d34d34f83db0c03b54a25b459ec3e5365ce44351501c104d128",
+        "src/wechat_keyfinder/wechat_keyfinder.cpp": "9fc47dfc690a38f22d4515707baa8075ddff5169913421e75e69df93425c0a89"
+      },
+      "source_offer": {
+        "basis": "本地 tag 0.6.3（287c5127915208e2ca647115de3eb664237d5554）和 source hashes 记录 local-source-only offer；不把外部 exe hash 声称为可复现构建。",
+        "paths": [
+          "src/wechat_keyfinder",
+          "src/ohmymeme/integrations/imports/wechat.py"
+        ],
+        "status": "available"
+      },
+      "source_revision": {
+        "tag": "0.6.3",
+        "commit": "287c5127915208e2ca647115de3eb664237d5554",
+        "root_license_sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+        "source_binding": "local-source-only"
+      },
+      "spdx": "GPL-3.0-only"
+    }
+  ]
 }

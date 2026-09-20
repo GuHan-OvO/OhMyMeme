@@ -1,4 +1,32 @@
+.gitattributes text eol=lf
 config/plugin-manifest.json text eol=lf
 fixtures/plugin-parity/frozen-staging/ohmymeme/config/plugin-manifest.json text eol=lf
+fixtures/plugin-parity/frozen-staging/staging-manifest.json text eol=lf
 src/ohmymeme/presentation/frontend/main/shared/generated/bridge.ts text eol=lf
 src/ohmymeme/presentation/frontend/settings/shared/generated/bridge.ts text eol=lf
+fixtures/plugin-parity/frozen-staging/*.dist-info/** -text
+fixtures/plugin-parity/frozen-staging/*.dist-info/METADATA text eol=lf
+fixtures/plugin-parity/frozen-staging/*.dist-info/entry_points.txt text eol=lf
+fixtures/plugin-parity/frozen-staging/*.dist-info/top_level.txt text eol=lf
+fixtures/plugin-parity/frozen-staging/**/*.py text eol=lf
+plugins/**/pyproject.toml text eol=lf
+plugins/**/src/**/*.py text eol=lf
+scripts/**/*.py text eol=lf
+src/**/*.py text eol=lf
+src/wechat_keyfinder/CMakeLists.txt text eol=lf
+src/wechat_keyfinder/*.cpp text eol=lf
+tests/**/*.py text eol=lf
+README.md text eol=lf
+AGENTS.md text eol=lf
+docs/plugin-license-matrix.json text eol=lf
+docs/project-structure.md text eol=lf
+schemas/plugin/license-matrix.schema.json text eol=lf
+requirements.txt text eol=lf
+requirements-dev.txt text eol=lf
+environment.yml text eol=lf
+setup.py text eol=lf
+pyproject.toml text eol=lf
+LICENSE -text
+NOTICE -text
+LICENSES/** -text
+THIRD-PARTY-NOTICES/** -text
