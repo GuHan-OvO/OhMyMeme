@@ -40,10 +40,3 @@ def test_package_workflows_do_not_use_floating_runner_images(workflow):
     assert "ubuntu-latest" not in content
     assert "macos-latest" not in content
 
-
-def test_mise_exposes_external_package_smoke_evidence_task():
-    """Given the task registry, when Todo 6 runs, then its evidence builder is addressable."""
-    mise_config = (ROOT / "mise.toml").read_text(encoding="utf-8")
-
-    assert "[tasks.package-smoke-evidence]" in mise_config
-    assert "python -m scripts.build_task_6_evidence" in mise_config

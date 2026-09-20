@@ -52,40 +52,10 @@ description = 'Generate deterministic bridge JSON Schema and TypeScript DTOs'
 tools = { python = '3.12', node = '22', npm = '10.9.8' }
 run = 'python scripts/generate_bridge_schemas.py'
 
-[tasks.task-19-evidence]
-description = 'Record Todo 19 bridge contract evidence outside the worktree'
-tools = { python = '3.12', node = '22', npm = '10.9.8' }
-run = 'python -m scripts.build_task_19_evidence'
-
-[tasks.freeze-baseline]
-description = 'Freeze Todo 1 public contract evidence outside the worktree'
-tools = { python = '3.12' }
-run = 'python scripts/freeze_baseline.py'
-
-[tasks.build-release-catalog]
-description = 'Build Todo 2 external release and migration fixture catalog'
-tools = { python = '3.12' }
-run = 'python scripts/build_release_catalog.py'
-
-[tasks.resolve-plan-refs]
-description = 'Resolve current plan references through Todo 1 inventory evidence'
-tools = { python = '3.12' }
-run = 'python scripts/resolve_plan_refs.py'
-
-[tasks.recovery-evidence]
-description = 'Run Todo 4 recovery faults and record external evidence'
-tools = { python = '3.12' }
-run = 'python scripts/build_task_4_evidence.py'
-
 [tasks.lan-v1-oracle]
 description = 'Validate the LAN v1 wire oracle'
 tools = { python = '3.12' }
 run = 'python -m pytest tests/protocol/test_lan_v1_protocol.py -q'
-
-[tasks.task-17-evidence]
-description = 'Record Todo 17 loopback LAN evidence outside the worktree'
-tools = { python = '3.12' }
-run = 'python -m scripts.run_task_17_evidence'
 
 [tasks.lint]
 description = 'Check Python lint and formatting'
@@ -153,52 +123,3 @@ description = 'Validate package contracts without building artifacts'
 tools = { python = '3.12' }
 run = 'python -m scripts.package_smoke'
 
-[tasks.package-smoke-evidence]
-description = 'Record Todo 6 package smoke evidence outside the worktree'
-tools = { python = '3.12' }
-run = 'python -m scripts.build_task_6_evidence'
-
-[tasks.task-9-evidence]
-description = 'Record Todo 9 operation coordination evidence outside the worktree'
-tools = { python = '3.12' }
-run = 'python -m scripts.build_task_9_evidence'
-
-[tasks.task-10-evidence]
-description = 'Record Todo 10 atomic file repository evidence outside the worktree'
-tools = { python = '3.12' }
-run = 'python -m scripts.build_task_10_evidence'
-
-[tasks.task-11-evidence]
-description = 'Record Todo 11 configuration compatibility evidence outside the worktree'
-tools = { python = '3.12' }
-run = 'python -m scripts.build_task_11_evidence'
-
-[tasks.task-12-evidence]
-description = 'Record Todo 12 SQLite compatibility evidence outside the worktree'
-tools = { python = '3.12' }
-run = 'python -m scripts.build_task_12_evidence'
-
-[tasks.task-14-evidence]
-description = 'Record Todo 14 manifest and pull-commit evidence outside the worktree'
-tools = { python = '3.12' }
-run = 'python -m scripts.build_task_14_evidence'
-
-[tasks.task-15-evidence]
-description = 'Record Todo 15 atomic image import evidence outside the worktree'
-tools = { python = '3.12' }
-run = 'python -m scripts.build_task_15_evidence'
-
-[tasks.task-16-evidence]
-description = 'Record Todo 16 local remote verification evidence outside the worktree'
-tools = { python = '3.12' }
-run = 'python -m scripts.build_task_16_evidence'
-
-[tasks.test-remote-contracts-local]
-description = 'Run Todo 16 loopback FTP/WebDAV/S3/R2 wire contract tests'
-tools = { python = '3.12' }
-run = 'python -m scripts.local_remote_contracts'
-
-[tasks.task-18-evidence]
-description = 'Record Todo 18 external adapter and FetchPolicy evidence outside the worktree'
-tools = { python = '3.12' }
-run = 'python -m scripts.build_task_18_evidence'

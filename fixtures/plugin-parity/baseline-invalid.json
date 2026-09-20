@@ -1,1 +1,0 @@
-{"schema_version":1,"baseline_id":"plugin-provider-parity-v1","providers":[{"id":"source.qqnt","flow":["inspect_environment"],"state":["idle"],"paths":["cache"],"protocols":["filesystem"],"package_root":"ohmymeme_plugin_qqnt","license_provenance":"GPL-3.0","abi":{"aliases":["qqnt_check_env"]}}],"excluded_plugins":[],"unexpected":true}

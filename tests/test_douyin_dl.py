@@ -162,7 +162,7 @@ def test_douyin_cookie_components_are_redacted_by_real_bridge(
     from ohmymeme.core.adapters.fetch_policy import FetchPolicy
     from ohmymeme.core.plugins.policy import PluginPolicy
     from ohmymeme.presentation.desktop.window_manager import SettingsApi
-    from scripts.plugin_remote_import_qa import Cookies, CurlFixture, Resolver
+    from plugin_remote_import_qa import Cookies, CurlFixture, Resolver
 
     tokens = {"sessionid": "wave3-session-secret", "csrftoken": "wave3-csrf-secret"}
     cookie = "; ".join(f"{key} = {value} " for key, value in tokens.items())
@@ -246,7 +246,7 @@ def test_douyin_session_initialization_failure_closes_without_masking(
 ):
     # Every initialization stage owns the session until it returns successfully.
     from ohmymeme.core.adapters.fetch_policy import FetchPolicy
-    from scripts.plugin_remote_import_qa import Cookies, CurlFixture, Resolver
+    from plugin_remote_import_qa import Cookies, CurlFixture, Resolver
 
     session = CurlFixture("douyin_happy")
     failure = ValueError("initialization failed: " + phase)
@@ -295,7 +295,7 @@ def test_douyin_session_initialization_failure_closes_without_masking(
 def test_douyin_session_success_transfers_close_ownership(monkeypatch):
     # A successfully initialized session remains open for the worker to use.
     from ohmymeme.core.adapters.fetch_policy import FetchPolicy
-    from scripts.plugin_remote_import_qa import CurlFixture, Resolver
+    from plugin_remote_import_qa import CurlFixture, Resolver
 
     session = CurlFixture("douyin_happy")
     monkeypatch.setattr(douyin.requests, "Session", lambda **kwargs: session)

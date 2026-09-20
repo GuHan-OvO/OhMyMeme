@@ -1,6 +1,0 @@
-{
-  "schema_version": 1,
-  "network": "declared-loopback-only",
-  "cases": ["wire-and-library", "approval-denied", "approval-wait-close", "blocked-read-close", "hung-session-deadline"],
-  "provider_failures": ["missing", "disabled", "incompatible", "stale-entry-point"]
-}

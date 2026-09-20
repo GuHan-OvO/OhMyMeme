@@ -209,7 +209,7 @@ def test_sync_pushes_to_loopback_webdav_with_worker_barrier(
 ):
     # Given: a Container-bound library and an actual loopback WebDAV listener
     from ohmymeme.app.container import Container
-    from scripts.local_remote_servers import LocalWebDavServer
+    from .local_remote_servers import LocalWebDavServer
 
     server = LocalWebDavServer(tmp_path / "fixture")
     server.start()

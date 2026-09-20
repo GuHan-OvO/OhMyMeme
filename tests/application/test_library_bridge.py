@@ -1,5 +1,4 @@
 import inspect
-from pathlib import Path
 
 from ohmymeme.presentation.desktop import window_manager
 from ohmymeme.presentation.desktop.window_manager import JsApi, SettingsApi, WebUI
@@ -289,46 +288,3 @@ def test_settings_bridge_when_source_is_read_then_all_four_reported_bypasses_fai
 
     # Then: tests reject any recurrence, including callback-form projection use
     assert not any(marker in source for marker in forbidden)
-
-
-def test_task13_evidence_audit_when_source_has_private_presentation_access_then_rejects_it(
-    tmp_path,
-):
-    # Given: a source candidate carrying every verifier-reported bypass form
-    from scripts.build_task_13_evidence import build_task_report
-
-    source = tmp_path / "window_manager.py"
-    source.write_text(
-        "self._webui._db\nself._webui._container.build_manifest()\n",
-        encoding="utf-8",
-    )
-
-    # When: evidence derives the source-bound audit result
-    audit = build_task_report(source)["source_audit"]
-
-    # Then: a report cannot claim a passing boundary while bypasses are live
-    assert audit["passed"] is False
-    assert audit["private_database"] == 1
-    assert audit["direct_projection"] == 1
-
-
-def test_task13_evidence_audit_when_live_presentation_is_scanned_then_matches_boundary():
-    # Given: the current desktop presentation source
-    from scripts.build_task_13_evidence import audit_presentation_source
-
-    source = (
-        Path(__file__).parents[2]
-        / "src"
-        / "ohmymeme"
-        / "presentation"
-        / "desktop"
-        / "window_manager.py"
-    )
-
-    # When: evidence derives the audit from the parsed source tree
-    audit = audit_presentation_source(source)
-
-    # Then: live source contains no private DB or direct projection ownership
-    assert audit["passed"] is True
-    assert audit["private_database"] == 0
-    assert audit["direct_projection"] == 0

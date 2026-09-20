@@ -1,7 +1,0 @@
-{
-  "schema_version": 1,
-  "network": "declared-loopback-only",
-  "profiles": ["ftp", "ftps-control", "webdav", "webdav-https", "s3-sigv2-virtual", "s3-sigv2-path", "s3-sigv4-virtual", "s3-sigv4-path", "r2-region-auto"],
-  "runtime": "container-push-pull",
-  "provider_failures": ["missing", "disabled", "incompatible", "stale-entry-point"]
-}

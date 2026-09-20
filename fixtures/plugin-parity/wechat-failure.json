@@ -1,4 +1,0 @@
-{
-  "schema_version": 1,
-  "cases": ["happy", "scan_only", "missing_account", "multiple_accounts", "missing_hash", "helper_failure", "unsafe_cdn", "unsafe_redirect", "md5_mismatch", "rejected_bytes", "cancel", "provider_absent", "provider_disabled", "provider_incompatible"]
-}

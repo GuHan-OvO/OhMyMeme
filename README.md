@@ -93,7 +93,7 @@ mise run run
 
 可用任务通过 `mise tasks ls` 查看；`mise run check` 会依次执行 lint、Python 严格类型与测试、Vue 严格类型与 Vitest、契约测试、前端构建、Playwright 浏览器测试和发布契约 smoke。各门禁也可独立运行：`lint`、`typecheck-python`、`test-python`、`typecheck-frontend`、`test-frontend`、`test-contracts`、`build-frontend`、`e2e`、`package-smoke`。
 
-发布产物 smoke 只验证六个目标的离线契约，不构建或安装制品。需要记录 Todo 6 的外部证据时，使用已冻结的 Todo 2 catalog：`mise run package-smoke-evidence -- --release-catalog <外部 release-catalog.json> --evidence-root <工作树外目录>`；该任务会创建 canonical `task-6.json`，绑定候选与回滚输入的 SHA-256，但不会执行安装、升级、回滚或卸载。
+发布产物 smoke 只验证六个目标的离线契约，不构建或安装制品。
 
 **Linux 额外依赖**:
 ```bash
@@ -147,10 +147,6 @@ npx vite build     # 构建 Vue 前端 → src/webui/dist/ohmymeme.js
 桌面 Bridge 的四个导入入口（QQNT、Telegram、抖音、微信）经宿主 `HostDispatcher`、`PluginRegistry` 与 `HostActionAdapter` 调度，保留原方法、参数默认值、成功/取消对象及进度字段。当前内置适配器继续调用已有实现；显式缺失、禁用或不兼容的 provider 仅返回该方法的旧失败哨兵，不改用其他 provider。同步与 LAN 保持宿主固定动作映射，手机版 QQ/ADB 不参与插件分派。
 
 `docs/plugin-abi-matrix.json` 与 `docs/plugin-action-matrix.json` 固定现有契约及调用方，可用 `mise exec -- python scripts/plugin_abi_matrix.py --check --abi docs/plugin-abi-matrix.json --actions docs/plugin-action-matrix.json --report <报告路径>` 离线核对。适配器属于宿主，不作为插件上下文传递；官方插件为可信进程内代码，只接收对应操作参数和窄端口，不接收完整 Config、WebUI、数据库或宿主持久目录。此边界不支持任意命令、动态 Bridge 方法、HTML/脚本贡献、市场、热重载或沙箱。
-
-### Todo17 离线重组 parity
-
-`scripts/plugin_parity.py` 分别从当前 canonical manifest、真实 `PluginRegistry`、entry-point factory 和窄 context 捕获九个 provider 的 baseline（editable source）与 recomposed（frozen staging）输出；仅 `ids`、`timestamps`、`temporary paths`、`thread ordering` 可以归一。`scripts/plugin_ui_parity.py` 用固定 Chromium `960x640` dark 运行真实设置页与 `load_ui_projection()` 的本地投影，记录归一化 DOM、区域截图和重复截图稳定性。两者必须带 `--offline --no-network --intercept-external`；运行器会拒绝 DNS/socket/HTTP/curl、通用子进程、helper、ffmpeg 和 ADB，唯一例外是策略中精确声明的本地 Node Chromium 捕获。`fixtures/plugin-parity/providers-failure/` 与 `ui-failure/` 是独立 F3 失败输入，不能由最终绿色输出派生；证据输出保存在忽略的 `.omo/evidence/pluginized-recomposition-parity/`。
 
 ### 源码目录与依赖方向
 

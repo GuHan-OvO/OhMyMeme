@@ -22,7 +22,7 @@ from ohmymeme.core.plugins.policy import PluginPolicy
 from ohmymeme.integrations.imports import wechat
 from ohmymeme.presentation.desktop.api.plugin_dispatch import _descriptor
 from ohmymeme.presentation.desktop.window_manager import SettingsApi
-from scripts.plugin_wechat_qa import (
+from plugin_wechat_qa import (
     FixtureHTTP,
     FixtureProcess,
     durable_snapshot,
