@@ -139,7 +139,13 @@ class RuntimeLanConnection:
             name = data.get("exception")
             if name in ("TimeoutError", "timeout"):
                 raise socket.timeout(error.message) from None
-            if name == "OSError" or error.code == protocol.ERROR_OPERATION_UNKNOWN:
+            if name in (
+                "OSError",
+                "BrokenPipeError",
+                "ConnectionError",
+                "ConnectionResetError",
+                "ConnectionAbortedError",
+            ) or error.code in (protocol.ERROR_OPERATION_UNKNOWN, "channel_closed"):
                 raise OSError(error.message) from None
             raise
 
@@ -196,7 +202,13 @@ class RuntimeLanTransport:
             name = data.get("exception")
             if name in ("TimeoutError", "timeout"):
                 raise socket.timeout(error.message) from None
-            if name == "OSError" or error.code == protocol.ERROR_OPERATION_UNKNOWN:
+            if name in (
+                "OSError",
+                "BrokenPipeError",
+                "ConnectionError",
+                "ConnectionResetError",
+                "ConnectionAbortedError",
+            ) or error.code in (protocol.ERROR_OPERATION_UNKNOWN, "channel_closed"):
                 raise OSError(error.message) from None
             raise
 

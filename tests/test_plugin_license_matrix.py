@@ -24,6 +24,12 @@ FINAL_ENV_EVIDENCE = (
     "todo-14-final-environment-installation.json"
 )
 
+# Todo14 证据工具已退役；本地无证据时整组跳过，保留有证据环境下的校验能力
+pytestmark = pytest.mark.skipif(
+    not (ROOT / FINAL_ENV_EVIDENCE).exists(),
+    reason="Todo14 evidence not present (retired tooling)",
+)
+
 
 def documents():
     # Load authored records separately from the source-derived observations.
