@@ -10,6 +10,7 @@ import logging
 import os
 import sys
 import threading
+from pathlib import Path
 
 from ohmymeme.core.imports import ImportResult
 from ohmymeme.core.plugins.contracts import (
@@ -18,6 +19,7 @@ from ohmymeme.core.plugins.contracts import (
     PluginDescriptor,
 )
 from ohmymeme.core.plugins.manifest import ENTRY_POINT_GROUP
+from ohmymeme.core.plugins.network_config import SYNC_CONFIGS
 from ohmymeme.core.plugins.policy import (
     PluginPolicyError,
     TemporaryWorkspace,
@@ -29,6 +31,18 @@ from ohmymeme.core.plugins.runtime.channel import RpcChannel, RpcError
 logger = logging.getLogger(__name__)
 
 QUERY_METHODS = ("inspect", "get_progress")
+SYNC_METHODS = (
+    "connect",
+    "upload_file",
+    "download_file",
+    "list_files",
+    "ensure_remote_dir",
+    "file_exists",
+    "delete_file",
+    "test_connection",
+    "clear_directory_cache",
+)
+_PATH_ARGUMENTS = {"upload_file": (0,), "download_file": (1,)}
 
 _OPERATION_TARGETS = {
     "import": "import_media",
@@ -207,6 +221,7 @@ class PluginWorker:
         self._stop = threading.Event()
         self._op_lock = threading.Lock()
         self._op_thread = None
+        self._sync_sessions = {}
 
     def attach(self, channel):
         self._channel = channel
@@ -222,6 +237,12 @@ class PluginWorker:
         if method == "operation.cancel":
             self._handle_operation_cancel(params)
             return {"ok": True}
+        if method == "sync.open":
+            return self._handle_sync_open(params)
+        if method == "sync.call":
+            return self._handle_sync_call(params)
+        if method == "sync.close":
+            return self._handle_sync_close(params)
         if method == "shutdown":
             self._stop.set()
             return {"ok": True}
@@ -377,6 +398,63 @@ class PluginWorker:
             except Exception:
                 logger.exception("plugin stop failed")
 
+    # 打开同步 backend 会话
+    def _handle_sync_open(self, params):
+        session_id = params.get("session_id")
+        provider_id = params.get("provider_id")
+        if not isinstance(session_id, str) or provider_id != self._plugin_id:
+            raise RpcError(protocol.RPC_INVALID_PARAMS, "invalid sync session")
+        if provider_id not in SYNC_CONFIGS:
+            raise RpcError(protocol.ERROR_UNSUPPORTED, "not a sync provider")
+        record = SYNC_CONFIGS[provider_id](**dict(params.get("config") or {}))
+        secrets = _WorkerSecrets(dict(params.get("secrets") or {}))
+        create_backend = getattr(self._instance, "create_backend", None)
+        if not callable(create_backend):
+            raise RpcError(protocol.ERROR_UNSUPPORTED, "backend unavailable")
+        with self._op_lock:
+            self._sync_sessions[session_id] = create_backend(record, secrets)
+        return {"ok": True}
+
+    # 在会话内调用 backend 固定方法
+    def _handle_sync_call(self, params):
+        session_id = params.get("session_id")
+        name = params.get("method")
+        if name not in SYNC_METHODS:
+            raise RpcError(protocol.RPC_METHOD_NOT_FOUND, "unknown backend method")
+        with self._op_lock:
+            backend = self._sync_sessions.get(session_id)
+        if backend is None:
+            raise RpcError(protocol.ERROR_OPERATION_UNKNOWN, "unknown sync session")
+        method = getattr(backend, name, None)
+        if not callable(method):
+            raise RpcError(protocol.ERROR_UNSUPPORTED, "method unavailable")
+        arguments = list(params.get("args") or ())
+        for index in _PATH_ARGUMENTS.get(name, ()):
+            if index < len(arguments):
+                arguments[index] = Path(arguments[index])
+        try:
+            return _jsonable(method(*arguments))
+        except Exception as error:
+            raise RpcError(
+                type(error).__name__,
+                str(error),
+                {"exception": type(error).__name__},
+            ) from None
+
+    # 关闭同步会话并回收 backend
+    def _handle_sync_close(self, params):
+        session_id = params.get("session_id")
+        with self._op_lock:
+            backend = self._sync_sessions.pop(session_id, None)
+        if backend is not None:
+            close = getattr(backend, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    logger.exception("sync backend close failed")
+        return {"ok": True}
+
     # 进度通知带 worker 侧脱敏后的值
     def _notify_progress(self, op_id, value):
         self._notify("progress", op_id, value)
@@ -418,6 +496,16 @@ class PluginWorker:
                 stop()
             except Exception:
                 pass
+        with self._op_lock:
+            sessions = list(self._sync_sessions.values())
+            self._sync_sessions.clear()
+        for backend in sessions:
+            close = getattr(backend, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    logger.exception("sync backend close failed")
         thread = self._op_thread
         if thread is not None:
             thread.join(timeout=10.0)
@@ -446,6 +534,7 @@ def main(argv=None):
         on_request=worker.handle_request,
         on_close=worker.on_channel_closed,
         name="worker-" + arguments.plugin_id,
+        max_workers=16,
     )
     worker.attach(channel)
     channel.start()

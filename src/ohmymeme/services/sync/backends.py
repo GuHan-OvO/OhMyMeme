@@ -5,15 +5,13 @@ from functools import wraps
 from pathlib import Path
 
 from ohmymeme.core.assets import is_safe_filename
-from ohmymeme.core.plugins.manifest import canonical_descriptor
 from ohmymeme.core.plugins.network_config import (
     SYNC_CONFIGS,
     SYNC_SECRETS,
     SyncError,
     validate_sync_config,
 )
-from ohmymeme.core.plugins.policy import PluginSecretPort, ScopedSecrets, redact
-from ohmymeme.core.plugins.registry import PluginRegistry
+from ohmymeme.core.plugins.policy import PluginSecretPort, redact
 
 
 def _redact_exception(error, secrets):
@@ -96,30 +94,71 @@ def configuration(cfg, provider_id):
     return snapshot, secrets
 
 
+class _SessionBackend:
+    """宿主适配层看到的 backend 端口：固定方法经会话 RPC 转发到 worker。"""
+
+    def __init__(self, session):
+        self._session = session
+
+    def connect(self):
+        return self._session.call("connect")
+
+    def upload_file(self, local_path, remote_path):
+        return self._session.call("upload_file", (str(local_path), remote_path))
+
+    def download_file(self, remote_path, local_path):
+        return self._session.call("download_file", (remote_path, str(local_path)))
+
+    def list_files(self, path):
+        return self._session.call("list_files", (path,))
+
+    def ensure_remote_dir(self, path):
+        return self._session.call("ensure_remote_dir", (path,))
+
+    def file_exists(self, path):
+        return self._session.call("file_exists", (path,))
+
+    def delete_file(self, path):
+        return self._session.call("delete_file", (path,))
+
+    def test_connection(self):
+        return self._session.call("test_connection")
+
+    def clear_directory_cache(self):
+        return self._session.call("clear_directory_cache")
+
+    def close(self):
+        self._session.close()
+
+    def __getattr__(self, name):
+        # 读取转发给会话；写入仍落在适配器实例上
+        return getattr(self._session, name)
+
+
 class _SyncBackend:
     provider_id = None
 
     @_protect_errors
-    def __init__(self, cfg, registry=None, enabled=None):
-        # Validate before provider loading, even when the selected provider is absent.
+    def __init__(self, cfg, registry=None, enabled=None, runtime=None):
+        # Validate before runtime admission, even when the provider is disabled.
         snapshot, secrets = configuration(cfg, self.provider_id)
         self._closed = False
         self._secret_port = PluginSecretPort(secrets)
-        scoped = ScopedSecrets(
-            self._secret_port, self.provider_id, lambda: self._closed
-        )
         self._temporary = None
-        registry = (
-            registry
-            if registry is not None
-            else PluginRegistry(tuple(canonical_descriptor(p) for p in SYNC_CONFIGS))
-        )
+        if enabled is not None and self.provider_id not in enabled:
+            self._closed = True
+            raise SyncError(f"{self.provider_id}: provider_disabled")
+        if runtime is None:
+            self._closed = True
+            raise SyncError(f"{self.provider_id}: provider_unavailable")
         try:
-            provider = registry.require(self.provider_id, enabled)
-            self._backend = provider.create_backend(snapshot, scoped)
+            self._session = runtime.open_backend(
+                self.provider_id, snapshot, secrets, enabled=enabled
+            )
         except Exception as error:
             self._closed = True
             raise SyncError(str(error)) from error
+        self._backend = _SessionBackend(self._session)
 
     @_protect_errors
     def connect(self):
@@ -266,7 +305,7 @@ class _WebDAVBackend(_SyncBackend):
     provider_id = "sync.webdav"
 
 
-def get_backend(cfg, registry=None, enabled=None):
+def get_backend(cfg, registry=None, enabled=None, runtime=None):
     # Select exactly one provider; absence never selects a different backend.
     kind = cfg.get("sync_type", "")
     backend = (
@@ -282,14 +321,4 @@ def get_backend(cfg, registry=None, enabled=None):
     )
     if backend is None:
         raise SyncError("No sync type configured")
-    return backend(cfg, registry, enabled)
-
-
-def connect_ftp(cfg):
-    # Retain the raw FTP ABI, but revoke the construction secret scope immediately.
-    backend = _FtpBackend(cfg)
-    backend.connect()
-    connection = backend.ftp
-    backend._backend.ftp = None
-    backend.close()
-    return connection
+    return backend(cfg, registry, enabled, runtime)

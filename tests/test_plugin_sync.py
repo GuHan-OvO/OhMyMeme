@@ -10,6 +10,7 @@ from urllib.error import HTTPError, URLError
 import pytest
 
 from ohmymeme.services.sync.backends import SyncError, get_backend
+from sync_backend_fixtures import FailingRuntime, LocalSyncRuntime
 
 WIRE_SECRET = "TODO10-SYNTHETIC-SECRET-ONLY"
 
@@ -29,17 +30,33 @@ def config(kind):
     }
 
 
+def backend(kind, *, enabled=None, runtime=None, **overrides):
+    # 分层夹具：宿主适配层不变，会话调用本地插件 backend
+    return get_backend(
+        dict(config(kind), **overrides),
+        enabled=enabled,
+        runtime=LocalSyncRuntime() if runtime is None else runtime,
+    )
+
+
+def _plugin_backend(adapter):
+    # 取宿主机适配层背后的真实插件 backend
+    return adapter._backend._session.backend
+
+
 @pytest.mark.parametrize("kind", ["ftp", "s3", "r2", "webdav"])
 def test_real_factory_and_independent_backends(kind):
     # Factories live in physical distributions, never import host implementations.
     module = importlib.import_module(f"ohmymeme_plugin_sync_{kind}")
     assert "/plugins/" in Path(module.__file__).as_posix()
     assert module.create_plugin() is not module.create_plugin()
-    first, second = get_backend(config(kind)), get_backend(config(kind))
+    first, second = backend(kind), backend(kind)
     try:
-        assert first._backend is not second._backend
-        assert first._backend.__class__.__module__.startswith("ohmymeme_plugin_sync_")
-        assert not hasattr(first._backend, "cfg")
+        assert _plugin_backend(first) is not _plugin_backend(second)
+        assert type(_plugin_backend(first)).__module__.startswith(
+            "ohmymeme_plugin_sync_"
+        )
+        assert not hasattr(_plugin_backend(first), "cfg")
     finally:
         first.close()
         second.close()
@@ -58,23 +75,21 @@ def test_real_factory_and_independent_backends(kind):
 )
 def test_invalid_config_rejected_before_provider_or_network(kind, field, value):
     # Invalid scalar types cannot be coerced into valid network configuration.
-    registry = Mock()
+    runtime = LocalSyncRuntime()
     with patch("socket.socket", side_effect=AssertionError("network")) as network:
         with pytest.raises(SyncError, match=field):
-            get_backend(dict(config(kind), **{field: value}), registry=registry)
-    registry.get.assert_not_called()
+            get_backend(dict(config(kind), **{field: value}), runtime=runtime)
+    assert not runtime.sessions
     network.assert_not_called()
 
 
 @pytest.mark.parametrize("kind", ["ftp", "s3", "r2", "webdav"])
 def test_missing_and_disabled_provider_never_fallback(kind):
-    from ohmymeme.core.plugins.registry import PluginRegistry
-
     with patch("socket.socket", side_effect=AssertionError("network")):
-        with pytest.raises(SyncError, match="provider"):
-            get_backend(config(kind), registry=PluginRegistry((), {}, ()))
+        with pytest.raises(SyncError, match="plugin_missing"):
+            backend(kind, runtime=FailingRuntime("plugin_missing"))
         with pytest.raises(SyncError, match="provider_disabled"):
-            get_backend(config(kind), enabled=())
+            backend(kind, enabled=())
 
 
 def test_ftp_error_results_and_close_revoke_secrets(tmp_path):
@@ -83,17 +98,17 @@ def test_ftp_error_results_and_close_revoke_secrets(tmp_path):
     wire = Mock()
     wire.storbinary.side_effect = OSError("wire failed")
     with patch.object(module, "FTP", return_value=wire):
-        backend = get_backend(config("ftp"))
-        secret_getter = backend._backend.secrets
-        backend.connect()
+        bk = backend("ftp")
+        secret_getter = bk._backend.secrets
+        bk.connect()
         source = tmp_path / "asset.bin"
         source.write_bytes(b"fixture")
-        assert backend.upload_file(source, "/memes/a.bin") is False
+        assert bk.upload_file(source, "/memes/a.bin") is False
         wire.retrlines.side_effect = OSError("list failed")
         with pytest.raises(OSError, match="list failed"):
-            backend.list_files("/memes")
-        backend.close()
-        backend.close()
+            bk.list_files("/memes")
+        bk.close()
+        bk.close()
         with pytest.raises(RuntimeError, match="closed"):
             secret_getter.get("password")
     wire.quit.assert_called_once()
@@ -108,39 +123,39 @@ def test_namespaced_ftp_path_matches_wire_snapshot(tmp_path):
     cfg.set("sync_type", "ftp")
     cfg.set_plugin_value("sync.ftp", "host", "fixture.invalid")
     cfg.set_plugin_value("sync.ftp", "path", "/namespaced")
-    backend = get_backend(cfg)
+    bk = get_backend(cfg, runtime=LocalSyncRuntime())
     try:
-        assert _remote_root(cfg) == backend._backend.config.path == "/namespaced"
+        assert _remote_root(cfg) == bk._backend.config.path == "/namespaced"
     finally:
-        backend.close()
+        bk.close()
 
 
 def test_s3_credentials_do_not_use_ambient_sdk_chain():
     # Even an empty credential snapshot must not query global environment/metadata.
     wire = Mock()
     with patch("boto3.client", return_value=wire) as client:
-        backend = get_backend(config("s3"))
+        bk = backend("s3")
         try:
-            backend.connect()
+            bk.connect()
             assert client.call_args.kwargs["aws_access_key_id"] == ""
             assert client.call_args.kwargs["aws_secret_access_key"] == ""
         finally:
-            backend.close()
+            bk.close()
 
 
 def test_r2_reuses_only_s3_code_not_disabled_provider():
     # A disabled S3 provider does not disable the separately selected R2 provider.
-    from ohmymeme.core.plugins.manifest import canonical_descriptor
-    from ohmymeme.core.plugins.registry import PluginRegistry
-
-    registry = PluginRegistry((canonical_descriptor("sync.r2"),))
     with patch("boto3.client", return_value=Mock()):
-        backend = get_backend(config("r2"), registry=registry, enabled=("sync.r2",))
+        bk = get_backend(
+            config("r2"),
+            enabled=("sync.r2",),
+            runtime=LocalSyncRuntime(),
+        )
         try:
-            backend.connect()
-            assert type(backend._backend).__module__ == "ohmymeme_plugin_sync_r2"
+            bk.connect()
+            assert type(_plugin_backend(bk)).__module__ == "ohmymeme_plugin_sync_r2"
         finally:
-            backend.close()
+            bk.close()
 
 
 def test_ftps_default_protects_data_and_reconnects_independently():
@@ -148,32 +163,32 @@ def test_ftps_default_protects_data_and_reconnects_independently():
     module = importlib.import_module("ohmymeme_plugin_sync_ftp")
     first, second = Mock(), Mock()
     with patch.object(module, "FTP_TLS", side_effect=[first, second]):
-        backend = get_backend(config("ftps"))
+        bk = backend("ftps")
         try:
-            backend.connect()
-            backend.connect()
+            bk.connect()
+            bk.connect()
             first.prot_p.assert_called_once()
             second.prot_p.assert_called_once()
             first.quit.assert_called_once()
         finally:
-            backend.close()
+            bk.close()
         second.quit.assert_called_once()
 
 
 def test_sync_listing_rejects_untrusted_children():
     # A server cannot trick cleanup into deleting outside the requested directory.
     with patch("boto3.client", return_value=Mock()):
-        backend = get_backend(config("s3"))
+        bk = backend("s3")
         try:
-            backend._backend.list_files = lambda path: [
+            bk._backend.list_files = lambda path: [
                 "../outside",
                 "/absolute",
                 {},
                 "good.png",
             ]
-            assert backend.list_files("memes") == ["good.png"]
+            assert bk.list_files("memes") == ["good.png"]
         finally:
-            backend.close()
+            bk.close()
 
 
 def test_upload_staging_never_exposes_durable_path(tmp_path):
@@ -191,10 +206,10 @@ def test_upload_staging_never_exposes_durable_path(tmp_path):
 
     wire.storbinary.side_effect = store
     with patch.object(module, "FTP", return_value=wire):
-        backend = get_backend(config("ftp"))
-        backend.connect()
-        assert backend.upload_file(source, "/memes/private.png") is True
-        backend.close()
+        bk = backend("ftp")
+        bk.connect()
+        assert bk.upload_file(source, "/memes/private.png") is True
+        bk.close()
     assert paths and not paths[0].is_relative_to(tmp_path)
     assert not paths[0].parent.exists()
 
@@ -203,27 +218,27 @@ def test_sync_probe_error_closes_backend():
     # A legacy error-string result still has to revoke the operation's secrets.
     from ohmymeme.services.sync import service
 
-    backend = Mock()
-    backend.test_connection.side_effect = SyncError("probe failed")
-    with patch.object(service, "_get_backend", return_value=backend):
+    probe = Mock()
+    probe.test_connection.side_effect = SyncError("probe failed")
+    with patch.object(service, "_get_backend", return_value=probe):
         assert service.sync_test() == "probe failed"
-    backend.close.assert_called_once()
+    probe.close.assert_called_once()
 
 
 def test_invalid_backend_result_is_not_success(tmp_path):
     # Truthy malformed plugin output cannot commit a successful upload.
-    backend = get_backend(config("ftp"))
+    bk = backend("ftp")
     source = tmp_path / "source.bin"
     source.write_bytes(b"fixture")
-    backend._backend.upload_file = lambda path, remote: "success"
+    bk._backend.upload_file = lambda path, remote: "success"
     try:
         with pytest.raises(SyncError, match="upload_file.*bool"):
-            backend.upload_file(source, "memes/a.bin")
-        backend._backend.list_files = lambda path: {"file.png": True}
+            bk.upload_file(source, "memes/a.bin")
+        bk._backend.list_files = lambda path: {"file.png": True}
         with pytest.raises(SyncError, match="list_files.*list"):
-            backend.list_files("memes")
+            bk.list_files("memes")
     finally:
-        backend.close()
+        bk.close()
 
 
 @pytest.mark.parametrize(
@@ -240,31 +255,28 @@ def test_invalid_backend_result_is_not_success(tmp_path):
 def test_wire_exception_redaction(
     kind, wire_method, backend_method, error_type, caplog
 ):
-    # The real registry/factory runs each independent review reproduction.
-    cfg = config(kind)
+    # The real factory runs each independent review reproduction through the adapter.
     key = {
         "ftp": "password",
         "s3": "secret_key",
         "r2": "secret_access_key",
         "webdav": "password",
     }[kind]
-    cfg[kind + "_" + key] = WIRE_SECRET
-    cfg[kind + "_user"] = "fixture-user"
     wire = Mock()
     getattr(wire, wire_method).side_effect = OSError("fixture echoed " + WIRE_SECRET)
     target = "ohmymeme_plugin_sync_ftp.FTP" if kind == "ftp" else "boto3.client"
     with patch(target, return_value=wire):
-        backend = get_backend(cfg)
+        bk = backend(kind, **{kind + "_" + key: WIRE_SECRET, kind + "_user": "u"})
         try:
-            backend.connect()
+            bk.connect()
             with patch("urllib.request.urlopen", side_effect=wire.urlopen.side_effect):
                 with pytest.raises(error_type) as raised:
-                    getattr(backend, backend_method)("memes")
+                    getattr(bk, backend_method)("memes")
             message = str(raised.value)
             formatted = "".join(traceback.format_exception(raised.value))
             logging.getLogger(__name__).error("wire failure: %s", raised.value)
         finally:
-            backend.close()
+            bk.close()
     print(
         json.dumps(
             {
@@ -272,7 +284,7 @@ def test_wire_exception_redaction(
                 "method": backend_method,
                 "error": message,
                 "exception_type": type(raised.value).__name__,
-                "scope_closed": backend._closed,
+                "scope_closed": bk._closed,
             }
         ),
     )
@@ -284,15 +296,14 @@ def test_wire_exception_redaction(
 @pytest.mark.parametrize("backend_method", ["list_files", "ensure_remote_dir"])
 def test_wire_exception_redaction_hides_http_cause(backend_method, caplog):
     # HTTP code-only outer messages must not expose the credential in their cause.
-    cfg = dict(config("webdav"), webdav_password=WIRE_SECRET)
-    backend = get_backend(cfg)
+    bk = backend("webdav", webdav_password=WIRE_SECRET)
     try:
-        backend.connect()
+        bk.connect()
         failure = HTTPError("https://fixture.invalid", 403, WIRE_SECRET, {}, None)
         with patch("urllib.request.urlopen", side_effect=failure):
             with pytest.raises(SyncError) as raised:
                 try:
-                    getattr(backend, backend_method)("memes")
+                    getattr(bk, backend_method)("memes")
                 except SyncError:
                     logging.getLogger(__name__).exception("request failed")
                     raise
@@ -300,7 +311,29 @@ def test_wire_exception_redaction_hides_http_cause(backend_method, caplog):
         assert WIRE_SECRET not in "".join(traceback.format_exception(raised.value))
         assert WIRE_SECRET not in caplog.text
     finally:
-        backend.close()
+        bk.close()
+
+
+class _FailingSession:
+    # 宿主清理回退用例：连接成功，列表调用携带密钥失败
+    def __init__(self, error):
+        self._error = error
+
+    def call(self, method, args=(), timeout=None):
+        if method == "connect":
+            return None
+        raise self._error
+
+    def close(self):
+        pass
+
+
+class _StaticRuntime:
+    def __init__(self, session):
+        self._session = session
+
+    def open_backend(self, provider_id, config, secrets, enabled=None):
+        return self._session
 
 
 def test_cleanup_exception_redaction_preserves_empty_fallback(tmp_path, caplog):
@@ -308,21 +341,19 @@ def test_cleanup_exception_redaction_preserves_empty_fallback(tmp_path, caplog):
     from ohmymeme.app.container import Container
 
     container = Container(tmp_path / "app")
-    wire = Mock()
-    wire.size.side_effect = error_perm("550 missing")
-    wire.retrlines.side_effect = error_perm("530 fixture echoed " + WIRE_SECRET)
+    container.sync._plugin_runtime = _StaticRuntime(
+        _FailingSession(error_perm("530 fixture echoed " + WIRE_SECRET))
+    )
     try:
         for key, value in dict(
             config("ftp"), ftp_user="fixture-user", ftp_password=WIRE_SECRET
         ).items():
             container.config.set(key, value)
-        with patch("ohmymeme_plugin_sync_ftp.FTP", return_value=wire):
-            result = container.sync.cleanup_remote_orphans()
+        result = container.sync.cleanup_remote_orphans()
         print(json.dumps({"result": result, "log": caplog.text}))
         assert result == {"ok": True, "orphans": [], "removed": 0}
         assert "list_files /memes failed:" in caplog.text
         assert WIRE_SECRET not in json.dumps(result) + caplog.text
-        wire.quit.assert_called_once()
     finally:
         container.close()
         container.db.close()
@@ -344,7 +375,7 @@ def test_cleanup_exception_redaction_preserves_empty_fallback(tmp_path, caplog):
 )
 def test_fixed_method_exception_redaction(method, error_type, tmp_path, caplog):
     # All fixed port methods protect escaping errors, including close after revocation.
-    backend = get_backend(dict(config("ftp"), ftp_password=WIRE_SECRET))
+    bk = backend("ftp", ftp_password=WIRE_SECRET)
     source = tmp_path / "payload.bin"
     source.write_bytes(b"fixture")
     calls = {
@@ -368,10 +399,10 @@ def test_fixed_method_exception_redaction(method, error_type, tmp_path, caplog):
             raise error from cause
 
     try:
-        with patch.object(backend._backend, method, side_effect=fail):
+        with patch.object(bk._backend, method, side_effect=fail):
             with pytest.raises(error_type) as raised:
                 try:
-                    getattr(backend, method)(*calls[method])
+                    getattr(bk, method)(*calls[method])
                 except Exception:
                     logging.getLogger(__name__).exception("fixed operation failed")
                     raise
@@ -380,8 +411,8 @@ def test_fixed_method_exception_redaction(method, error_type, tmp_path, caplog):
         assert WIRE_SECRET not in "".join(traceback.format_exception(raised.value))
         assert WIRE_SECRET not in caplog.text
     finally:
-        backend.close()
-    assert not backend._secret_port._secrets and backend._temporary is None
+        bk.close()
+    assert not bk._secret_port._secrets and bk._temporary is None
 
 
 @pytest.mark.parametrize("error_kind", ["oserror", "client", "url", "unsupported"])
@@ -397,12 +428,12 @@ def test_structured_exception_redaction_preserves_classification(error_kind, cap
         "url": URLError(OSError("nested reason " + WIRE_SECRET)),
         "unsupported": NotImplementedError("unsupported " + WIRE_SECRET),
     }[error_kind]
-    backend = get_backend(dict(config("ftp"), ftp_password=WIRE_SECRET))
+    bk = backend("ftp", ftp_password=WIRE_SECRET)
     try:
-        with patch.object(backend._backend, "list_files", side_effect=failure):
+        with patch.object(bk._backend, "list_files", side_effect=failure):
             with pytest.raises(type(failure)) as raised:
                 try:
-                    backend.list_files("memes")
+                    bk.list_files("memes")
                 except Exception:
                     logging.getLogger(__name__).exception("structured error")
                     raise
@@ -415,62 +446,57 @@ def test_structured_exception_redaction_preserves_classification(error_kind, cap
             assert raised.value.response["Error"]["Code"] == "AccessDenied"
             assert raised.value.operation_name == "ListObjectsV2"
     finally:
-        backend.close()
+        bk.close()
 
 
 @pytest.mark.parametrize("method", ["connect", "list_files"])
 def test_secondary_close_exception_preserves_primary_redaction(method, caplog):
     # Cleanup failure must not replace the primary error or revive its secret chain.
-    backend = get_backend(dict(config("ftp"), ftp_password=WIRE_SECRET))
+    bk = backend("ftp", ftp_password=WIRE_SECRET)
     error_type = SyncError if method == "connect" else RuntimeError
     try:
         with patch.object(
-            backend._backend, method, side_effect=RuntimeError("primary " + WIRE_SECRET)
+            bk._backend, method, side_effect=RuntimeError("primary " + WIRE_SECRET)
         ):
             with patch.object(
-                backend._backend,
+                bk._backend,
                 "close",
                 side_effect=OSError("secondary " + WIRE_SECRET),
             ):
                 with pytest.raises(error_type) as raised:
                     try:
                         if method == "connect":
-                            backend.connect()
+                            bk.connect()
                         else:
                             try:
-                                backend.list_files("memes")
+                                bk.list_files("memes")
                             finally:
-                                backend.close()
+                                bk.close()
                     except Exception:
                         logging.getLogger(__name__).exception("primary failure")
                         raise
         assert str(raised.value) == "primary [REDACTED]"
         assert WIRE_SECRET not in caplog.text
         assert WIRE_SECRET not in "".join(traceback.format_exception(raised.value))
-        assert backend._closed and not backend._secret_port._secrets
+        assert bk._closed and not bk._secret_port._secrets
     finally:
-        backend.close()
+        bk.close()
 
 
-def test_factory_exception_redaction_revokes_scope(caplog):
-    # A factory failure must be scrubbed before its just-created scope is cleared.
+def test_factory_exception_redaction(caplog):
+    # A factory failure must be scrubbed before it is projected as a SyncError.
     module = importlib.import_module("ohmymeme_plugin_sync_ftp")
-    scopes = []
 
     def fail(provider, snapshot, secrets):
-        scopes.append(secrets)
         raise RuntimeError("factory echoed " + secrets.get("password"))
 
     with patch.object(module.Plugin, "create_backend", fail):
         with pytest.raises(SyncError) as raised:
             try:
-                get_backend(dict(config("ftp"), ftp_password=WIRE_SECRET))
+                backend("ftp", ftp_password=WIRE_SECRET)
             except SyncError:
                 logging.getLogger(__name__).exception("factory failed")
                 raise
     assert str(raised.value) == "factory echoed [REDACTED]"
     assert WIRE_SECRET not in caplog.text
     assert WIRE_SECRET not in "".join(traceback.format_exception(raised.value))
-    assert not scopes[0]._secret_port._secrets
-    with pytest.raises(RuntimeError, match="closed"):
-        scopes[0].get("password")

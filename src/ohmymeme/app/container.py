@@ -86,6 +86,7 @@ class Container:
             self._write_manifest_data,
             self.remote_mutations,
             registry=self.plugins,
+            plugin_runtime=self.plugin_runtime,
         )
         self._closed = False
         self._closing = False

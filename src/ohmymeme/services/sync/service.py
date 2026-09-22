@@ -33,7 +33,7 @@ from ohmymeme.core.manifest import build as build_manifest
 from ohmymeme.core.manifest import load as load_manifest
 
 from . import planning
-from .backends import SyncError, connect_ftp, get_backend
+from .backends import SyncError, get_backend
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ class _SyncRuntime:
     legacy_lock: bool = False
     backend_registry: object = None
     enabled_plugins: object = None
+    backend_runtime: object = None
 
 
 _SYNC_RUNTIME: ContextVar[_SyncRuntime | None] = ContextVar(
@@ -76,6 +77,7 @@ class SyncService:
         coordinator: RemoteMutationCoordinator,
         registry=None,
         enabled=None,
+        plugin_runtime=None,
     ) -> None:
         self._config = config
         self._database = database
@@ -84,6 +86,7 @@ class SyncService:
         self._coordinator = coordinator
         self._registry = registry
         self._enabled = None if enabled is None else frozenset(enabled)
+        self._plugin_runtime = plugin_runtime
 
     def push(self, delete_remote: bool | None = None) -> dict:
         with self._coordinator.mutation("sync.push") as lease:
@@ -178,6 +181,7 @@ class SyncService:
                 False,
                 self._registry,
                 self._enabled,
+                self._plugin_runtime,
             )
         )
         try:
@@ -347,12 +351,8 @@ def _get_backend():
         _runtime_config(),
         registry=runtime.backend_registry if runtime else None,
         enabled=runtime.enabled_plugins if runtime else None,
+        runtime=runtime.backend_runtime if runtime else None,
     )
-
-
-def _connect():
-    """快捷方式：直接建立 FTP 连接（供 sync_test_ftp 等外部调用）"""
-    return connect_ftp(_runtime_config())
 
 
 def _chunk_list(lst, n):

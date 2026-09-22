@@ -69,6 +69,50 @@ class RuntimeOperation:
         self._manager.cancel_operation(self)
 
 
+class RuntimeSyncSession:
+    """宿主侧同步会话句柄：backend 方法经固定 RPC 转发到 worker。"""
+
+    def __init__(self, worker, session_id):
+        self._worker = worker
+        self.session_id = session_id
+
+    # 调用 backend 方法并保留异常类别语义
+    def call(self, method, args=(), timeout=None):
+        channel = self._worker.channel
+        try:
+            return channel.call(
+                "sync.call",
+                {
+                    "session_id": self.session_id,
+                    "method": method,
+                    "args": list(args),
+                },
+                timeout=timeout,
+            )
+        except RpcError as error:
+            data = error.data if isinstance(error.data, dict) else {}
+            name = data.get("exception")
+            if name == "NotImplementedError":
+                raise NotImplementedError(error.message) from None
+            if name == "SyncError":
+                from ohmymeme.core.plugins.network_config import SyncError
+
+                raise SyncError(error.message) from None
+            if name == "OSError":
+                raise OSError(error.message) from None
+            raise
+
+    # 关闭会话并回收 worker 内 backend
+    def close(self):
+        channel = self._worker.channel
+        if channel is None or channel.is_closed():
+            return
+        try:
+            channel.call("sync.close", {"session_id": self.session_id}, timeout=15.0)
+        except (ChannelClosed, RpcError):
+            pass
+
+
 class WorkerHandle:
     def __init__(self, plugin_id, spec, token):
         self.plugin_id = plugin_id
@@ -468,6 +512,25 @@ class PluginRuntimeManager:
             raise PluginRuntimeError(reason)
         record.initial_progress = result.get("progress")
         return record
+
+    # 打开同步 backend 会话，供宿主 backends 适配层逐方法调用
+    def open_backend(self, provider_id, config, secrets, enabled=None):
+        if enabled is not None and provider_id not in enabled:
+            raise PluginRuntimeError("provider_disabled", provider_id)
+        worker = self.ensure(provider_id)
+        session_id = uuid.uuid4().hex
+        payload = config._asdict() if hasattr(config, "_asdict") else dict(config)
+        worker.channel.call(
+            "sync.open",
+            {
+                "session_id": session_id,
+                "provider_id": provider_id,
+                "config": payload,
+                "secrets": dict(secrets or {}),
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+        return RuntimeSyncSession(worker, session_id)
 
     # 请求取消操作，worker 失联时静默放弃
     def cancel_operation(self, record):

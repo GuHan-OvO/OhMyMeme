@@ -37,13 +37,15 @@ class _FakeResp:
 
 
 def _make_backend(url="https://dav.example.com", user="u", password="p", path=""):
+    from sync_backend_fixtures import LocalSyncRuntime
+
     cfg = {
         "webdav_url": url,
         "webdav_user": user,
         "webdav_password": password,
         "webdav_path": path,
     }
-    bk = _WebDAVBackend(cfg)
+    bk = _WebDAVBackend(cfg, runtime=LocalSyncRuntime())
     bk.connect()
     return bk
 

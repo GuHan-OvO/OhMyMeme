@@ -43,6 +43,7 @@ class RpcChannel:
         on_notification=None,
         on_close=None,
         name="channel",
+        max_workers=4,
     ):
         self.name = name
         self._reader = reader
@@ -57,7 +58,7 @@ class RpcChannel:
         self._closed = False
         self._closed_reason = ""
         self._executor = ThreadPoolExecutor(
-            max_workers=4, thread_name_prefix=name + "-req"
+            max_workers=max_workers, thread_name_prefix=name + "-req"
         )
         self._reader_thread = threading.Thread(
             target=self._read_loop, name=name + "-read", daemon=True
