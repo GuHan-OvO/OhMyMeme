@@ -233,12 +233,9 @@ def test_registry_unavailable_returns_sentinel_without_other_provider(
         builtins["source.telegram"] = factory
     webui._plugin_action_registry = PluginRegistry(descriptors, builtins, ())
     webui._enabled_import_plugins = () if mode == "disabled" else None
-    old_worker = Mock(return_value=True)
-    monkeypatch.setattr(desktop.telegram, "start_tg_import", old_worker)
     assert api.start_tg_import() == {"ok": False}
     assert api.get_tg_import_progress() == {}
     assert api.cancel_tg_import() is None
-    old_worker.assert_not_called()
     factory.assert_not_called()
     builtins["source.douyin"].assert_not_called()
 
@@ -557,57 +554,3 @@ def test_bridge_schema_models_match_existing_generator():
     from scripts.generate_bridge_schemas import SCHEMA_PATH, _schema_bytes
 
     assert SCHEMA_PATH.read_bytes() == _schema_bytes()
-
-
-@pytest.mark.parametrize(
-    "provider_id", ["source.qqnt", "source.telegram", "source.douyin", "source.wechat"]
-)
-def test_idle_instance_cancel_does_not_cancel_another_worker(
-    tmp_path, monkeypatch, provider_id
-):
-    # Same-kind coordinator reuse must not grant ownership to a rejected instance.
-    from ohmymeme.app.container import Container
-    from ohmymeme.core.plugins.policy import PluginPolicy
-    from ohmymeme.presentation.desktop.api.plugin_dispatch import _descriptor
-
-    container = Container(tmp_path / "host")
-    entered, release = Event(), Event()
-    contexts = []
-    descriptor = _descriptor(provider_id)
-    module = importlib.import_module(descriptor.package_root)
-    providers = [module.create_plugin(), module.create_plugin()]
-
-    def run(context):
-        contexts.append(context)
-        entered.set()
-        assert release.wait(5)
-
-    monkeypatch.setattr(providers[0], "import_media", run)
-    workers = [
-        import_workers.HostImportWorker(
-            provider,
-            descriptor,
-            PluginPolicy(container.config),
-            container.operations,
-            container.create_import_sink(),
-        )
-        for provider in providers
-    ]
-    try:
-        assert workers[0].start({})
-        assert entered.wait(5)
-        assert not workers[1].start({})
-        before = workers[0].get_progress()
-        workers[1].cancel()
-        assert not contexts[0].is_cancelled()
-        assert workers[0].get_progress() == before
-        workers[0].cancel()
-        assert contexts[0].is_cancelled()
-    finally:
-        release.set()
-        container.operations.wait(workers[0]._kind, 5)
-        container.close()
-    assert all(worker.operation._closed for worker in workers)
-    assert not list(
-        (container.config.data_dir / "plugin-workspaces").rglob("operation-*")
-    )

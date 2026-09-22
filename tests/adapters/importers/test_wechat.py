@@ -87,18 +87,8 @@ def test_published_abi_and_exact_entrypoint():
     ]
     assert entries["source.wechat"].load() is implementation.create_plugin
     assert (
-        str(inspect.signature(wechat.start_wechat_import))
-        == "(import_callback, user_root=None, download=True, account_path=None)"
-    )
-    assert (
         str(inspect.signature(wechat.inspect_wechat_environment)) == "(user_root=None)"
     )
-    assert (
-        str(inspect.signature(wechat.list_wechat_stickers))
-        == "(user_root, account_path=None)"
-    )
-    assert str(inspect.signature(wechat.get_wechat_progress)) == "()"
-    assert str(inspect.signature(wechat.cancel_wechat_import)) == "()"
     assert "ResourceLocator" not in inspect.getsource(implementation)
     assert "ohmymeme.presentation" not in inspect.getsource(implementation)
     assert "ohmymeme.app" not in inspect.getsource(implementation)
@@ -423,22 +413,3 @@ def test_helper_key_and_error_are_redacted_at_emission(tmp_path, monkeypatch):
     finally:
         policy.close_operation(operation)
         container.close()
-
-
-def test_synchronous_list_and_legacy_callback_cleanup(tmp_path, monkeypatch):
-    # Account listing keeps its result without changing import progress.
-    source_database(tmp_path / "source", "multiple_accounts")
-    monkeypatch.setattr(wechat, "_session", None)
-    root = str(tmp_path / "source")
-    idle = wechat.get_wechat_progress()
-    assert wechat.list_wechat_stickers(root)["status"] == "multiple_accounts"
-    listed = wechat.list_wechat_stickers(root, "wxid_fixture")
-    assert listed["account"] == "wxid_fixture" and listed["total"] == 1
-    assert wechat.get_wechat_progress() == idle
-    callback = Mock(return_value={"ids": [1]})
-    assert wechat.start_wechat_import(callback, root, False, "wxid_fixture")
-    wechat._session.coordinator.wait(TaskKind.IMPORT_WECHAT, 5)
-    assert wechat.get_wechat_progress()["status"] == "done"
-    callback.assert_not_called()
-    assert wechat._session.worker.operation._closed
-    assert wechat.cancel_wechat_import() is None

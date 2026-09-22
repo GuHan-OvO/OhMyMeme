@@ -24,7 +24,6 @@ _WECHAT_KEYFINDER_URLS = {
     ),
 }
 _DL_LOCK = threading.Lock()
-_session = None
 
 
 def _implementation():
@@ -127,41 +126,6 @@ def prepare_wechat_helper(operation, cancelled):
     return str(staged), str(offsets)
 
 
-def _default():
-    # The shipped callback ABI has a host session independent of official factories.
-    global _session
-    if _session is None:
-        from ohmymeme.app.legacy_imports import LegacyImportSession
-
-        _session = LegacyImportSession("source.wechat")
-    return _session
-
-
 def inspect_wechat_environment(user_root=None):
     # Inspection does not need a worker or persistence.
     return _implementation().inspect_wechat_environment(user_root)
-
-
-def list_wechat_stickers(user_root, account_path=None):
-    # The host session supervises even synchronous helper-backed listing.
-    return _default().list_wechat(user_root, account_path)
-
-
-def start_wechat_import(
-    import_callback, user_root=None, download=True, account_path=None
-):
-    # Preserve signature, defaults and boolean start/busy result.
-    return _default().start(
-        import_callback,
-        {"user_root": user_root, "download": download, "account_path": account_path},
-    )
-
-
-def get_wechat_progress():
-    # Poll the same instance that owns the compatibility operation.
-    return _default().get_progress()
-
-
-def cancel_wechat_import():
-    # Preserve the None sentinel and idempotent cancellation.
-    _default().cancel()

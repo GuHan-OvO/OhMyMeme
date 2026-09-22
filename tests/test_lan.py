@@ -24,6 +24,7 @@ from ohmymeme.core.database import MemeDB
 from ohmymeme.core.plugins.network_config import LanTransportConfig
 
 TEST_PORT = 0
+_LAN_RUNTIME = None
 _IV_LEN = 12
 
 
@@ -129,6 +130,8 @@ def _connect(port=None):
 @pytest.fixture()
 def lan_env(tmp_path):
     """隔离 config/db/cache 并启动 lan 服务"""
+    from ohmymeme.core.plugins.runtime import PluginRuntimeManager
+
     cfg = Config(tmp_path / "config.json")
     cfg.set("cache_dir", str(tmp_path / "cache"))
     cfg.set("lan_port", TEST_PORT)
@@ -139,13 +142,16 @@ def lan_env(tmp_path):
     old_cb = lan.set_confirm_callback(None)
     config_module._config = cfg
     database._db = db
+    global _LAN_RUNTIME
+    _LAN_RUNTIME = PluginRuntimeManager(tmp_path / "runtime")
 
     lan.stop()
     lan.set_allow_secret_config(False)
-    assert lan.start(TEST_PORT, "test-secret")
+    assert lan.start(TEST_PORT, "test-secret", plugin_runtime=_LAN_RUNTIME)
     yield cfg, db, tmp_path
 
     lan.stop()
+    _LAN_RUNTIME.shutdown()
     lan.set_confirm_callback(old_cb)
     lan.set_allow_secret_config(False)
     config_module._config = old_cfg
@@ -686,15 +692,18 @@ def test_unknown_cmd(lan_env):
 
 def test_no_secret_server(tmp_path):
     """无密钥时直接放行"""
+    from ohmymeme.core.plugins.runtime import PluginRuntimeManager
+
     cfg = Config(tmp_path / "config.json")
     cfg.set("cache_dir", str(tmp_path / "cache"))
     db = MemeDB(tmp_path / "test.db")
+    runtime = PluginRuntimeManager(tmp_path / "runtime")
     old_cfg = config_module._config
     old_db = database._db
     config_module._config = cfg
     database._db = db
     lan.stop()
-    assert lan.start(TEST_PORT, "")
+    assert lan.start(TEST_PORT, "", plugin_runtime=runtime)
     try:
         sock = _connect()
         msg = _recv_plain(sock)
@@ -705,6 +714,7 @@ def test_no_secret_server(tmp_path):
         sock.close()
     finally:
         lan.stop()
+        runtime.shutdown()
         config_module._config = old_cfg
         database._db = old_db
 
@@ -713,4 +723,4 @@ def test_stop_status(lan_env):
     assert lan.get_status()["status"] == "running"
     lan.stop()
     assert lan.get_status()["status"] == "stopped"
-    lan.start(TEST_PORT, "test-secret")
+    lan.start(TEST_PORT, "test-secret", plugin_runtime=_LAN_RUNTIME)

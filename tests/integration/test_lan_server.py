@@ -16,10 +16,13 @@ from ohmymeme.core.database import MemeDB
 
 @pytest.fixture()
 def lan_env(tmp_path):
+    from ohmymeme.core.plugins.runtime import PluginRuntimeManager
+
     cfg = Config(tmp_path / "config.json")
     cfg.set("cache_dir", str(tmp_path / "cache"))
     cfg.set("lan_port", 0)
     db = MemeDB(tmp_path / "test.db")
+    runtime = PluginRuntimeManager(tmp_path / "runtime")
     old_cfg = config_module._config
     old_db = database._db
     old_callback = lan.set_confirm_callback(None)
@@ -27,9 +30,10 @@ def lan_env(tmp_path):
     database._db = db
     lan.stop()
     lan.set_allow_secret_config(False)
-    assert lan.start(0, "test-secret")
+    assert lan.start(0, "test-secret", plugin_runtime=runtime)
     yield cfg
     lan.stop()
+    runtime.shutdown()
     lan.set_confirm_callback(old_callback)
     lan.set_allow_secret_config(False)
     config_module._config = old_cfg

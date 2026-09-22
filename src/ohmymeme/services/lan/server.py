@@ -63,7 +63,6 @@ _lan_state = {
 }
 _lan_lock = threading.Lock()
 _server = None
-_fallback_runtime_instance = None
 _confirm_cb = None
 
 __all__ = [
@@ -674,13 +673,13 @@ def _derive_key(secret: str) -> bytes:
     return lan_protocol.derive_key(secret)
 
 
-def start(port: int = 17852, secret: str = "") -> bool:
-    """启动局域网服务。"""
+def start(port: int = 17852, secret: str = "", plugin_runtime=None) -> bool:
+    """启动局域网服务；plugin_runtime 必传，不再隐式创建。"""
     global _server
     with _lan_lock:
         if _lan_state["status"] == "running" and _server:
             return True
-    _server = LanServer(plugin_runtime=_fallback_runtime())
+    _server = LanServer(plugin_runtime=plugin_runtime)
     return _server.start(port, secret)
 
 
@@ -729,21 +728,11 @@ def confirm_device(approved: bool, confirm_id: str = ""):
         current._confirm_device(approved, confirm_id)
 
 
-def get_lan_ip() -> str:
-    """获取本机局域网 IP。"""
+def get_lan_ip(plugin_runtime=None) -> str:
+    """获取本机局域网 IP；无 runtime 时返回回环地址。"""
+    if plugin_runtime is None:
+        return "127.0.0.1"
     try:
-        return _fallback_runtime().get_lan_ip()
+        return plugin_runtime.get_lan_ip()
     except Exception:
         return "127.0.0.1"
-
-
-def _fallback_runtime():
-    """模块级兼容入口使用的惰性运行时。"""
-    global _fallback_runtime_instance
-    with _lan_lock:
-        if _fallback_runtime_instance is None:
-            from ohmymeme.core.config import get_config
-            from ohmymeme.core.plugins.runtime import PluginRuntimeManager
-
-            _fallback_runtime_instance = PluginRuntimeManager(get_config().data_dir)
-        return _fallback_runtime_instance

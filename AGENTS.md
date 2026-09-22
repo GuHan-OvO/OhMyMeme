@@ -106,19 +106,19 @@ tests/
 
 ## js_api 桥接规范
 - Todo11 固定 UI 边界：`api/ui_contributions.py` 严格校验宿主 `src/webui/plugin-ui.json`，生产 Bottle `/api/plugin-ui` 只返回有效快照；设置页 `initSettings` → `installPluginUI` 在任何 DOM 绑定前整体验证，原来源行/同步面板/固定 API 参数与进度读取实际消费该数据。数据从 Todo6 action 矩阵生成，`plugin_ui_dispatch.py --check` 校验 schema/fixture/产物一致性；保持原 SVG、文本、布局、公开 Bridge/取消/结果，手机版 QQ/ADB 不参与。禁止 UI 记录持久化到 Config、任意额外字段、HTML/脚本/动态 Bridge 或 DOM 注入，不提供通用 renderer/DSL。
-- `plugins/sync.{ftp,s3,r2,webdav}` 持有真实网络后端；`services/sync/backends.py` 只保留已发布类/方法的宿主适配、配置验证、限域密钥和临时文件投影。`Container.sync` 与旧入口通过 registry 选择真实 factory，每个 backend 独立；无效配置在网络前拒绝，不把 bool 当 int，不静默修正错误寻址/超时。R2 可以复用 S3 包的网络代码，但不得请求或回退到 S3 provider。leases、manifest/order、hash 和 pull commit 全留宿主。
- - `plugins/transport.lan/src/ohmymeme_plugin_lan` 只持有 socket 字节、UDP 发现和 IP_PKTINFO/Windows 接口选择；只接收 `LanTransportConfig`，不接收安全状态、Config 或 LanServer。`services/lan/server.py` 保留 LAN v1 安全/审批/命令和生命周期，所有 listener/session 在阻塞前注册 coordinator，close 用 shutdown 唤醒 recv。`_coordinator` 是 `OperationCoordinator`，`_mutation_coordinator` 是宿主共享写入 lease，两者不可混用。挂起 session 未 drain 前持有数据库/配置资源 lease，会话线程退出时关闭本线程 SQLite 连接。九包的 source/frozen packaging 由 `scripts/plugin_packaging.py` 校验，构建只把 canonical manifest 复制到 `ohmymeme/config/plugin-manifest.json`。
-- `plugins/source.wechat/src/ohmymeme_plugin_wechat` 持有微信真实账号/SQLite/WAL/CDN 算法及 helper JSON 协议；`create_plugin()` 返回独立状态实例。源 SQLite 是用户微信库，不是应用 DB。旧 `integrations/imports/wechat.py` 保留发布 ABI 和宿主 helper 持久缓存/真实 SHA-256/ResourceLocator/offsets 策略，只通过 `resources.wechat_helper()` 提供 operation 内副本，不向插件传持久路径、Config、WebUI、MemeDB 或任意执行器。helper 采用 `Popen`，先注册到 coordinator 再用 0.25s 分段 communicate 检查取消，90s 总超时；terminate/kill/wait 后关闭管道，宿主 drain 后回收 operation 目录。同步列表同样受宿主 coordinator 监管。
- - 四包的默认 Bridge 调用通过固定 `HostActionAdapter` 接到缓存的真实 provider/context/sink；进度/取消绑定同一实例。未取得 task 所有权的空闲/被拒绝实例不能取消其他实例。提供方缺失/禁用/不兼容返回原哨兵，不回退；不更改冻结 ABI/action 矩阵，`plugin_abi_matrix.py` 从四个真实包读取进度字段。九个官方包的元数据、editable 安装和 frozen staging 由 `plugin_packaging.py` 校验。
-- `plugins/source.telegram`/`plugins/source.douyin` 持有真实解密、转换、远程协议和 ABogus；`ImportRuntime` 仅复用实例生命周期、sink 投递与脱敏输出。宿主保留 coordinator 线程和临时目录回收，Telegram 保留 20 个一批、VP9 alpha/q80、ETA 和并行子进程回收。`source.telegram/passcode` 与 `source.douyin/cookie` 仅作为 transient operation secret，不加入持久配置映射；旧 integration 仅保留命名 ABI 代理及宿主默认兼容 session。
-- `plugins/source.qqnt/src/ohmymeme_plugin_qqnt` 持有 QQNT 实际提取算法及 GPL 原署名，零参数 `create_plugin()` 返回独立状态实例。宿主 `presentation/desktop/import_workers.py` 持有线程/coordinator、operation、sink、昵称缓存与外部导出路径投影；插件只写 operation staging，缓存及其上下级输出改走 sink，普通 `image_only=False` 导出保留非图片/坏图复制语义。
+- 子进程运行时：`core/plugins/runtime/`（protocol/channel/process_tree/manager/worker/seeding）负责 worker 生命周期与固定 RPC；四个导入源经 operation RPC 执行，`app/runtime_imports.py` 保持 `HostImportWorker` 旧公开形状但执行体在 worker。宿主保留 coordinator 线程、sink、昵称缓存与外部导出投影，插件只写 operation staging。
+- `plugins/sync.{ftp,s3,r2,webdav}` 在后端会话 RPC（`sync.open/call/close`）中执行网络实现；`services/sync/backends.py` 保留宿主 staging、布尔校验、列表过滤、脱敏与 push/pull 编排。leases、manifest/order、hash 和 pull commit 全留宿主；`connect_ftp` 旧连接 ABI 已删除。
+- `plugins/transport.lan` 在 worker 内持有 socket/UDP 发现/IP_PKTINFO；宿主经 `RuntimeLanTransport/RuntimeLanConnection` 代理读写字节，`services/lan/server.py` 保留安全/审批/命令与协调器所有权。
+- `plugins/source.wechat` 持有账号/SQLite/WAL/CDN 算法与 helper JSON 协议；宿主 `integrations/imports/wechat.py` 只保留 helper 持久缓存/SHA-256/offsets 策略，经 `helper.wechat` RPC 提供 operation 内副本。helper 由插件在 worker 内 `Popen`，随 worker 整树回收。
+- `plugins/source.telegram`/`plugins/source.douyin` 持有解密/转换/远程协议与 ABogus；passcode/cookie 仅按操作注入 worker，不进入持久 Config；旧 integration 仅保留 `__getattr__` 命名代理。
+- `plugins/source.qqnt` 持有提取算法；宿主经固定 `inspect` 查询注入昵称回调，缓存与外部导出投影仍在宿主。
 - `JsApi` 暴露给主窗口，`SettingsApi` 暴露给设置窗口
 - JS 调用: `pywebview.api.methodName(...args)` → 自动序列化
 - JS 辅助函数: `async function api(method, ...args) { return await pywebview.api[method](...args); }`
 - 返回类型: `str` / `int` / `bool` / `dict` / `list`，错误返回 `None` 或 `{"ok": false, "error": "..."}`
 - 图片传输: 缩略图通过 `/api/thumb/{id}` HTTP 路径渲染，不通过 JS API JSON
-- 固定插件动作边界位于 `presentation/desktop/api/plugin_dispatch.py`：四个导入 provider 通过宿主 `HostActionAdapter` 和 registry 调度，sync/LAN 仍由宿主固定映射处理；ADB/手机版 QQ 不进入该边界。公开方法/默认值/返回对象/取消/进度/固定 UI 必须保持兼容。`pick_wechat_root` 是零参数方法。
-- `HostActionAdapter` 是宿主兼容层，不是传给插件的 SDK/context；后续宿主 factory 可将已限定的 provider/context 调用绑定到其固定 action 集合。禁止把完整 Config、WebUI、DB 或宿主持久路径传给插件，禁止任意 execute、动态 Bridge 注册或 HTML/脚本/UI DSL。官方插件为 trusted in-process，不构造内省防御 IPC。
+- 固定插件动作边界位于 `presentation/desktop/api/plugin_dispatch.py`：四个导入 provider 经 runtime 调度，sync/LAN 仍由宿主固定映射处理；ADB/手机版 QQ 不进入该边界。公开方法/默认值/返回对象/取消/进度/固定 UI 必须保持兼容。`pick_wechat_root` 是零参数方法。
+- 插件在独立 worker 进程中运行，宿主只传窄配置、按操作密钥与 operation 临时目录；禁止把完整 Config、WebUI、DB 或宿主持久路径传给插件，禁止任意 execute、动态 Bridge 注册或 HTML/脚本/UI DSL。安装仅限本地 ZIP（`seeding.install_plugin`，官方 ID/路径穿越/符号链接拒绝），卸载仅限第三方，重载 = 停止 worker 后按磁盘版本重新加载。
 - ABI/action 矩阵由 `scripts/plugin_abi_matrix.py --write` 从固定动作、Bridge/facade 和实际调用方生成至 `docs/plugin-{abi,action}-matrix.json`，`--check` 校验 `schemas/plugin/abi-matrix.schema.json` 并执行离线 facade/dispatcher 探针；未知 action、错参数、无效结果及 provider 缺失/禁用/不兼容必须拒绝或返回原哨兵，不得调用其他 provider。
 
 ## 官方插件文档与重组边界
