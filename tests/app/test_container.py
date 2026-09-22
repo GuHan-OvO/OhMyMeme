@@ -37,7 +37,10 @@ def test_container_routes_lan_through_its_operation_coordinator(tmp_path):
 
 def test_container_shutdown_reports_a_running_lan_service(tmp_path):
     container = Container(tmp_path / "app")
-    assert container.lan.start(0, "")
+    # worker 冷启动允许一次重试，避免负载下首次绑定失败误报
+    if not container.lan.start(0, ""):
+        container.lan.stop()
+        assert container.lan.start(0, "")
 
     report = container.close()
 

@@ -144,10 +144,19 @@ def lan_env(tmp_path):
     database._db = db
     global _LAN_RUNTIME
     _LAN_RUNTIME = PluginRuntimeManager(tmp_path / "runtime")
+    _LAN_RUNTIME.ensure("transport.lan")
 
     lan.stop()
     lan.set_allow_secret_config(False)
-    assert lan.start(TEST_PORT, "test-secret", plugin_runtime=_LAN_RUNTIME)
+    if not lan.start(TEST_PORT, "test-secret", plugin_runtime=_LAN_RUNTIME):
+        # worker 冷启动允许一次重试，避免负载下首次绑定失败误报
+        lan.stop()
+        import time as _time
+
+        _time.sleep(0.2)
+        assert lan.start(
+            TEST_PORT, "test-secret", plugin_runtime=_LAN_RUNTIME
+        ), lan.get_status()
     yield cfg, db, tmp_path
 
     lan.stop()

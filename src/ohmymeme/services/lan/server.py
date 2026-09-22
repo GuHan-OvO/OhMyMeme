@@ -49,7 +49,7 @@ _IV_LEN = lan_protocol.IV_LEN
 _TAG_LEN = lan_protocol.TAG_LEN
 _REPLAY_CACHE_LIMIT = 4096
 _REPLAY_TTL_SECONDS = 600
-_LAN_START_TIMEOUT = 2
+_LAN_START_TIMEOUT = 15
 _LAN_STOP_TIMEOUT = 15
 _STATE_MUTATING_COMMANDS = {"push_manifest", "push_file", "send_config"}
 
