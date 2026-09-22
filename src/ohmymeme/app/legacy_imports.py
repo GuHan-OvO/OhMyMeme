@@ -1,7 +1,6 @@
 """Legacy import callback and provider operation adapters."""
 
 import os
-import shutil
 import tempfile
 import threading
 from pathlib import Path
@@ -20,6 +19,14 @@ from ohmymeme.core.plugins.policy import PluginPolicy
 from ohmymeme.core.plugins.registry import PluginRegistry
 
 _IMPORT_WORKERS_LOCK = threading.Lock()
+_RUNTIME_PROVIDERS = frozenset(
+    {
+        "source.qqnt",
+        "source.telegram",
+        "source.douyin",
+        "source.wechat",
+    }
+)
 
 
 class HostImportWorker:
@@ -184,49 +191,13 @@ class HostImportWorker:
             return {}
         return result
 
-    def start_qqnt(self, qq_number, output_dir, image_only, overwrite, config):
-        # Keep cache aliases and external overwrite policy entirely in the host.
-        from ohmymeme.integrations.imports import qqnt
-
-        userdata = config.get("qqnt_userdata_path") or None
-        ini = config.get("qqnt_ini_path") or qqnt.DEFAULT_INI_PATH
-        library = qqnt.targets_library_output(output_dir, config.cache_dir)
-        output = Path(output_dir).expanduser().resolve()
-        if not library:
-            source_root = userdata or qqnt.get_userdata_save_path(ini)
-            if source_root and qqnt.targets_library_output(
-                output, qqnt.get_emoji_dir(source_root, qq_number)
-            ):
-                raise ValueError("输出目录不能与源表情目录重叠")
-            if output.exists() and not overwrite and any(output.iterdir()):
-                raise FileExistsError("输出目录已存在且非空: " + str(output))
-
-        def finalize(result):
-            # Ordinary exports preserve non-images and never enter the sink.
-            if not library:
-                staging = Path(result["output_dir"])
-                if overwrite and output.is_dir():
-                    for entry in output.iterdir():
-                        if entry.is_dir() and not entry.is_symlink():
-                            shutil.rmtree(entry)
-                        else:
-                            entry.unlink()
-                shutil.copytree(staging, output, dirs_exist_ok=True)
-            result["output_dir"] = output_dir
-
-        return self.start(
-            {
-                "qq_number": qq_number,
-                "userdata_save_path": userdata,
-                "ini_path": ini,
-                "image_only": image_only,
-                "submit": library,
-            },
-            finalize=finalize,
-        )
-
 
 def get_import_worker(legacy, provider_id):
+    # 已迁移 provider 走子进程 runtime，其余暂留进程内适配器
+    if provider_id in _RUNTIME_PROVIDERS:
+        from ohmymeme.app.runtime_imports import get_runtime_import_worker
+
+        return get_runtime_import_worker(legacy, provider_id)
     # Cache on the host; polling never reconstructs the plugin.
     webui = legacy._webui
     with _IMPORT_WORKERS_LOCK:

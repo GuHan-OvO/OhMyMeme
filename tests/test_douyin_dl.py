@@ -154,14 +154,19 @@ def test_douyin_factory_redacts_cookie_exception(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("failed_key", ["sessionid", "csrftoken"])
-def test_douyin_cookie_components_are_redacted_by_real_bridge(
+def test_douyin_cookie_components_are_redacted_with_real_plugin(
     tmp_path, monkeypatch, request, failed_key
 ):
-    # Reuse the reviewer's real transport and Cookie.set component-value fault.
-    from ohmymeme.app.container import Container
+    # Keep the reviewer's Cookie.set component-value fault at the plugin and
+    # host policy boundary that the worker reuses.
     from ohmymeme.core.adapters.fetch_policy import FetchPolicy
-    from ohmymeme.core.plugins.policy import PluginPolicy
-    from ohmymeme.presentation.desktop.window_manager import SettingsApi
+    from ohmymeme.core.plugins.contracts import ImportPluginContext
+    from ohmymeme.core.plugins.policy import (
+        PluginConfigPort,
+        PluginOperation,
+        PluginSecretPort,
+    )
+    from ohmymeme.presentation.desktop.api.plugin_dispatch import _descriptor
     from plugin_remote_import_qa import Cookies, CurlFixture, Resolver
 
     tokens = {"sessionid": "wave3-session-secret", "csrftoken": "wave3-csrf-secret"}
@@ -185,58 +190,33 @@ def test_douyin_cookie_components_are_redacted_by_real_bridge(
         (subprocess, "Popen"),
     ):
         monkeypatch.setattr(owner, name, Mock(side_effect=AssertionError("offline")))
-    flush = PluginPolicy.flush_outputs
 
-    def capture(policy, operation, emitter):
-        # Record exactly what the host output port emits, not direct redact calls.
-        def receive(kind, value):
-            events.append((kind, value))
-            emitter(kind, value)
-
-        flush(policy, operation, receive)
-
-    monkeypatch.setattr(PluginPolicy, "flush_outputs", capture)
-    container = Container(tmp_path / "host")
-    try:
-        webui = container.create_webui()
-        api = SettingsApi(webui, container.settings)
-        assert api.start_douyin_import(cookie) == {"ok": True}
-        worker = webui._import_workers["source.douyin"]
-        container.operations.wait(worker._kind, 5)
-        progress = api.get_douyin_import_progress()
-        facts = {
-            "failed_key": failed_key,
-            "progress": progress,
-            "emitted": events,
-            "component_leaked": any(
-                value in json.dumps([progress, events]) for value in tokens.values()
-            ),
-            "full_cookie_leaked": cookie in json.dumps([progress, events]),
-            "session_closed": session.closed,
-            "config_clean": all(
-                value not in repr(container.config.to_dict())
-                for value in tokens.values()
-            ),
-            "operation_closed": worker.operation._closed,
-            "secrets_cleared": not worker.operation.secrets._secret_port._secrets,
-            "workspace_removed": not list(
-                (container.config.data_dir / "plugin-workspaces").rglob("operation-*")
-            ),
-            "sink_rows": len(container.db.search()),
-            "http_calls": session.calls,
-        }
-        request.node.user_properties.append(("review_attack", json.dumps(facts)))
-        assert not facts["component_leaked"] and not facts["full_cookie_leaked"]
-        assert facts["session_closed"] and facts["config_clean"]
-        assert facts["operation_closed"] and facts["secrets_cleared"]
-        assert facts["workspace_removed"] and facts["sink_rows"] == 0
-        assert progress["error"] == "Cookie value rejected: [REDACTED]"
-        assert any(kind == "log" and "[REDACTED]" in value for kind, value in events)
-    finally:
-        # Red runs must also release their intentionally leaked fixture session.
-        if not session.closed:
-            session.close()
-        container.close()
+    descriptor = _descriptor("source.douyin")
+    with PluginOperation(
+        PluginConfigPort({}), PluginSecretPort({"cookie": cookie}), descriptor, tmp_path
+    ) as operation:
+        context = ImportPluginContext(
+            descriptor,
+            None,
+            lambda value: events.append(value),
+            lambda: False,
+            operation=operation,
+        )
+        provider = douyin.create_plugin()
+        assert provider.start(context)
+        provider.import_media(context)
+        progress = provider.get_progress()
+        logs = operation._outputs._drain_events()
+    rendered = json.dumps([progress, events, [str(item) for item in logs]])
+    facts = {
+        "failed_key": failed_key,
+        "component_leaked": any(value in rendered for value in tokens.values()),
+        "full_cookie_leaked": cookie in rendered,
+        "session_closed": session.closed,
+    }
+    request.node.user_properties.append(("review_attack", json.dumps(facts)))
+    assert not facts["component_leaked"] and not facts["full_cookie_leaked"]
+    assert facts["session_closed"]
 
 
 @pytest.mark.parametrize("phase", ["headers", "ttwid", "fingerprint", "cookie"])

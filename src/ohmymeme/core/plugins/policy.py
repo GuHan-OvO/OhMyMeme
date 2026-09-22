@@ -106,6 +106,10 @@ class PluginConfigPort:
         self._settings[key] = value
         self._changes.append((key, value))
 
+    def snapshot(self):
+        # 供 worker 操作下发只读快照
+        return dict(self._settings)
+
     def _drain_changes(self):
         changes = tuple(self._changes)
         self._changes.clear()
@@ -118,6 +122,10 @@ class PluginSecretPort:
 
     def get_secret(self, key):
         return self._secrets.get(key)
+
+    def snapshot(self):
+        # 供 worker 操作下发按操作注入的密钥
+        return dict(self._secrets)
 
     def _values(self):
         # Match the provider's Cookie splitting without persisting derived values.
@@ -193,6 +201,11 @@ class TemporaryWorkspace:
         self._root = Path(root).resolve()
         self._closed = False
 
+    @property
+    def root(self):
+        # worker 侧与宿主侧共用同一个操作临时根
+        return self._root
+
     def path(self, relative):
         if self._closed:
             raise PluginPolicyError("operation scope is closed")
@@ -238,6 +251,14 @@ class PluginOperation:
             raise PluginPolicyError("operation scope is closed")
         if capability not in self._canonical_capabilities:
             raise PluginPolicyError(f"undeclared capability {capability!r}")
+
+    # 下发 worker 的非密钥配置快照
+    def export_config(self):
+        return self.settings._config_port.snapshot()
+
+    # 下发 worker 的按操作密钥快照
+    def export_secrets(self):
+        return self.secrets._secret_port.snapshot()
 
     def redact(self, value):
         return redact(

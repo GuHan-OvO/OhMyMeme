@@ -502,7 +502,6 @@ class _LegacyJsApi:
         conn = _check_connectivity()
         if not conn["ok"]:
             return {"ok": False, "error": "无网络连接"}
-        import tempfile
         from urllib.parse import urlparse
 
         # 从 URL 路径推断扩展名
@@ -671,7 +670,6 @@ class _LegacyJsApi:
 
     def import_from_clipboard(self) -> dict:
         import hashlib
-        import tempfile
 
         from PIL import ImageGrab
 
@@ -786,133 +784,6 @@ class _LegacyJsApi:
             if filename in files:
                 return os.path.join(root, filename)
         return ""
-
-
-# ─── QQNT 提取驱动（后台线程 + 状态，供设置页向导轮询） ───
-
-_QQNT_STATE = {
-    "status": "idle",  # idle|running|done|cancelled|error
-    "progress": 0,
-    "message": "",
-    "error": "",
-    "log": [],
-    "result": None,
-}
-_QQNT_LOCK = threading.Lock()
-_QQNT_CANCEL = False
-
-
-def _set_qqnt(**kw):
-    with _QQNT_LOCK:
-        _QQNT_STATE.update(**kw)
-
-
-def _append_qqnt_log(msg):
-    with _QQNT_LOCK:
-        _QQNT_STATE["log"] = (_QQNT_STATE["log"] + [msg])[-100:]
-
-
-def get_qqnt_progress() -> dict:
-    with _QQNT_LOCK:
-        return dict(_QQNT_STATE)
-
-
-def cancel_qqnt_extract():
-    global _QQNT_CANCEL
-    _QQNT_CANCEL = True
-
-
-def start_qqnt_extract(
-    qq_number: str,
-    output_dir: str,
-    image_only: bool = False,
-    overwrite: bool = False,
-    ini_path: str = None,
-    userdata_save_path: str = None,
-    cache_dir: str = None,
-    library_import=None,
-) -> bool:
-    global _QQNT_CANCEL
-    _QQNT_CANCEL = False
-    _set_qqnt(
-        status="running", progress=0, message="准备中", error="", log=[], result=None
-    )
-    threading.Thread(
-        target=_qqnt_worker,
-        args=(
-            qq_number,
-            output_dir,
-            image_only,
-            overwrite,
-            ini_path,
-            userdata_save_path,
-            cache_dir,
-            library_import,
-        ),
-        daemon=True,
-    ).start()
-    return True
-
-
-def _qqnt_worker(
-    qq_number,
-    output_dir,
-    image_only,
-    overwrite,
-    ini_path,
-    userdata_save_path,
-    cache_dir=None,
-    library_import=None,
-):
-    """后台执行 QQNT 表情提取并转发进度/错误到 _QQNT_STATE"""
-
-    def on_progress(done, total, src, dst):
-        pct = int(done * 100 / total) if total else 0
-        _set_qqnt(progress=pct, message="复制中 %d/%d" % (done, total))
-
-    def on_error(src, msg):
-        _append_qqnt_log("失败: %s (%s)" % (src, msg))
-
-    def on_log(msg):
-        _append_qqnt_log(msg)
-
-    try:
-        kwargs = {
-            "userdata_save_path": userdata_save_path,
-            "ini_path": ini_path or qqnt.DEFAULT_INI_PATH,
-            "image_only": image_only,
-            "overwrite": overwrite,
-            "should_stop": lambda: _QQNT_CANCEL,
-            "on_progress": on_progress,
-            "on_error": on_error,
-            "on_log": on_log,
-        }
-        if (
-            cache_dir
-            and library_import
-            and qqnt.targets_library_output(output_dir, cache_dir)
-        ):
-            with tempfile.TemporaryDirectory(prefix="ohmm-qqnt-") as staging:
-                result = qqnt.extract_qq_emojis(qq_number, staging, **kwargs)
-                if not _QQNT_CANCEL:
-                    paths = [
-                        str(path)
-                        for path in sorted(Path(staging).rglob("*"))
-                        if path.is_file()
-                    ]
-                    imported = library_import(paths)
-                    result["output_dir"] = output_dir
-                    result["copied"] = len(imported["ids"])
-                    result["skipped"] += imported["rejected"]
-        else:
-            result = qqnt.extract_qq_emojis(qq_number, output_dir, **kwargs)
-        if _QQNT_CANCEL:
-            _set_qqnt(status="cancelled", message="已取消", result=result)
-        else:
-            _set_qqnt(status="done", progress=100, message="提取完成", result=result)
-    except Exception as e:
-        logger.error("qqnt extract error: %s", e)
-        _set_qqnt(status="error", message="提取失败", error=str(e))
 
 
 class _LegacySettingsApi:
@@ -1237,7 +1108,9 @@ class _LegacySettingsApi:
         """检测微信环境"""
         from .import_workers import get_import_worker
 
-        return get_import_worker(self, "source.wechat").provider.inspect(user_root)
+        return get_import_worker(self, "source.wechat").query(
+            "inspect", {"user_root": user_root}
+        )
 
     def list_wechat_stickers(self, user_root, account_path=None):
         """列出可导入的微信表情"""
@@ -1275,9 +1148,12 @@ class _LegacySettingsApi:
         from .import_workers import get_import_worker
 
         worker = get_import_worker(self, "source.qqnt")
-        return worker.provider.inspect(
-            ini_path=self._cfg.get("qqnt_ini_path") or qqnt.DEFAULT_INI_PATH,
-            userdata_save_path=self._cfg.get("qqnt_userdata_path") or None,
+        return worker.query(
+            "inspect",
+            {
+                "ini_path": self._cfg.get("qqnt_ini_path") or qqnt.DEFAULT_INI_PATH,
+                "userdata_save_path": self._cfg.get("qqnt_userdata_path") or None,
+            },
             nickname_lookup=qqnt.get_user_nickname,
         )
 

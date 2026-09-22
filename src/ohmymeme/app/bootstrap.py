@@ -170,6 +170,10 @@ def compose_app(args=None, container_factory=Container):
 
 def main():
     """保留既有 CLI flags 的包入口。"""
+    if "--plugin-worker" in sys.argv[1:]:
+        from ohmymeme.core.plugins.runtime.worker import main as worker_main
+
+        raise SystemExit(worker_main(sys.argv[1:]))
     parser = argparse.ArgumentParser(description="OhMyMeme")
     parser.add_argument("--debug-update", action="store_true", dest="update_debug")
     parser.add_argument("--silent", action="store_true", dest="silent")

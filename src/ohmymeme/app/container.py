@@ -13,6 +13,7 @@ from ohmymeme.core.imports import HostImportSink, ImageImportService
 from ohmymeme.core.manifest import build as build_manifest
 from ohmymeme.core.plugins.manifest import CANONICAL_PROVIDERS, canonical_descriptor
 from ohmymeme.core.plugins.registry import PluginRegistry
+from ohmymeme.core.plugins.runtime import PluginRuntimeManager
 from ohmymeme.core.recovery import StorageRecovery
 from ohmymeme.integrations.platform.hotkey import GlobalHotkey
 from ohmymeme.integrations.platform.system import is_auto_start_enabled, set_auto_start
@@ -77,6 +78,7 @@ class Container:
                 for provider_id, _, _ in CANONICAL_PROVIDERS
             )
         )
+        self.plugin_runtime = PluginRuntimeManager(self.config.data_dir)
         self.sync = SyncService(
             self.config,
             self.db,
@@ -192,6 +194,7 @@ class Container:
             if window is not None:
                 window.hide()
             return report
+        self.plugin_runtime.shutdown()
         if resources is None:
             try:
                 self.lan.stop()

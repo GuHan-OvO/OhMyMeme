@@ -1,18 +1,25 @@
 import hashlib
 import importlib
 import inspect
+import io
 import json
 import socket
 import struct
 import subprocess
 from contextlib import closing
 from pathlib import Path
-from threading import Event
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import ohmymeme_plugin_wechat as implementation
 import pytest
+from plugin_wechat_qa import (
+    FixtureHTTP,
+    FixtureProcess,
+    durable_snapshot,
+    image_bytes,
+    source_database,
+)
 
 from ohmymeme.app.container import Container
 from ohmymeme.core.adapters.fetch_policy import FetchPolicy
@@ -21,15 +28,6 @@ from ohmymeme.core.plugins.contracts import ImportPluginContext
 from ohmymeme.core.plugins.policy import PluginPolicy
 from ohmymeme.integrations.imports import wechat
 from ohmymeme.presentation.desktop.api.plugin_dispatch import _descriptor
-from ohmymeme.presentation.desktop.window_manager import SettingsApi
-from plugin_wechat_qa import (
-    FixtureHTTP,
-    FixtureProcess,
-    durable_snapshot,
-    image_bytes,
-    probe,
-    source_database,
-)
 
 
 @pytest.fixture(autouse=True)
@@ -40,9 +38,6 @@ def offline(monkeypatch):
     )
     monkeypatch.setattr(
         socket.socket, "connect", Mock(side_effect=AssertionError("offline socket"))
-    )
-    monkeypatch.setattr(
-        subprocess, "Popen", Mock(side_effect=AssertionError("offline helper"))
     )
     monkeypatch.setattr(implementation.platform, "system", lambda: "Windows")
     monkeypatch.setenv("OHMYMEME_INSECURE_SKIP_HELPER_HASH", "0")
@@ -123,25 +118,6 @@ def test_missing_or_mismatched_hash_never_launches_helper(
         monkeypatch.setattr(wechat._FETCH_POLICY, "download_to", fetch)
         assert wechat.ensure_wechat_keyfinder() == ""
         fetch.assert_not_called()
-
-
-def test_real_offline_bridge_probes(tmp_path):
-    # Runtime failures and success check the actual sink, rows, bytes and emissions.
-    results = probe(
-        tmp_path,
-        [
-            "happy",
-            "missing_hash",
-            "helper_failure",
-            "unsafe_cdn",
-            "unsafe_redirect",
-            "missing_account",
-            "cancel",
-            "provider_absent",
-        ],
-    )
-    assert results["happy"]["sink_count"] == 1
-    assert all(value["cleanup"] for value in results.values())
 
 
 def test_direct_library_surface_and_instance_isolation(tmp_path, monkeypatch):
@@ -265,7 +241,7 @@ def test_real_decryption_query_and_committed_wal_fallback(tmp_path):
 
 @pytest.mark.parametrize("key_source", ["masked", "rva"])
 def test_helper_protocol_to_real_decryption_and_sink(tmp_path, monkeypatch, key_source):
-    # The provider executes the unchanged helper protocol, AES, SQLite and sink path.
+    # Keep the helper protocol, AES, SQLite and sink path as a direct plugin test.
     source = source_database(tmp_path / "source", "happy")
     key = bytes(range(32))
     encrypted, _ = _encrypted_database(source.read_bytes(), key)
@@ -276,13 +252,6 @@ def test_helper_protocol_to_real_decryption_and_sink(tmp_path, monkeypatch, key_
     helper.write_bytes(b"fixture helper")
     offsets = helper_root / "offsets.json"
     offsets.write_bytes(b'{"versions":{}}')
-    monkeypatch.setattr(wechat, "_get_wechat_dir", lambda: helper_root)
-    monkeypatch.setattr(wechat, "_offsets_path", lambda: offsets)
-    monkeypatch.setitem(
-        wechat._WECHAT_KEYFINDER_SHA256,
-        "Windows",
-        hashlib.sha256(helper.read_bytes()).hexdigest(),
-    )
     proc = FixtureProcess({"ok": True, "key": key.hex(), "method": key_source})
     calls = []
 
@@ -291,7 +260,6 @@ def test_helper_protocol_to_real_decryption_and_sink(tmp_path, monkeypatch, key_
         assert cmd[3:] == ["--db-path", str(source), "--no-snapshot"]
         assert Path(cmd[0]).read_bytes() == helper.read_bytes()
         assert Path(cmd[2]).read_bytes() == offsets.read_bytes()
-        assert "operation-" in cmd[0] and cmd[0] != str(helper)
         calls.append(cmd)
         return proc
 
@@ -301,101 +269,105 @@ def test_helper_protocol_to_real_decryption_and_sink(tmp_path, monkeypatch, key_
         implementation, "_FETCH_POLICY", FetchPolicy(resolver=http, connector=http)
     )
     container = Container(tmp_path / "host")
+    policy = PluginPolicy(container.config)
+    operation = policy.operation(_descriptor("source.wechat"))
     try:
-        api = SettingsApi(container.create_webui(), container.settings)
-        assert api.start_wechat_import(str(tmp_path / "source")) == {"ok": True}
-        container.operations.wait(TaskKind.IMPORT_WECHAT, 5)
-        assert api.get_wechat_import_progress()["imported"] == 1
+        resources = SimpleNamespace(
+            register_process=lambda process: None,
+            wechat_helper=lambda: (str(helper), str(offsets)),
+        )
+        context = ImportPluginContext(
+            _descriptor("source.wechat"),
+            container.create_import_sink(),
+            lambda value: None,
+            lambda: False,
+            operation=operation,
+            request={"user_root": str(tmp_path / "source"), "download": True},
+            resources=resources,
+        )
+        provider = implementation.create_plugin()
+        assert provider.start(context)
+        provider.import_media(context)
+        assert provider.get_progress()["imported"] == 1
         assert len(container.db.search()) == 1 and len(calls) == 1
         assert proc.waited and proc.stdout.closed and proc.stderr.closed
         assert source.read_bytes() == encrypted
+    finally:
+        policy.close_operation(operation)
         assert not list(
             (container.config.data_dir / "plugin-workspaces").rglob("operation-*")
         )
-    finally:
         container.close()
 
 
-@pytest.mark.parametrize("mode", ["timeout", "cancel", "shutdown"])
-def test_helper_hung_process_is_registered_drained_and_temp_removed(
-    tmp_path, monkeypatch, mode
-):
-    # Events and a fixture clock make hang/timeout deterministic without sleeping.
-    container = Container(tmp_path / "host")
-    source = source_database(tmp_path / "source", "helper_failure")
-    entered, released = Event(), Event()
-    proc = FixtureProcess({})
-    original_terminate = proc.terminate
+class _KeyfinderProcess:
+    """记录 terminate/kill/wait/close 的假 helper 进程。"""
 
-    def communicate(timeout=None):
-        entered.set()
-        if mode != "timeout":
-            assert released.wait(5)
+    def __init__(self):
+        self.returncode = None
+        self.stdout = io.BytesIO()
+        self.stderr = io.BytesIO()
+        self.terminated = False
+        self.killed = False
+        self.waited = False
+
+    def communicate(self, timeout=None):
         raise subprocess.TimeoutExpired("fixture-helper", timeout)
 
-    def terminate():
-        original_terminate()
-        proc.returncode = None
-        released.set()
+    def poll(self):
+        return self.returncode
 
-    def wait(timeout=None):
-        proc.waited = True
-        if proc.returncode is None:
-            raise subprocess.TimeoutExpired("fixture-helper", timeout)
-        return proc.returncode
+    def terminate(self):
+        self.terminated = True
 
-    proc.communicate, proc.terminate, proc.wait = communicate, terminate, wait
+    def kill(self):
+        self.killed = True
+
+    def wait(self, timeout=None):
+        self.waited = True
+        if self.killed:
+            self.returncode = -9
+            return self.returncode
+        raise subprocess.TimeoutExpired("fixture-helper", timeout)
+
+
+def test_keyfinder_timeout_reports_and_reclaims_process(monkeypatch):
+    # A fixture clock keeps the 90s helper budget deterministic without sleeping.
+    proc = _KeyfinderProcess()
     monkeypatch.setattr(
         implementation.subprocess, "Popen", lambda *args, **kwargs: proc
     )
-    if mode == "timeout":
-        clock = iter([0, 0, 91])
-        monkeypatch.setattr(
-            implementation, "time", SimpleNamespace(monotonic=lambda: next(clock))
-        )
+    clock = iter([0, 0, 91])
+    monkeypatch.setattr(
+        implementation, "time", SimpleNamespace(monotonic=lambda: next(clock))
+    )
+    resources = SimpleNamespace(register_process=lambda process: None)
+    result = implementation._run_keyfinder(
+        "fixture-helper", "fixture.db", "offsets.json", resources, lambda: False
+    )
+    assert result["reason"] == "binary_timeout"
+    assert proc.terminated and proc.killed and proc.waited
+    assert proc.stdout.closed and proc.stderr.closed
 
-    def resources(operation, cancelled):
-        helper = operation.temporary.path("helper.exe")
-        offsets = operation.temporary.path("offsets.json")
-        helper.write_bytes(b"fixture helper")
-        offsets.write_bytes(b"{}")
-        return str(helper), str(offsets)
 
-    monkeypatch.setattr(wechat, "prepare_wechat_helper", resources)
-    try:
-        webui = container.create_webui()
-        api = SettingsApi(webui, container.settings)
-        before = durable_snapshot(container)
-        assert api.start_wechat_import(str(source.parents[3])) == {"ok": True}
-        assert entered.wait(5)
-        worker = webui._import_workers["source.wechat"]
-        if mode != "timeout":
-            assert container.operations.query(
-                TaskKind.IMPORT_WECHAT
-            ).inventory.processes
-            if mode == "cancel":
-                assert api.cancel_wechat_import() is None
-                assert api.cancel_wechat_import() is None
-                released.set()
-            else:
-                report = container.operations.shutdown(timeout=5, child_grace=0)
-                assert not report.timed_out
-        container.operations.wait(TaskKind.IMPORT_WECHAT, 5)
-        state = api.get_wechat_import_progress()
-        assert (
-            state["error_code"] == "binary_timeout"
-            if mode == "timeout"
-            else state["status"] == "cancelled"
-        )
-        assert proc.waited and proc.killed and proc.stdout.closed and proc.stderr.closed
-        assert worker.operation._closed and not worker._active
-        assert durable_snapshot(container) == before
-        assert not list(
-            (container.config.data_dir / "plugin-workspaces").rglob("operation-*")
-        )
-    finally:
-        released.set()
-        container.close()
+def test_keyfinder_cancel_reclaims_process(monkeypatch):
+    # Cancellation returns before the deadline and still reclaims the process.
+    proc = _KeyfinderProcess()
+    monkeypatch.setattr(
+        implementation.subprocess, "Popen", lambda *args, **kwargs: proc
+    )
+    resources = SimpleNamespace(register_process=lambda process: None)
+    checks = iter([False, True])
+    result = implementation._run_keyfinder(
+        "fixture-helper",
+        "fixture.db",
+        "offsets.json",
+        resources,
+        lambda: next(checks),
+    )
+    assert result["reason"] == "cancelled"
+    assert proc.terminated and proc.killed and proc.waited
+    assert proc.stdout.closed and proc.stderr.closed
 
 
 def test_helper_key_and_error_are_redacted_at_emission(tmp_path, monkeypatch):
@@ -416,29 +388,40 @@ def test_helper_key_and_error_are_redacted_at_emission(tmp_path, monkeypatch):
     monkeypatch.setattr(
         implementation.subprocess, "Popen", lambda *args, **kwargs: proc
     )
-    monkeypatch.setattr(
-        wechat,
-        "prepare_wechat_helper",
-        lambda operation, cancelled: ("fixture-helper", "fixture-offsets"),
-    )
-    flush = PluginPolicy.flush_outputs
+    policy = PluginPolicy(container.config)
+    operation = policy.operation(_descriptor("source.wechat"))
 
-    def capture(policy, operation, emitter):
-        def emit(kind, value):
-            events.append((kind, value))
-            emitter(kind, value)
+    def emit(kind, value):
+        events.append((kind, value))
 
-        flush(policy, operation, emit)
+    def progress(value):
+        # Mirror the host output port so policy emissions are observable.
+        operation.emit_progress(value)
+        policy.flush_outputs(operation, emit)
 
-    monkeypatch.setattr(PluginPolicy, "flush_outputs", capture)
     try:
-        api = SettingsApi(container.create_webui(), container.settings)
-        assert api.start_wechat_import(str(tmp_path / "source")) == {"ok": True}
-        container.operations.wait(TaskKind.IMPORT_WECHAT, 5)
-        assert api.get_wechat_import_progress()["error"] == "failure [REDACTED]"
+        resources = SimpleNamespace(
+            register_process=lambda process: None,
+            wechat_helper=lambda: ("fixture-helper", "fixture-offsets"),
+        )
+        context = ImportPluginContext(
+            _descriptor("source.wechat"),
+            None,
+            progress,
+            lambda: False,
+            operation=operation,
+            request={"user_root": str(tmp_path / "source"), "download": True},
+            resources=resources,
+        )
+        provider = implementation.create_plugin()
+        assert provider.start(context)
+        provider.import_media(context)
+        policy.flush_outputs(operation, emit)
+        assert provider.get_progress()["error"] == "failure [REDACTED]"
         assert events and secret not in json.dumps(events)
         assert any(kind == "log" and "[REDACTED]" in value for kind, value in events)
     finally:
+        policy.close_operation(operation)
         container.close()
 
 

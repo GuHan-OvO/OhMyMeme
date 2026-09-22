@@ -243,46 +243,41 @@ def test_registry_unavailable_returns_sentinel_without_other_provider(
     builtins["source.douyin"].assert_not_called()
 
 
-def test_qqnt_check_env_requires_current_registry_before_legacy_helper(
-    shell, monkeypatch
-):
+def test_qqnt_check_env_requires_active_worker_before_legacy_helper(shell, monkeypatch):
     # Environment inspection must not succeed through the legacy module alone.
     api, webui, _ = shell
-    registry = Mock()
-    registry.require.side_effect = ValueError("source.qqnt: provider_unavailable")
-    webui._container.plugins = registry
+    lookup = Mock(side_effect=ValueError("source.qqnt: provider_unavailable"))
+    monkeypatch.setattr(import_workers, "get_import_worker", lookup)
     legacy_probe = Mock(return_value={"ok": True})
     monkeypatch.setattr(desktop.qqnt, "get_extract_status", legacy_probe)
 
     assert api.qqnt_check_env() == {}
-    registry.require.assert_called_once_with("source.qqnt", None)
+    assert lookup.call_args.args[1] == "source.qqnt"
     legacy_probe.assert_not_called()
 
 
-def test_qqnt_default_dir_requires_current_registry_before_legacy_helper(
+def test_qqnt_default_dir_requires_active_worker_before_legacy_helper(
     shell, monkeypatch
 ):
     # Output projection also belongs to the fixed source.qqnt action boundary.
     api, webui, _ = shell
-    registry = Mock()
-    registry.require.side_effect = ValueError("source.qqnt: provider_unavailable")
-    webui._container.plugins = registry
+    lookup = Mock(side_effect=ValueError("source.qqnt: provider_unavailable"))
+    monkeypatch.setattr(import_workers, "get_import_worker", lookup)
     legacy_projection = Mock(return_value="chosen-output")
     monkeypatch.setattr(desktop.qqnt, "get_default_output_dir", legacy_projection)
 
     assert api.qqnt_default_dir("base", "10001") == {"ok": False}
-    registry.require.assert_called_once_with("source.qqnt", None)
+    assert lookup.call_args.args[1] == "source.qqnt"
     legacy_projection.assert_not_called()
 
 
-def test_pick_tg_tdata_requires_current_registry_before_legacy_helper(
+def test_pick_tg_tdata_requires_active_worker_before_legacy_helper(
     shell, monkeypatch, tmp_path
 ):
     # The picker validates through the active source provider construction seam.
     api, webui, dialog = shell
-    registry = Mock()
-    registry.require.side_effect = ValueError("source.telegram: provider_unavailable")
-    webui._container.plugins = registry
+    lookup = Mock(side_effect=ValueError("source.telegram: provider_unavailable"))
+    monkeypatch.setattr(import_workers, "get_import_worker", lookup)
     path = tmp_path / "tdata"
     path.mkdir()
     dialog.file_dialog.return_value = (str(path),)
@@ -290,7 +285,7 @@ def test_pick_tg_tdata_requires_current_registry_before_legacy_helper(
     monkeypatch.setattr(desktop.telegram, "is_valid_tdata", legacy_validator)
 
     assert api.pick_tg_tdata() == {"ok": False}
-    registry.require.assert_called_once_with("source.telegram", None)
+    assert lookup.call_args.args[1] == "source.telegram"
     legacy_validator.assert_not_called()
     webui._cfg.set.assert_not_called()
 
@@ -431,33 +426,40 @@ def test_real_provider_idle_progress_shapes(tmp_path):
         ):
             module = importlib.import_module("ohmymeme_plugin_" + provider)
             assert method() == module.create_plugin().get_progress()
-            worker = webui._import_workers["source." + provider]
+            worker = import_workers.get_import_worker(api, "source." + provider)
             method()
-            assert webui._import_workers["source." + provider] is worker
+            assert import_workers.get_import_worker(api, "source." + provider) is worker
     finally:
         container.close()
 
 
 def test_real_qqnt_probe_and_native_picker_success(shell, tmp_path):
     # Actual provider inspection reads only the empty selected directory.
+    from ohmymeme.core.plugins.runtime import PluginRuntimeManager
+
     api, webui, dialog = shell
-    webui._cfg.get.side_effect = lambda key, default=None: (
-        str(tmp_path) if key == "qqnt_userdata_path" else default
-    )
-    assert api.qqnt_check_env() == {
-        "ok": True,
-        "error": "",
-        "message": "",
-        "userdata_save_path": str(tmp_path),
-        "accounts": [],
-    }
-    dialog.file_dialog.return_value = (str(tmp_path),)
-    assert api.pick_wechat_root() == {"ok": True, "path": str(tmp_path)}
-    assert api.qqnt_pick_base() == {"ok": True, "base": str(tmp_path)}
-    (tmp_path / "key_datas").write_bytes(b"fixture")
-    assert api.pick_tg_tdata() == {"ok": True, "path": str(tmp_path)}
-    webui._cfg.set.assert_called_once_with("tg_tdata_path", str(tmp_path))
-    webui._cfg.save.assert_called_once_with()
+    manager = PluginRuntimeManager(tmp_path / "runtime")
+    webui._container.plugin_runtime = manager
+    try:
+        webui._cfg.get.side_effect = lambda key, default=None: (
+            str(tmp_path) if key == "qqnt_userdata_path" else default
+        )
+        assert api.qqnt_check_env() == {
+            "ok": True,
+            "error": "",
+            "message": "",
+            "userdata_save_path": str(tmp_path),
+            "accounts": [],
+        }
+        dialog.file_dialog.return_value = (str(tmp_path),)
+        assert api.pick_wechat_root() == {"ok": True, "path": str(tmp_path)}
+        assert api.qqnt_pick_base() == {"ok": True, "base": str(tmp_path)}
+        (tmp_path / "key_datas").write_bytes(b"fixture")
+        assert api.pick_tg_tdata() == {"ok": True, "path": str(tmp_path)}
+        webui._cfg.set.assert_called_once_with("tg_tdata_path", str(tmp_path))
+        webui._cfg.save.assert_called_once_with()
+    finally:
+        manager.shutdown()
 
 
 def test_lan_and_adb_remain_host_actions_with_empty_registry(shell, monkeypatch):
