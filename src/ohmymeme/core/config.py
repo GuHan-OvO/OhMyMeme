@@ -177,6 +177,7 @@ class Config:
         "show_uncategorized": True,  # 显示「未分类」分组
         "record_recent_use": True,  # 复制时记录最近使用
         "show_startup_animation": True,  # 启动时播放启动动画（关闭时降级 300ms 延时）
+        "disabled_plugins": [],  # 已禁用的插件 ID 列表（重启后生效）
     }
 
     def __init__(self, path: Path = None, data_dir: Path = None):

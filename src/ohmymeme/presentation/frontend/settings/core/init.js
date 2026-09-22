@@ -37,6 +37,7 @@ async function initVersion() {
 }
 document.addEventListener('DOMContentLoaded', () => {
   initSettings();
+  initPluginsPanel();
   setTimeout(initVersion, 500);
   initDirtyTracking();
 });

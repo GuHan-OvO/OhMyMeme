@@ -13,6 +13,7 @@ export default [
   "features/imports/telegram.js",
   "features/imports/wechat.js",
   "features/imports/qqnt.js",
+  "features/plugins.js",
   "core/window.js",
   "features/update.js",
   "features/danger.js",

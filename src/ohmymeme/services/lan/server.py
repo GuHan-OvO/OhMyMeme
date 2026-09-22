@@ -157,6 +157,8 @@ class LanServer:
                 raise ValueError("lan_approval: expected host callback or None")
             if type(HAS_AESGCM) is not bool or not HAS_AESGCM:
                 raise ValueError("lan_security: 缺少 cryptography 依赖")
+            if self._enabled is not None and "transport.lan" not in self._enabled:
+                raise ValueError("transport.lan: provider_disabled")
             if self._plugin_runtime is None:
                 raise ValueError("lan_runtime: 插件运行时不可用")
             transport = self._plugin_runtime.open_lan(LanTransportConfig(port=port))

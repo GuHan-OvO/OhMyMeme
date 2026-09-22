@@ -1835,6 +1835,36 @@ class WebUI:
                 bottle.response.status = 503
                 return {"error": "ui: host contribution data rejected"}
 
+        @app.route("/api/plugins")
+        def plugin_catalog():
+            # 只读插件目录：宿主渲染，不接受插件注入
+            from ohmymeme.core.plugins.manifest import CANONICAL_PROVIDERS
+            from ohmymeme.core.plugins.runtime import seeding
+            from ohmymeme.presentation.desktop.api.ui_contributions import SCREENS
+
+            labels = {provider: label for provider, label, *_ in SCREENS}
+            disabled = self._cfg.get("disabled_plugins", None)
+            disabled = set(disabled) if isinstance(disabled, (list, tuple)) else set()
+            state = seeding.read_state(self._cfg.data_dir)
+            rows = []
+            for provider_id, _package_root, _capabilities in CANONICAL_PROVIDERS:
+                record = (state.get("plugins") or {}).get(provider_id) or {}
+                active = record.get("active")
+                version = ((record.get("versions") or {}).get(active) or {}).get(
+                    "version", ""
+                )
+                rows.append(
+                    {
+                        "id": provider_id,
+                        "label": labels.get(provider_id, provider_id),
+                        "kind": provider_id.split(".", 1)[0],
+                        "origin": record.get("origin", ""),
+                        "version": version,
+                        "enabled": provider_id not in disabled,
+                    }
+                )
+            return {"plugins": rows}
+
         @app.route("/api/contributors")
         def serve_contributors():
             # 代理贡献者 SVG：剥离白色背景矩形，适配深色主题

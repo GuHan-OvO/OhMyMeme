@@ -78,6 +78,12 @@ class Container:
                 for provider_id, _, _ in CANONICAL_PROVIDERS
             )
         )
+        disabled = self.config.get("disabled_plugins", None)
+        disabled = set(disabled) if isinstance(disabled, (list, tuple)) else set()
+        self.enabled_plugins = (
+            frozenset(provider_id for provider_id, _, _ in CANONICAL_PROVIDERS)
+            - disabled
+        )
         self.plugin_runtime = PluginRuntimeManager(self.config.data_dir)
         self.sync = SyncService(
             self.config,
@@ -86,6 +92,7 @@ class Container:
             self._write_manifest_data,
             self.remote_mutations,
             registry=self.plugins,
+            enabled=self.enabled_plugins,
             plugin_runtime=self.plugin_runtime,
         )
         self._closed = False
@@ -103,6 +110,7 @@ class Container:
             import_service_factory=self.create_raw_import_service,
             registry=self.plugins,
             mutation_coordinator=self.remote_mutations,
+            enabled=self.enabled_plugins,
             plugin_runtime=self.plugin_runtime,
         )
         self.recovery.finish_manifest(self.build_manifest)
@@ -141,7 +149,9 @@ class Container:
     def create_webui(self, update_debug=False, silent_start=False):
         from ohmymeme.presentation.desktop.window_manager import WebUI
 
-        return WebUI(self, update_debug, silent_start)
+        webui = WebUI(self, update_debug, silent_start)
+        webui._enabled_import_plugins = self.enabled_plugins
+        return webui
 
     def create_import_service(self, decode_stego=None, coordinated=True):
         return ImageImportService(

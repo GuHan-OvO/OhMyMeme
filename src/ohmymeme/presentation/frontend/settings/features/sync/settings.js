@@ -111,6 +111,7 @@ async function saveSettings() {
     copy_resize_mode: copy_mode,
     auto_start, silent_start, show_uncategorized, record_recent_use,
     show_startup_animation,
+    disabled_plugins: collectDisabledPlugins(),
     lan_port, lan_secret,
     ...sync
   });
@@ -196,6 +197,7 @@ async function resetSettings() {
     await api('lan_stop');
     await api('lan_set_allow_secret_config', false);
     refreshLanStatus();
+    initPluginsPanel();
     showToast('已恢复默认设置');
     _settingsDirty = false;
   }

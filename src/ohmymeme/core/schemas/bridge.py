@@ -196,6 +196,7 @@ class SettingsData(BridgeModel):
     show_uncategorized: bool
     record_recent_use: bool
     show_startup_animation: bool
+    disabled_plugins: list[str]
 
 
 class SettingsPatch(BridgeModel):
@@ -259,6 +260,7 @@ class SettingsPatch(BridgeModel):
     show_uncategorized: bool | None = None
     record_recent_use: bool | None = None
     show_startup_animation: bool | None = None
+    disabled_plugins: list[str] | None = None
 
 
 class ChildCollection(BridgeModel):
