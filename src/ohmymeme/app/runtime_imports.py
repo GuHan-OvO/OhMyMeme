@@ -29,7 +29,7 @@ _KINDS = {
 
 
 class RuntimeImportWorker:
-    """保持 HostImportWorker 公开形状，执行体移到 worker 进程。"""
+    """保持宿主导入 worker 的公开形状，执行体移到 worker 进程。"""
 
     def __init__(
         self,

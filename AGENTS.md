@@ -106,7 +106,7 @@ tests/
 
 ## js_api 桥接规范
 - Todo11 固定 UI 边界：`api/ui_contributions.py` 严格校验宿主 `src/webui/plugin-ui.json`，生产 Bottle `/api/plugin-ui` 只返回有效快照；设置页 `initSettings` → `installPluginUI` 在任何 DOM 绑定前整体验证，原来源行/同步面板/固定 API 参数与进度读取实际消费该数据。数据从 Todo6 action 矩阵生成，`plugin_ui_dispatch.py --check` 校验 schema/fixture/产物一致性；保持原 SVG、文本、布局、公开 Bridge/取消/结果，手机版 QQ/ADB 不参与。禁止 UI 记录持久化到 Config、任意额外字段、HTML/脚本/动态 Bridge 或 DOM 注入，不提供通用 renderer/DSL。
-- 子进程运行时：`core/plugins/runtime/`（protocol/channel/process_tree/manager/worker/seeding）负责 worker 生命周期与固定 RPC；四个导入源经 operation RPC 执行，`app/runtime_imports.py` 保持 `HostImportWorker` 旧公开形状但执行体在 worker。宿主保留 coordinator 线程、sink、昵称缓存与外部导出投影，插件只写 operation staging。
+- 子进程运行时：`core/plugins/runtime/`（protocol/channel/process_tree/manager/worker/seeding）负责 worker 生命周期与固定 RPC；四个导入源经 operation RPC 执行，`app/runtime_imports.py` 保持宿主导入 worker 的公开形状但执行体在 worker。宿主保留 coordinator 线程、sink、昵称缓存与外部导出投影，插件只写 operation staging。
 - `plugins/sync.{ftp,s3,r2,webdav}` 在后端会话 RPC（`sync.open/call/close`）中执行网络实现；`services/sync/backends.py` 保留宿主 staging、布尔校验、列表过滤、脱敏与 push/pull 编排。leases、manifest/order、hash 和 pull commit 全留宿主；`connect_ftp` 旧连接 ABI 已删除。
 - `plugins/transport.lan` 在 worker 内持有 socket/UDP 发现/IP_PKTINFO；宿主经 `RuntimeLanTransport/RuntimeLanConnection` 代理读写字节，`services/lan/server.py` 保留安全/审批/命令与协调器所有权。
 - `plugins/source.wechat` 持有账号/SQLite/WAL/CDN 算法与 helper JSON 协议；宿主 `integrations/imports/wechat.py` 只保留 helper 持久缓存/SHA-256/offsets 策略，经 `helper.wechat` RPC 提供 operation 内副本。helper 由插件在 worker 内 `Popen`，随 worker 整树回收。
