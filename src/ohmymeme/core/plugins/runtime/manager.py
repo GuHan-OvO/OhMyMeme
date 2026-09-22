@@ -794,6 +794,14 @@ class PluginRuntimeManager:
             if self._workers.get(worker.plugin_id) is worker:
                 self._workers.pop(worker.plugin_id, None)
 
+    # 停止单个插件 worker（重载/安装/卸载前置）
+    def stop_plugin(self, plugin_id, reason="reload"):
+        with self._lock:
+            worker = self._workers.get(plugin_id)
+        if worker is not None:
+            self._stop_worker(worker, reason, intentional=True)
+        return True
+
     # 关闭全部 worker 与后台线程
     def shutdown(self):
         with self._lock:

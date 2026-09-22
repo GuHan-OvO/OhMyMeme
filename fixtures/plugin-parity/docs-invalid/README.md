@@ -20,7 +20,7 @@ source/frozen staging 一致性只覆盖源码、入口元数据与 staging
 
 不构成外部 helper EXE 的来源到二进制可复现性证明
 
-不提供 marketplace、热重载、运行时卸载、不受信任插件沙箱或第三方插件安装接口
+不提供 marketplace 或不受信任插件沙箱
 
 `config/plugin-manifest.json` `scripts/plugin_packaging.py` `scripts/plugin_docs_check.py`
 

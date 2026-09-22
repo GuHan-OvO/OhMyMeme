@@ -130,7 +130,8 @@ tests/
 - `scripts/plugin_packaging.py` 校验官方 source/frozen staging 的模块、入口元数据、manifest 和许可证文件；source/frozen staging 一致性只覆盖源码、入口元数据与 staging，不等同于对最终冻结可执行文件的实际构建验证。`docs/plugin-license-matrix.json`、`NOTICE`、`LICENSES/`、`THIRD-PARTY-NOTICES/` 是许可证和发布范围的证据入口。
 - 九个 provider 的 source/frozen 分发基线由 `scripts/plugin_packaging.py` 校验，只覆盖源码、入口元数据与 staging，不等同于对最终冻结可执行文件的实际构建验证。`scripts/plugin_docs_check.py` 消费 inventory、`config/plugin-manifest.json` 和 `README.md`/`AGENTS.md`/`docs/project-structure.md`；其无效输入为 `fixtures/plugin-parity/inventory-invalid.json`、`fixtures/plugin-parity/docs-invalid/README.md` 与 `fixtures/plugin-parity/docs-conflicting-nonfeatures/README.md`。
 - 外部下载的微信 helper 及其 CMake/OpenSSL 输入不随制品交付；本地 helper 源码映射不构成外部 helper EXE 的来源到二进制可复现性证明。不得把 source/frozen staging 或许可证证据表述为最终 helper 或最终冻结可执行文件的实际构建证明。
-- 不提供 marketplace、热重载、运行时卸载、不受信任插件沙箱或第三方插件安装接口；不增加动态 provider 发现、任意执行、动态 Bridge、HTML/JS UI 贡献或通用插件 DSL。
+- 不提供 marketplace 或不受信任插件沙箱。
+- 第三方插件仅支持本地 ZIP 安装、卸载与重启生效的启用管理；不增加动态 provider 发现、任意执行、动态 Bridge、HTML/JS UI 贡献或通用插件 DSL。
 
 ## 关键实现细节
 

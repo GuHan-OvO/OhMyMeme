@@ -13,13 +13,14 @@
 - M3 同步：新增 `sync.open/sync.call/sync.close` 会话 RPC 与宿主 `RuntimeSyncSession`；保留宿主 staging/布尔校验/列表过滤/脱敏与 push-pull 编排；worker 侧恢复 Path 参数；移除 `connect_ftp` 旧连接 ABI；`tests/test_plugin_sync.py` 用本地会话夹具重写，loopback WebDAV 经 worker 全链路通过。
 - M3 LAN：新增 `lan.open/accept/discovery/connection` RPC 与 `RuntimeLanTransport/RuntimeLanConnection` 代理；宿主保留加密、审批、命令与协调器所有权；`tests/test_lan.py` 端到端经真实 worker 通过。
 - M4（部分）：`disabled_plugins` 配置键与严格 bridge DTO；启动时统一门控导入/同步/LAN；`/api/plugins` 只读目录路由；设置页「插件」分组（列表 + 启用/禁用，重启生效）与保存/重置集成。
+- M4 安装/卸载/重载：`seeding.install_plugin/uninstall_plugin/installed_plugins`（ZIP 安全校验、官方 ID 拒绝、版本目录原子切换）；`/api/plugins/install|uninstall|reload` POST 路由；设置页文件选择安装、卸载确认与重载按钮；`tests/test_plugin_install.py` 覆盖元数据/穿越/更新/卸载。
+- M5 边界反转（进行中）：README/AGENTS/project-structure 的“不提供”声明改为“不提供 marketplace 或不受信任插件沙箱；第三方插件仅支持本地 ZIP 安装、卸载与重启生效的启用管理”；`plugin_docs_check.py` 的 `DOCUMENT_FACTS`/`UNSUPPORTED_EXTENSION_FEATURES` 与两个 fixture 同步更新。
 - 质量门现状：`black --check src/`、`ruff check src/`、`basedpyright` 全绿；相关 404 项测试通过（见各文件）。
 
 未完成（下一步）：
 
-- M4 安装/卸载/更新/热重载与市场：`seeding.install_plugin/uninstall_plugin`、ZIP 安装确认、版本指针回滚、Bridge 变更动作与确认弹窗均未开始；插件页当前只提供官方九包的只读目录与启用/禁用（重启生效）。
-- M5 文档边界反转 + `plugin_docs_check.py` 断言/fixtures 反转：未开始；进程内代码尚余 legacy 适配层（`legacy_imports.HostImportWorker`/`LegacyImportSession`、旧 integrations shim、`PluginRegistry` 路径）。
-- 待清理：`HostImportWorker` 仅剩 legacy shim 使用；LAN/sync 的旧 registry 参数、`_fallback_runtime` 模块级入口与 `plugin_docs_check` 边界声明需在 M5 一并收口。
+- M4 余项：市场索引客户端、版本回滚 UI 与全局热重载入口确认（当前重载按单个插件停止 worker，下次动作重新加载）。
+- M5 余项：`plugin_docs_check.py` 的离线校验报告需要用新版 inventory 复跑；进程内 legacy 适配层（`legacy_imports.HostImportWorker`/`LegacyImportSession`、旧 integrations shim、`PluginRegistry` 路径）与 `plugin_docs_check` 边界声明收口。
 
 已知仓库既有问题（与本迁移无关，但影响整仓门禁）：
 

@@ -308,3 +308,5 @@ select:hover { border-color: var(--border-light); }
 .plugin-meta { font-size: 11px; color: var(--muted); word-break: break-all; }
 .plugin-row input[type="checkbox"] { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--accent); }
 .plugin-row input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.plugin-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.plugin-actions .btn { padding: 3px 8px; font-size: 11.5px; }

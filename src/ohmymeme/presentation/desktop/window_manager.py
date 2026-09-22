@@ -1865,6 +1865,77 @@ class WebUI:
                 )
             return {"plugins": rows}
 
+        @app.route("/api/plugins/install", method="POST")
+        def plugin_install():
+            # 第三方 ZIP 安装：宿主校验并原子落盘，UI 负责确认
+            from ohmymeme.core.plugins.runtime import seeding
+
+            try:
+                length = int(bottle.request.content_length or 0)
+            except (TypeError, ValueError):
+                length = 0
+            if length <= 0 or length > 256 * 1024 * 1024:
+                bottle.response.status = 413
+                return {"ok": False, "error": "package size"}
+            temp = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    "wb", suffix=".zip", delete=False, dir=str(self._cfg.data_dir)
+                ) as handle:
+                    temp = handle.name
+                    while True:
+                        chunk = bottle.request.body.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        handle.write(chunk)
+                entry = seeding.install_plugin(self._cfg.data_dir, temp)
+                self._container.plugin_runtime.stop_plugin(entry["id"], "install")
+                self._drop_worker_cache(entry["id"])
+                return {
+                    "ok": True,
+                    "plugin": entry["id"],
+                    "version": entry["version"],
+                }
+            except seeding.PluginSeedError as error:
+                bottle.response.status = 400
+                return {"ok": False, "error": str(error)}
+            finally:
+                if temp:
+                    try:
+                        os.unlink(temp)
+                    except OSError:
+                        pass
+
+        @app.route("/api/plugins/uninstall", method="POST")
+        def plugin_uninstall():
+            # 仅第三方插件可卸载，官方九包由宿主分发
+            from ohmymeme.core.plugins.runtime import seeding
+
+            payload = bottle.request.json or {}
+            plugin_id = payload.get("id")
+            try:
+                seeding.uninstall_plugin(self._cfg.data_dir, plugin_id)
+            except seeding.PluginSeedError as error:
+                bottle.response.status = 400
+                return {"ok": False, "error": str(error)}
+            self._container.plugin_runtime.stop_plugin(plugin_id, "uninstall")
+            self._drop_worker_cache(plugin_id)
+            return {"ok": True}
+
+        @app.route("/api/plugins/reload", method="POST")
+        def plugin_reload():
+            # 重载 = 停止 worker，下次动作按磁盘版本重新加载
+            payload = bottle.request.json or {}
+            plugin_id = payload.get("id")
+            self._container.plugin_runtime.stop_plugin(plugin_id, "reload")
+            return {"ok": True}
+
+        def _drop_worker_cache(plugin_id):
+            for name in ("_runtime_import_workers", "_import_workers"):
+                cache = getattr(self, name, None)
+                if isinstance(cache, dict):
+                    cache.pop(plugin_id, None)
+
         @app.route("/api/contributors")
         def serve_contributors():
             # 代理贡献者 SVG：剥离白色背景矩形，适配深色主题

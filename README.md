@@ -65,7 +65,8 @@
 - `scripts/plugin_packaging.py` 负责官方包的 source/frozen staging 一致性。source/frozen staging 一致性只覆盖源码、入口元数据与 staging，不等同于对最终冻结可执行文件的实际构建验证；可核查的范围以打包与许可证证据报告为准。
 - 九个 provider 的 parity 基线只允许 ids、timestamps、temporary paths、thread ordering 差异；`scripts/plugin_docs_check.py` 读取 Todo1 inventory、canonical manifest 和三份架构文档，防止文档脱离当前入口和边界；`fixtures/plugin-parity/docs-invalid/` 与 `fixtures/plugin-parity/docs-conflicting-nonfeatures/` 分别覆盖缺失事实和矛盾非功能声明。
 - 许可证、来源和发布范围见 `docs/plugin-license-matrix.json`、`NOTICE`、`LICENSES/` 与 `THIRD-PARTY-NOTICES/`。外部下载的微信 helper 及其 CMake/OpenSSL 输入不随制品交付；本地 helper 源码映射不构成外部 helper EXE 的来源到二进制可复现性证明。
-- 这是固定官方包的重组边界，不提供 marketplace、热重载、运行时卸载、不受信任插件沙箱或第三方插件安装接口；也不接收动态 Bridge、HTML/JS UI 或任意执行能力。
+- 这是固定官方包的重组边界，不提供 marketplace 或不受信任插件沙箱。
+- 第三方插件仅支持本地 ZIP 安装、卸载与重启生效的启用管理；也不接收动态 Bridge、HTML/JS UI 或任意执行能力。
 
 `plugins/source.qqnt` 是实际 QQNT 算法包，入口为 `ohmymeme_plugin_qqnt:create_plugin`（`ohmymeme.plugins.v1`）。实例通过 operation 临时目录和 `ImportSink` 工作；昵称缓存、用户输出路径、外部导出覆盖校验、线程和数据库生命周期均属于宿主。旧 `ohmymeme.integrations.imports.qqnt` 保留兼容接口。完整九包源码安装与 frozen 收集由 `scripts/plugin_packaging.py` 统一校验。
 

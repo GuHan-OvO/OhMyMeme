@@ -7,9 +7,11 @@ import importlib.util
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 from ohmymeme import __version__
@@ -22,6 +24,13 @@ STATE_FILENAME = "installed.json"
 PLUGIN_META_FILENAME = "plugin.json"
 _SKIP_PARTS = {"__pycache__"}
 _SKIP_SUFFIXES = {".pyc", ".pyo"}
+OFFICIAL_IDS = frozenset(provider for provider, _, _ in CANONICAL_PROVIDERS)
+_ALLOWED_KINDS = ("source", "sync", "transport")
+_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_ENTRY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*:create_plugin$")
+_MAX_MEMBERS = 2000
+_MAX_MEMBER_BYTES = 64 * 1024 * 1024
+_MAX_TOTAL_BYTES = 512 * 1024 * 1024
 
 
 class PluginSeedError(RuntimeError):
@@ -228,3 +237,153 @@ def resolve_plugin(data_dir, plugin_id):
         "capabilities": tuple(version.get("capabilities") or ()),
         "package_dir": str(package_dir),
     }
+
+
+# 读取并解析包内 plugin.json
+def _read_plugin_meta(zip_file):
+    try:
+        raw = zip_file.read(PLUGIN_META_FILENAME)
+    except KeyError as error:
+        raise PluginSeedError("invalid_package", "missing plugin.json") from error
+    try:
+        meta = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise PluginSeedError("invalid_package", "invalid plugin.json") from error
+    if not isinstance(meta, dict):
+        raise PluginSeedError("invalid_package", "plugin.json must be an object")
+    return meta
+
+
+# 校验第三方包元数据并归一化
+def _validate_meta(meta):
+    plugin_id = meta.get("id")
+    version = meta.get("version")
+    entry = meta.get("entry")
+    kind = meta.get("kind", "")
+    if (
+        not isinstance(plugin_id, str)
+        or "." not in plugin_id
+        or plugin_id in OFFICIAL_IDS
+    ):
+        raise PluginSeedError("invalid_plugin_id", str(plugin_id))
+    if not isinstance(version, str) or not _VERSION_PATTERN.match(version):
+        raise PluginSeedError("invalid_version", str(version))
+    if not isinstance(entry, str) or not _ENTRY_PATTERN.match(entry):
+        raise PluginSeedError("invalid_entry", str(entry))
+    if kind not in _ALLOWED_KINDS:
+        raise PluginSeedError("invalid_kind", str(kind))
+    if type(meta.get("api_version")) is not int or meta.get("api_version") != 1:
+        raise PluginSeedError("invalid_api_version", str(meta.get("api_version")))
+    capabilities = meta.get("capabilities") or []
+    return {
+        "id": plugin_id,
+        "name": str(meta.get("name") or plugin_id),
+        "version": version,
+        "entry": entry,
+        "kind": kind,
+        "api_version": 1,
+        "capabilities": [item for item in capabilities if isinstance(item, str)],
+    }
+
+
+# 拒绝路径穿越、符号链接与超限成员
+def _check_members(zip_file):
+    members = zip_file.infolist()
+    if not members or len(members) > _MAX_MEMBERS:
+        raise PluginSeedError("invalid_package", "member count")
+    total = 0
+    for info in members:
+        name = info.filename.replace("\\", "/")
+        candidate = Path(name)
+        if candidate.is_absolute() or ".." in candidate.parts:
+            raise PluginSeedError("unsafe_package", name)
+        if (info.external_attr >> 16) & 0o170000 == 0o120000:
+            raise PluginSeedError("unsafe_package", "symlink " + name)
+        total += info.file_size
+        if info.file_size > _MAX_MEMBER_BYTES or total > _MAX_TOTAL_BYTES:
+            raise PluginSeedError("invalid_package", "package too large")
+
+
+# 安装或更新第三方 ZIP 包，返回解析后的版本信息
+def install_plugin(data_dir, archive_path):
+    archive = Path(archive_path)
+    try:
+        zip_file = zipfile.ZipFile(archive)
+    except (OSError, zipfile.BadZipFile) as error:
+        raise PluginSeedError("invalid_package", str(error)) from error
+    with zip_file:
+        _check_members(zip_file)
+        meta = _validate_meta(_read_plugin_meta(zip_file))
+        plugin_id = meta["id"]
+        version = meta["version"]
+        root = plugins_dir(data_dir) / plugin_id
+        target = root / version
+        temp_dir = root / (version + ".tmp")
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            zip_file.extractall(temp_dir)
+        except (OSError, zipfile.BadZipFile) as error:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise PluginSeedError("invalid_package", str(error)) from error
+        (temp_dir / PLUGIN_META_FILENAME).write_text(
+            json.dumps(meta, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        shutil.rmtree(target, ignore_errors=True)
+        os.replace(temp_dir, target)
+    state = read_state(data_dir)
+    entries = dict(state.get("plugins") or {})
+    record = dict(entries.get(plugin_id) or {})
+    if record.get("origin") == "bundled":
+        raise PluginSeedError("official_plugin", plugin_id)
+    versions = dict(record.get("versions") or {})
+    versions[version] = {
+        "version": version,
+        "entry": meta["entry"],
+        "kind": meta["kind"],
+        "package_root": meta["entry"].split(":", 1)[0],
+        "capabilities": meta["capabilities"],
+        "origin": "installed",
+        "name": meta["name"],
+    }
+    record.update({"origin": "installed", "active": version, "versions": versions})
+    entries[plugin_id] = record
+    write_state(data_dir, {"schema_version": STATE_SCHEMA_VERSION, "plugins": entries})
+    return resolve_plugin(data_dir, plugin_id)
+
+
+# 卸载第三方插件并移除其目录
+def uninstall_plugin(data_dir, plugin_id):
+    if plugin_id in OFFICIAL_IDS:
+        raise PluginSeedError("official_plugin", str(plugin_id))
+    state = read_state(data_dir)
+    entries = dict(state.get("plugins") or {})
+    record = entries.pop(plugin_id, None)
+    if not isinstance(record, dict):
+        raise PluginSeedError("plugin_missing", str(plugin_id))
+    shutil.rmtree(plugins_dir(data_dir) / plugin_id, ignore_errors=True)
+    write_state(data_dir, {"schema_version": STATE_SCHEMA_VERSION, "plugins": entries})
+    return True
+
+
+# 返回状态中全部非官方插件条目
+def installed_plugins(data_dir):
+    state = read_state(data_dir)
+    rows = []
+    for plugin_id, record in (state.get("plugins") or {}).items():
+        if plugin_id in OFFICIAL_IDS or not isinstance(record, dict):
+            continue
+        active = record.get("active")
+        version = (record.get("versions") or {}).get(active) or {}
+        rows.append(
+            {
+                "id": plugin_id,
+                "name": version.get("name") or plugin_id,
+                "kind": version.get("kind", plugin_id.split(".", 1)[0]),
+                "origin": "installed",
+                "version": version.get("version", ""),
+            }
+        )
+    return rows

@@ -389,7 +389,10 @@
 
     <div class="section" data-group="plugins">
       <div class="section-title">插件</div>
-      <p style="font-size:11.5px;color:var(--muted);margin-bottom:10px;line-height:1.6">官方插件随应用分发并在后台独立进程运行。禁用或启用后<b>重启应用</b>生效；禁用的插件不会加载，也不会出现在对应导入/同步入口。</p>
+      <p style="font-size:11.5px;color:var(--muted);margin-bottom:10px;line-height:1.6">官方插件随应用分发并在后台独立进程运行。禁用或启用后<b>重启应用</b>生效；禁用的插件不会加载，也不会出现在对应导入/同步入口。第三方插件可通过本地 ZIP 包安装（安装前会再次确认），重载后按磁盘版本启动。</p>
+      <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+        <input type="file" id="plugin-install-file" accept=".zip,.omplugin" onchange="installPluginFile(this)" aria-label="选择插件安装包" style="font-size:12px">
+      </div>
       <div id="plugin-list" style="display:flex;flex-direction:column;gap:6px"></div>
     </div>
 

@@ -59,15 +59,12 @@ DOCUMENT_FACTS = (
     ),
     (
         "unsupported extension features",
-        "不提供 marketplace、热重载、运行时卸载、不受信任插件沙箱或第三方插件安装接口",
+        "不提供 marketplace 或不受信任插件沙箱",
     ),
 )
 UNSUPPORTED_EXTENSION_FEATURES = (
     "marketplace",
-    "热重载",
-    "运行时卸载",
     "不受信任插件沙箱",
-    "第三方插件安装接口",
 )
 AFFIRMATIVE_EXTENSION_CLAIM = re.compile(r"(?<!不)(?:提供|支持|允许|开放)")
 FIXED_PATHS = (
@@ -271,7 +268,9 @@ def _validate_documents(documents):
         if AFFIRMATIVE_EXTENSION_CLAIM.search(line):
             for feature in UNSUPPORTED_EXTENSION_FEATURES:
                 if feature in line:
-                    errors.append(f"docs: unsupported extension feature is claimed: {feature}")
+                    errors.append(
+                        f"docs: unsupported extension feature is claimed: {feature}"
+                    )
     for relative_path in FIXED_PATHS:
         if not (ROOT / relative_path).is_file():
             errors.append(f"docs: missing repository path {relative_path}")

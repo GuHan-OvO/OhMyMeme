@@ -309,7 +309,10 @@ app/container.py
 
 九包源码位于 `plugins/`，`scripts/plugin_packaging.py` 比较 source/frozen staging 的模块、入口元数据、manifest 与许可证文件。source/frozen staging 一致性只覆盖源码、入口元数据与 staging，不等同于对最终冻结可执行文件的实际构建验证。`scripts/plugin_docs_check.py` 使用 inventory 和固定文档事实检查这些声明，负例位于 `fixtures/plugin-parity/inventory-invalid.json`、`fixtures/plugin-parity/docs-invalid/README.md` 与 `fixtures/plugin-parity/docs-conflicting-nonfeatures/README.md`。
 
-许可证和发布范围由 `docs/plugin-license-matrix.json`、`NOTICE`、`LICENSES/` 与 `THIRD-PARTY-NOTICES/` 记录。外部下载的微信 helper 及其 CMake/OpenSSL 输入不随制品交付；本地 helper 源码映射不构成外部 helper EXE 的来源到二进制可复现性证明。不提供 marketplace、热重载、运行时卸载、不受信任插件沙箱或第三方插件安装接口，亦不支持动态 provider、动态 Bridge 或 HTML/JS UI 贡献。
+许可证和发布范围由 `docs/plugin-license-matrix.json`、`NOTICE`、`LICENSES/` 与 `THIRD-PARTY-NOTICES/` 记录。外部下载的微信 helper 及其 CMake/OpenSSL 输入不随制品交付；本地 helper 源码映射不构成外部 helper EXE 的来源到二进制可复现性证明。
+
+不提供 marketplace 或不受信任插件沙箱。
+第三方插件仅支持本地 ZIP 安装、卸载与重启生效的启用管理，亦不支持动态 provider、动态 Bridge 或 HTML/JS UI 贡献。
 
 ## 推荐阅读顺序
 
