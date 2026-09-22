@@ -10,14 +10,16 @@
 - M0 种子：官方九包首启懒加载种子到 `data_dir/plugins/<id>/<fingerprint>/`，`installed.json` 原子注册表；`PluginRuntimeManager` 默认解析器负责种子。
 - M1 source.qqnt：`app/runtime_imports.py` 的 `RuntimeImportWorker` 接管 qqnt；`window_manager` 旧 `_QQNT_STATE/_qqnt_worker/start_qqnt_extract` 路径已删除；`tests/test_qqnt_runtime.py` 覆盖库内 sink、外部导出、取消、去重、inspect。
 - M2 source.telegram / source.douyin / source.wechat：四导入 provider 全部走 `_RUNTIME_PROVIDERS`；`helper.wechat` RPC 由宿主提供 helper 操作内副本；`tests/adapters/importers/test_wechat_runtime.py` 用真实假 helper 脚本覆盖 inspect/list/失败脱敏/取消；微信低层 helper 生命周期在 `tests/adapters/importers/test_wechat.py` 直接单测。
+- M3 同步：新增 `sync.open/sync.call/sync.close` 会话 RPC 与宿主 `RuntimeSyncSession`；保留宿主 staging/布尔校验/列表过滤/脱敏与 push-pull 编排；worker 侧恢复 Path 参数；移除 `connect_ftp` 旧连接 ABI；`tests/test_plugin_sync.py` 用本地会话夹具重写，loopback WebDAV 经 worker 全链路通过。
+- M3 LAN：新增 `lan.open/accept/discovery/connection` RPC 与 `RuntimeLanTransport/RuntimeLanConnection` 代理；宿主保留加密、审批、命令与协调器所有权；`tests/test_lan.py` 端到端经真实 worker 通过。
+- M4（部分）：`disabled_plugins` 配置键与严格 bridge DTO；启动时统一门控导入/同步/LAN；`/api/plugins` 只读目录路由；设置页「插件」分组（列表 + 启用/禁用，重启生效）与保存/重置集成。
 - 质量门现状：`black --check src/`、`ruff check src/`、`basedpyright` 全绿；相关 404 项测试通过（见各文件）。
 
 未完成（下一步）：
 
-- M3 同步：设计已定——保留宿主 `_SyncBackend` 适配与 push/pull 编排，新增 `sync.open/sync.call/sync.close` 会话 RPC，`get_backend` 接受 runtime manager；需要处理 `connect_ftp`（返回活连接对象，必须删除或替换旧 ABI）与 `tests/test_plugin_sync.py` 的进程内改写（其中大量 monkeypatch 插件模块内部 Popen/boto3/FTP 的用例需要按微信的"分层测试"策略重写）。
-- M3 LAN：设计未定稿。宿主 `services/lan/server.py` 有 6 处同进程假设（`open(register_socket)`、`.udp/.tcp/.pktinfo` 属性、`ByteConnection` 对象身份、同步 `close()` 等），需要先把字节传输改为 RPC 或把会话循环整体移入 worker，再决定；测试以 `tests/test_lan.py`、`tests/test_plugin_lan.py`、`tests/integration/` 为主。
-- M4 安装/卸载/更新/热重载 + 插件页：`disabled_plugins` 配置键、`/api/plugins` 只读路由、`features/plugins.js`、Bridge/action 扩展与生成器更新均未开始。
-- M5 市场骨架 + 文档边界反转 + `plugin_docs_check.py` 断言/fixtures 反转：未开始；进程内代码尚余 sync/LAN 与 legacy 适配。
+- M4 安装/卸载/更新/热重载与市场：`seeding.install_plugin/uninstall_plugin`、ZIP 安装确认、版本指针回滚、Bridge 变更动作与确认弹窗均未开始；插件页当前只提供官方九包的只读目录与启用/禁用（重启生效）。
+- M5 文档边界反转 + `plugin_docs_check.py` 断言/fixtures 反转：未开始；进程内代码尚余 legacy 适配层（`legacy_imports.HostImportWorker`/`LegacyImportSession`、旧 integrations shim、`PluginRegistry` 路径）。
+- 待清理：`HostImportWorker` 仅剩 legacy shim 使用；LAN/sync 的旧 registry 参数、`_fallback_runtime` 模块级入口与 `plugin_docs_check` 边界声明需在 M5 一并收口。
 
 已知仓库既有问题（与本迁移无关，但影响整仓门禁）：
 
