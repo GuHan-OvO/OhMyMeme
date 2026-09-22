@@ -35,10 +35,15 @@ def _assert_closed(sock):
 
 
 @pytest.mark.skipif(not HAS_AESGCM, reason="cryptography is unavailable")
-def test_lan_service_shutdown_owns_multiple_sessions_and_confirmation_waits():
+def test_lan_service_shutdown_owns_multiple_sessions_and_confirmation_waits(
+    tmp_path,
+):
     # Given: a coordinator-owned server with two unapproved device sessions
+    from ohmymeme.core.plugins.runtime import PluginRuntimeManager
+
     coordinator = OperationCoordinator()
-    server = LanServer(coordinator=coordinator)
+    runtime = PluginRuntimeManager(tmp_path / "runtime")
+    server = LanServer(coordinator=coordinator, plugin_runtime=runtime)
     pending = threading.Event()
     confirm_ids = []
 
@@ -81,3 +86,4 @@ def test_lan_service_shutdown_owns_multiple_sessions_and_confirmation_waits():
         if second is not None:
             second.close()
         server.stop()
+        runtime.shutdown()

@@ -2,8 +2,10 @@
 
 """宿主侧插件 runtime：worker 监管、RPC 调用与操作生命周期。"""
 
+import base64
 import logging
 import os
+import socket
 import sys
 import threading
 import time
@@ -110,6 +112,140 @@ class RuntimeSyncSession:
         try:
             channel.call("sync.close", {"session_id": self.session_id}, timeout=15.0)
         except (ChannelClosed, RpcError):
+            pass
+
+
+class RuntimeLanConnection:
+    """宿主侧 LAN 连接代理：字节读写经 RPC 转到 worker socket。"""
+
+    def __init__(self, worker, session_id, connection_id, address):
+        self._worker = worker
+        self.session_id = session_id
+        self.connection_id = connection_id
+        self.address = address
+        self._closed = False
+
+    # 统一转发并保留超时/OS 异常类别
+    def _call(self, method, params=None, timeout=None):
+        payload = {
+            "session_id": self.session_id,
+            "connection_id": self.connection_id,
+        }
+        payload.update(params or {})
+        try:
+            return self._worker.channel.call(method, payload, timeout=timeout)
+        except RpcError as error:
+            data = error.data if isinstance(error.data, dict) else {}
+            name = data.get("exception")
+            if name in ("TimeoutError", "timeout"):
+                raise socket.timeout(error.message) from None
+            if name == "OSError" or error.code == protocol.ERROR_OPERATION_UNKNOWN:
+                raise OSError(error.message) from None
+            raise
+
+    # 读取字节，超时抛 socket.timeout
+    def receive_bytes(self, size):
+        if self._closed:
+            raise OSError("connection closed")
+        result = self._call("lan.connection.receive", {"size": int(size)}, timeout=None)
+        return base64.b64decode(result.get("data") or "")
+
+    # 写入字节
+    def send_bytes(self, data):
+        if self._closed:
+            raise OSError("connection closed")
+        self._call(
+            "lan.connection.send",
+            {"data": base64.b64encode(bytes(data)).decode("ascii")},
+            timeout=None,
+        )
+
+    def settimeout(self, timeout):
+        self._call("lan.connection.settimeout", {"timeout": timeout}, timeout=15.0)
+
+    # 幂等关闭；worker 失联时静默
+    def close(self):
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._call("lan.connection.close", timeout=15.0)
+        except (ChannelClosed, RpcError, OSError):
+            pass
+
+
+class RuntimeLanTransport:
+    """宿主侧 LAN transport 代理：发现/accept/close 经 RPC 转发。"""
+
+    def __init__(self, worker, session_id, port, pktinfo):
+        self._worker = worker
+        self.session_id = session_id
+        self.port = port
+        self.udp = None
+        self.tcp = None
+        self.pktinfo = pktinfo
+        self._closed = False
+
+    def _call(self, method, params=None, timeout=None):
+        payload = {"session_id": self.session_id}
+        payload.update(params or {})
+        try:
+            return self._worker.channel.call(method, payload, timeout=timeout)
+        except RpcError as error:
+            data = error.data if isinstance(error.data, dict) else {}
+            name = data.get("exception")
+            if name in ("TimeoutError", "timeout"):
+                raise socket.timeout(error.message) from None
+            if name == "OSError" or error.code == protocol.ERROR_OPERATION_UNKNOWN:
+                raise OSError(error.message) from None
+            raise
+
+    # worker 已完成 bind；宿主协调器按 worker 进程追踪
+    def open(self, _register_socket=None):
+        return None
+
+    # 接收一次发现报文，超时抛 socket.timeout
+    def receive_discovery(self):
+        result = self._call("lan.receive_discovery", timeout=None)
+        discovery = result.get("discovery")
+        if discovery is None:
+            return None
+        address = tuple(discovery.get("address") or ())
+        source = discovery.get("source")
+        return address, None if source is None else tuple(source)
+
+    # 回复发现报文
+    def send_discovery(self, data, address, source):
+        self._call(
+            "lan.send_discovery",
+            {
+                "data": base64.b64encode(bytes(data)).decode("ascii"),
+                "address": list(address or ()),
+                "source": None if source is None else list(source),
+            },
+            timeout=None,
+        )
+
+    # 接受一个连接，超时抛 socket.timeout
+    def accept(self):
+        result = self._call("lan.accept", timeout=None)
+        address = tuple(result.get("address") or ())
+        connection = RuntimeLanConnection(
+            self._worker,
+            self.session_id,
+            result.get("connection_id", ""),
+            address,
+        )
+        return connection, address
+
+    # 幂等关闭整个 LAN 会话
+    def close(self):
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._call("lan.close", timeout=15.0)
+        except (ChannelClosed, RpcError, OSError):
             pass
 
 
@@ -531,6 +667,29 @@ class PluginRuntimeManager:
             timeout=REQUEST_TIMEOUT,
         )
         return RuntimeSyncSession(worker, session_id)
+
+    # 打开 LAN transport 会话；socket 与发现都留在 worker
+    def open_lan(self, config):
+        worker = self.ensure("transport.lan")
+        session_id = uuid.uuid4().hex
+        payload = config._asdict() if hasattr(config, "_asdict") else dict(config)
+        result = worker.channel.call(
+            "lan.open",
+            {"session_id": session_id, "config": payload},
+            timeout=REQUEST_TIMEOUT,
+        )
+        return RuntimeLanTransport(
+            worker,
+            session_id,
+            result.get("port", 0),
+            bool(result.get("pktinfo")),
+        )
+
+    # 查询本机 LAN IP
+    def get_lan_ip(self):
+        worker = self.ensure("transport.lan")
+        result = worker.channel.call("lan.get_ip", {}, timeout=REQUEST_TIMEOUT)
+        return str(result.get("ip") or "")
 
     # 请求取消操作，worker 失联时静默放弃
     def cancel_operation(self, record):

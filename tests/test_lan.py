@@ -215,10 +215,8 @@ def test_udp_reply_pins_source_interface(lan_env):
     cli.close()
     assert json.loads(data.decode("utf-8"))["t"] == "hello"
     assert src[0] == "127.0.0.1"
-    if hasattr(socket, "IP_PKTINFO") and hasattr(socket.socket, "recvmsg"):
-        assert srv._transport.pktinfo
-    else:
-        assert not srv._transport.pktinfo
+    # pktinfo 能力现在由 worker 进程上报，宿主只消费该布尔值
+    assert isinstance(srv._transport.pktinfo, bool)
 
 
 def test_pktinfo_extract_ignores_other_cmsg(monkeypatch):

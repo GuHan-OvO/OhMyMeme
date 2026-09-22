@@ -103,6 +103,7 @@ class Container:
             import_service_factory=self.create_raw_import_service,
             registry=self.plugins,
             mutation_coordinator=self.remote_mutations,
+            plugin_runtime=self.plugin_runtime,
         )
         self.recovery.finish_manifest(self.build_manifest)
 

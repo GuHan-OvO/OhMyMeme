@@ -3,6 +3,7 @@
 """插件 worker 进程：加载插件、代理宿主能力、执行操作。"""
 
 import argparse
+import base64
 import importlib
 import inspect
 import json
@@ -10,6 +11,7 @@ import logging
 import os
 import sys
 import threading
+import uuid
 from pathlib import Path
 
 from ohmymeme.core.imports import ImportResult
@@ -19,7 +21,7 @@ from ohmymeme.core.plugins.contracts import (
     PluginDescriptor,
 )
 from ohmymeme.core.plugins.manifest import ENTRY_POINT_GROUP
-from ohmymeme.core.plugins.network_config import SYNC_CONFIGS
+from ohmymeme.core.plugins.network_config import SYNC_CONFIGS, LanTransportConfig
 from ohmymeme.core.plugins.policy import (
     PluginPolicyError,
     TemporaryWorkspace,
@@ -43,6 +45,12 @@ SYNC_METHODS = (
     "clear_directory_cache",
 )
 _PATH_ARGUMENTS = {"upload_file": (0,), "download_file": (1,)}
+
+
+# LAN listener 注册由宿主协调器持有 worker 进程，插件侧无需回调
+def _ignore_socket(_socket):
+    return None
+
 
 _OPERATION_TARGETS = {
     "import": "import_media",
@@ -222,6 +230,7 @@ class PluginWorker:
         self._op_lock = threading.Lock()
         self._op_thread = None
         self._sync_sessions = {}
+        self._lan_sessions = {}
 
     def attach(self, channel):
         self._channel = channel
@@ -243,6 +252,10 @@ class PluginWorker:
             return self._handle_sync_call(params)
         if method == "sync.close":
             return self._handle_sync_close(params)
+        if method == "lan.open":
+            return self._handle_lan_open(params)
+        if method.startswith("lan."):
+            return self._handle_lan_call(method, params)
         if method == "shutdown":
             self._stop.set()
             return {"ok": True}
@@ -455,6 +468,135 @@ class PluginWorker:
                     logger.exception("sync backend close failed")
         return {"ok": True}
 
+    # 打开 LAN transport 会话（socket/发现都留在 worker）
+    def _handle_lan_open(self, params):
+        session_id = params.get("session_id")
+        if not isinstance(session_id, str):
+            raise RpcError(protocol.RPC_INVALID_PARAMS, "invalid lan session")
+        create_transport = getattr(self._instance, "create_transport", None)
+        if not callable(create_transport):
+            raise RpcError(protocol.ERROR_UNSUPPORTED, "transport unavailable")
+        config = LanTransportConfig(**dict(params.get("config") or {}))
+        try:
+            transport = create_transport(config)
+            transport.open(_ignore_socket)
+        except Exception as error:
+            raise self._lan_error(error)
+        with self._op_lock:
+            self._lan_sessions[session_id] = {
+                "transport": transport,
+                "connections": {},
+            }
+        return {
+            "port": transport.port,
+            "pktinfo": bool(getattr(transport, "pktinfo", False)),
+        }
+
+    # LAN 会话内固定方法分发
+    def _handle_lan_call(self, method, params):
+        if method == "lan.get_ip":
+            return {"ip": str(self._instance.get_lan_ip())}
+        session_id = params.get("session_id")
+        with self._op_lock:
+            session = self._lan_sessions.get(session_id)
+        if session is None:
+            raise RpcError(protocol.ERROR_OPERATION_UNKNOWN, "unknown lan session")
+        if method == "lan.close":
+            with self._op_lock:
+                self._lan_sessions.pop(session_id, None)
+            self._close_lan_session(session)
+            return {"ok": True}
+        if method == "lan.receive_discovery":
+            try:
+                discovery = session["transport"].receive_discovery()
+            except Exception as error:
+                raise self._lan_error(error)
+            if discovery is None:
+                return {"discovery": None}
+            address, source = discovery
+            return {
+                "discovery": {
+                    "address": [address[0], address[1]],
+                    "source": None if source is None else list(source),
+                }
+            }
+        if method == "lan.send_discovery":
+            data = base64.b64decode(str(params.get("data") or ""))
+            address = tuple(params.get("address") or ())
+            source = params.get("source")
+            try:
+                session["transport"].send_discovery(
+                    data, address, None if source is None else tuple(source)
+                )
+            except Exception as error:
+                raise self._lan_error(error)
+            return {"ok": True}
+        if method == "lan.accept":
+            try:
+                connection, address = session["transport"].accept()
+            except Exception as error:
+                raise self._lan_error(error)
+            connection_id = uuid.uuid4().hex
+            session["connections"][connection_id] = connection
+            return {
+                "connection_id": connection_id,
+                "address": [address[0], address[1]],
+            }
+        connection_id = params.get("connection_id")
+        connection = session["connections"].get(connection_id)
+        if connection is None:
+            raise RpcError(protocol.ERROR_OPERATION_UNKNOWN, "unknown connection")
+        if method == "lan.connection.receive":
+            try:
+                data = connection.receive_bytes(int(params.get("size") or 0))
+            except Exception as error:
+                raise self._lan_error(error)
+            return {"data": base64.b64encode(data).decode("ascii")}
+        if method == "lan.connection.send":
+            data = base64.b64decode(str(params.get("data") or ""))
+            try:
+                connection.send_bytes(data)
+            except Exception as error:
+                raise self._lan_error(error)
+            return {"ok": True}
+        if method == "lan.connection.settimeout":
+            try:
+                connection.settimeout(params.get("timeout"))
+            except Exception as error:
+                raise self._lan_error(error)
+            return {"ok": True}
+        if method == "lan.connection.close":
+            session["connections"].pop(connection_id, None)
+            try:
+                connection.close()
+            except OSError:
+                pass
+            return {"ok": True}
+        raise RpcError(protocol.RPC_METHOD_NOT_FOUND, "unknown lan method")
+
+    # 统一把 LAN 异常投影为 RPC 错误
+    def _lan_error(self, error):
+        return RpcError(
+            type(error).__name__,
+            str(error),
+            {"exception": type(error).__name__},
+        )
+
+    # 回收会话内连接与 transport
+    def _close_lan_session(self, session):
+        for connection in list(session.get("connections", {}).values()):
+            try:
+                connection.close()
+            except OSError:
+                pass
+        session["connections"].clear()
+        transport = session.get("transport")
+        if transport is not None:
+            try:
+                transport.close()
+            except OSError:
+                pass
+
     # 进度通知带 worker 侧脱敏后的值
     def _notify_progress(self, op_id, value):
         self._notify("progress", op_id, value)
@@ -499,6 +641,8 @@ class PluginWorker:
         with self._op_lock:
             sessions = list(self._sync_sessions.values())
             self._sync_sessions.clear()
+            lan_sessions = list(self._lan_sessions.values())
+            self._lan_sessions.clear()
         for backend in sessions:
             close = getattr(backend, "close", None)
             if callable(close):
@@ -506,6 +650,8 @@ class PluginWorker:
                     close()
                 except Exception:
                     logger.exception("sync backend close failed")
+        for session in lan_sessions:
+            self._close_lan_session(session)
         thread = self._op_thread
         if thread is not None:
             thread.join(timeout=10.0)

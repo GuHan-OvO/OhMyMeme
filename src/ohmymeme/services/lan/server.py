@@ -63,6 +63,7 @@ _lan_state = {
 }
 _lan_lock = threading.Lock()
 _server = None
+_fallback_runtime_instance = None
 _confirm_cb = None
 
 __all__ = [
@@ -105,6 +106,7 @@ class LanServer:
         registry=None,
         enabled=None,
         mutation_coordinator=None,
+        plugin_runtime=None,
     ):
         self._lock = threading.Lock()
         self._running = False
@@ -132,6 +134,7 @@ class LanServer:
             else PluginRegistry((canonical_descriptor("transport.lan"),))
         )
         self._enabled = None if enabled is None else frozenset(enabled)
+        self._plugin_runtime = plugin_runtime
         self._transport = None
         self._config = config
         self._database = database
@@ -154,8 +157,9 @@ class LanServer:
                 raise ValueError("lan_approval: expected host callback or None")
             if type(HAS_AESGCM) is not bool or not HAS_AESGCM:
                 raise ValueError("lan_security: 缺少 cryptography 依赖")
-            provider = self._registry.require("transport.lan", self._enabled)
-            transport = provider.create_transport(LanTransportConfig(port=port))
+            if self._plugin_runtime is None:
+                raise ValueError("lan_runtime: 插件运行时不可用")
+            transport = self._plugin_runtime.open_lan(LanTransportConfig(port=port))
         except (ValueError, RuntimeError, TypeError, AttributeError, OSError) as error:
             with _lan_lock:
                 _lan_state["status"] = "error"
@@ -213,7 +217,9 @@ class LanServer:
         self._port = port
         self._secret = secret
         try:
-            self._transport.open(context.register_socket)
+            self._transport.open(
+                context.register_socket if context is not None else None
+            )
             self._port = self._transport.port
             self._udp_sock = self._transport.udp
             self._tcp_sock = self._transport.tcp
@@ -622,9 +628,11 @@ class LanServer:
 
     def get_lan_ip(self):
         """返回当前 LAN 地址。"""
+        if self._plugin_runtime is None:
+            return "127.0.0.1"
         try:
-            return self._registry.require("transport.lan", self._enabled).get_lan_ip()
-        except ValueError:
+            return self._plugin_runtime.get_lan_ip()
+        except Exception:
             return "127.0.0.1"
 
     def _cmd_get_config(self) -> dict:
@@ -670,7 +678,7 @@ def start(port: int = 17852, secret: str = "") -> bool:
     with _lan_lock:
         if _lan_state["status"] == "running" and _server:
             return True
-    _server = LanServer()
+    _server = LanServer(plugin_runtime=_fallback_runtime())
     return _server.start(port, secret)
 
 
@@ -722,7 +730,18 @@ def confirm_device(approved: bool, confirm_id: str = ""):
 def get_lan_ip() -> str:
     """获取本机局域网 IP。"""
     try:
-        registry = PluginRegistry((canonical_descriptor("transport.lan"),))
-        return registry.require("transport.lan").get_lan_ip()
-    except ValueError:
+        return _fallback_runtime().get_lan_ip()
+    except Exception:
         return "127.0.0.1"
+
+
+def _fallback_runtime():
+    """模块级兼容入口使用的惰性运行时。"""
+    global _fallback_runtime_instance
+    with _lan_lock:
+        if _fallback_runtime_instance is None:
+            from ohmymeme.core.config import get_config
+            from ohmymeme.core.plugins.runtime import PluginRuntimeManager
+
+            _fallback_runtime_instance = PluginRuntimeManager(get_config().data_dir)
+        return _fallback_runtime_instance
