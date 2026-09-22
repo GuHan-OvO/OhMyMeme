@@ -1878,6 +1878,14 @@ function renderPluginList(root, plugins) {
     const origin = plugin.origin === 'bundled' ? '官方' : '第三方';
     const meta = [kind, origin, plugin.version].filter(Boolean).join(' · ');
     const checked = plugin.enabled ? ' checked' : '';
+    const versions = plugin.versions || [];
+    const rollback = plugin.origin === 'bundled' || versions.length < 2 ? '' :
+      '<select class="plugin-version" data-plugin-version="' + esc(plugin.id) + '">' +
+      versions.map((v) => '<option value="' + esc(v) + '"' +
+        (v === plugin.version ? ' selected' : '') + '>' + esc(v) + '</option>').join('') +
+      '</select>' +
+      '<button class="btn btn-secondary btn-sm" onclick="rollbackPlugin(\'' +
+      esc(plugin.id) + '\')">切换</button>';
     const uninstall = plugin.origin === 'bundled' ? '' :
       '<button class="btn btn-danger-outline btn-sm" onclick="uninstallPlugin(\'' +
       esc(plugin.id) + '\')">卸载</button>';
@@ -1886,7 +1894,7 @@ function renderPluginList(root, plugins) {
       '<span class="plugin-name">' + esc(plugin.label) + '</span>' +
       '<span class="plugin-meta">' + esc(plugin.id) + ' · ' + esc(meta) + '</span>' +
       '</span>' +
-      '<span class="plugin-actions">' + uninstall +
+      '<span class="plugin-actions">' + rollback + uninstall +
       '<button class="btn btn-secondary btn-sm" onclick="reloadPlugin(\'' +
       esc(plugin.id) + '\')">重载</button>' +
       '<input type="checkbox" data-plugin-id="' + esc(plugin.id) + '"' + checked +
@@ -1954,6 +1962,27 @@ async function reloadPlugin(pluginId) {
     showToast('插件已重载，下次使用时按磁盘版本启动');
   } catch (error) {
     showToast('重载失败：' + (error.message || error));
+  }
+}
+
+async function rollbackPlugin(pluginId) {
+  const select = document.querySelector(
+    'select[data-plugin-version="' + pluginId + '"]'
+  );
+  const version = select && select.value;
+  if (!version) return;
+  try {
+    const resp = await fetch('/api/plugins/rollback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: pluginId, version }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.error || '切换失败');
+    showToast('已切换到 ' + data.version + '，重启后生效');
+    initPluginsPanel();
+  } catch (error) {
+    showToast('切换失败：' + (error.message || error));
   }
 }
 

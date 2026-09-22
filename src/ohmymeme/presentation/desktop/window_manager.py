@@ -1861,6 +1861,19 @@ class WebUI:
                         "origin": record.get("origin", ""),
                         "version": version,
                         "enabled": provider_id not in disabled,
+                        "versions": [],
+                    }
+                )
+            for row in seeding.installed_plugins(self._cfg.data_dir):
+                rows.append(
+                    {
+                        "id": row["id"],
+                        "label": row["name"],
+                        "kind": row["kind"],
+                        "origin": "installed",
+                        "version": row["version"],
+                        "enabled": row["id"] not in disabled,
+                        "versions": row["versions"],
                     }
                 )
             return {"plugins": rows}
@@ -1929,6 +1942,23 @@ class WebUI:
             plugin_id = payload.get("id")
             self._container.plugin_runtime.stop_plugin(plugin_id, "reload")
             return {"ok": True}
+
+        @app.route("/api/plugins/rollback", method="POST")
+        def plugin_rollback():
+            # 回滚/前进到已安装版本，并停止 worker 以便重新加载
+            from ohmymeme.core.plugins.runtime import seeding
+
+            payload = bottle.request.json or {}
+            try:
+                entry = seeding.activate_version(
+                    self._cfg.data_dir, payload.get("id"), payload.get("version")
+                )
+            except seeding.PluginSeedError as error:
+                bottle.response.status = 400
+                return {"ok": False, "error": str(error)}
+            self._container.plugin_runtime.stop_plugin(entry["id"], "rollback")
+            self._drop_worker_cache(entry["id"])
+            return {"ok": True, "version": entry["version"]}
 
         def _drop_worker_cache(plugin_id):
             for name in ("_runtime_import_workers", "_import_workers"):

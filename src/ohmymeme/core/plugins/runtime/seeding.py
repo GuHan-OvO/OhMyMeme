@@ -368,6 +368,24 @@ def uninstall_plugin(data_dir, plugin_id):
     return True
 
 
+# 切换活动版本（回滚/前进）；版本必须已安装
+def activate_version(data_dir, plugin_id, version):
+    if not isinstance(version, str) or not _VERSION_PATTERN.match(version):
+        raise PluginSeedError("invalid_version", str(version))
+    state = read_state(data_dir)
+    entries = dict(state.get("plugins") or {})
+    record = dict(entries.get(plugin_id) or {})
+    versions = dict(record.get("versions") or {})
+    if version not in versions:
+        raise PluginSeedError("plugin_missing", str(version))
+    if not (plugins_dir(data_dir) / plugin_id / version).is_dir():
+        raise PluginSeedError("plugin_storage_missing", str(version))
+    record["active"] = version
+    entries[plugin_id] = record
+    write_state(data_dir, {"schema_version": STATE_SCHEMA_VERSION, "plugins": entries})
+    return resolve_plugin(data_dir, plugin_id)
+
+
 # 返回状态中全部非官方插件条目
 def installed_plugins(data_dir):
     state = read_state(data_dir)
@@ -376,7 +394,8 @@ def installed_plugins(data_dir):
         if plugin_id in OFFICIAL_IDS or not isinstance(record, dict):
             continue
         active = record.get("active")
-        version = (record.get("versions") or {}).get(active) or {}
+        versions = dict(record.get("versions") or {})
+        version = versions.get(active) or {}
         rows.append(
             {
                 "id": plugin_id,
@@ -384,6 +403,7 @@ def installed_plugins(data_dir):
                 "kind": version.get("kind", plugin_id.split(".", 1)[0]),
                 "origin": "installed",
                 "version": version.get("version", ""),
+                "versions": sorted(versions.keys()),
             }
         )
     return rows

@@ -63,6 +63,28 @@ def test_install_plugin_update_switches_active_version(tmp_path):
     assert (seeding.plugins_dir(data) / "community.demo" / "1.0.0").is_dir()
 
 
+def test_activate_version_rolls_back_and_forward(tmp_path):
+    data = tmp_path / "data"
+    for version in ("1.0.0", "2.0.0"):
+        seeding.install_plugin(
+            data,
+            _write_zip(
+                tmp_path / (version + ".zip"),
+                {"plugin.json": _meta(version=version), "demo_plugin.py": "x = 1\n"},
+            ),
+        )
+    assert seeding.installed_plugins(data)[0]["versions"] == ["1.0.0", "2.0.0"]
+    assert seeding.activate_version(data, "community.demo", "1.0.0")["version"] == (
+        "1.0.0"
+    )
+    assert seeding.activate_version(data, "community.demo", "2.0.0")["version"] == (
+        "2.0.0"
+    )
+    with pytest.raises(seeding.PluginSeedError) as error:
+        seeding.activate_version(data, "community.demo", "9.9.9")
+    assert error.value.reason == "plugin_missing"
+
+
 @pytest.mark.parametrize(
     "meta,reason",
     [
