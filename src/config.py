@@ -23,6 +23,9 @@ _SECRET_KEYS = {
     "ftp_password",
     "webdav_password",
     "lan_secret",
+    "ai_tag_api_key",
+    "ai_embed_api_key",
+    "ai_rerank_api_key",
 }
 
 # ~~~ 导入限制 ~~~（超过限制的图片拒绝入库）
@@ -128,6 +131,27 @@ class Config:
         "show_uncategorized": True,  # 显示「未分类」分组
         "record_recent_use": True,  # 复制时记录最近使用
         "show_startup_animation": True,  # 启动时播放启动动画（关闭时降级 300ms 延时）
+        # AI 智能（总开关默认关：不开启时不出现入口，也不发起任何网络请求）
+        "ai_enabled": False,
+        # 视觉打标
+        "ai_tag_enabled": False,
+        "ai_tag_endpoint": "",
+        "ai_tag_api_key": "",
+        "ai_tag_model": "",
+        "ai_tag_batch_size": 4,  # 每批送图的张数（每张为 2xN 宫格）
+        "ai_tag_timeout": 30,
+        "ai_tag_max_edge": 1024,  # 送模型前的最长边
+        "ai_tag_auto_on_import": False,
+        "ai_tag_write_to_tags": True,
+        "ai_tag_review_mode": True,  # 审核模式：AI 只出建议，用户确认后才写库
+        "ai_tag_style": "general",  # general/anime/work/gaming
+        # 嵌入（打标开启时由 set() 强制置 True）
+        "ai_embed_enabled": False,
+        "ai_embed_endpoint": "",
+        "ai_embed_api_key": "",
+        "ai_embed_model": "",
+        "ai_embed_batch_size": 32,
+        "ai_embed_top_k": 30,
     }
 
     def __init__(self, path: Path = None):
@@ -151,6 +175,12 @@ class Config:
             value = encrypt_data(str(value))
         self._data[key] = value
         self._dirty = True
+        self._apply_ai_invariant()
+
+    def _apply_ai_invariant(self):
+        """打标与嵌入是一组：打标开启则嵌入强制开启（嵌入的输入就是打标的产出）"""
+        if self._data.get("ai_tag_enabled") and not self._data.get("ai_embed_enabled"):
+            self._data["ai_embed_enabled"] = True
 
     def __getattr__(self, key):
         if key.startswith("_"):
@@ -198,6 +228,7 @@ class Config:
                 for k in self.DEFAULTS:
                     if k in raw:
                         self._data[k] = raw[k]
+                self._apply_ai_invariant()
                 self._migrate(raw)
             except (json.JSONDecodeError, OSError):
                 pass
