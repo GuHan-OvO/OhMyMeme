@@ -99,6 +99,22 @@ def _as_text(val):
     return val if isinstance(val, str) else ""
 
 
+def _load_json_list(val):
+    """JSON 文本/列表统一转字符串列表（脏数据一律退回空列表）
+
+    库里 ai_emotions/ai_intents 是 JSON 文本，模型返回与单测传的是 list，
+    故两种形态都必须吃下；本模块不依赖 database，故自带等价容错。
+    """
+    if isinstance(val, str):
+        try:
+            val = json.loads(val)
+        except (TypeError, ValueError):
+            return []
+    if not isinstance(val, list):
+        return []
+    return [str(x) for x in val]
+
+
 def _as_str_list(val, limit):
     """字段转去重字符串数组并截断（防模型刷屏给几十个）"""
     if not isinstance(val, list):
@@ -408,29 +424,43 @@ def cosine_topk(query, rows, k):
     return scored[: int(k)] if k and k > 0 else scored
 
 
+def _strip_tail_period(text):
+    """去掉段落首尾空白与句尾句号
+
+    分隔符由拼接统一给出，段落自带句尾句号会拼出「。。」；且可见文字
+    常写成「拿来。」而名称是「拿来」，不去尾就判不出同词，名称会被重复加权。
+    """
+    return text.strip().strip("。").strip()
+
+
 def build_embed_text(row):
-    """拼嵌入源文本：顺序与分隔符固定，保证同一表情文本稳定（否则 hash 反复变化）"""
+    """拼嵌入源文本：顺序与分隔符固定，保证同一表情文本稳定（否则 hash 反复变化）
+
+    emotions/intents 在库里是 JSON 文本、单测与模型产出是 list，两种形态都吃；
+    名称只保留一次（可见文字/标签与名称同词时剔除），否则该词被双重加权，
+    且所有记录都退化成「短名+描述+重复名+标签」的同构文本，格式相似性会
+    压过语义差异。
+    """
+    name = _strip_tail_period(_as_text(row.get("ai_name")))
+    visible = _strip_tail_period(_as_text(row.get("ai_visible_text")))
+    if visible == name:
+        visible = ""
+    tags = _as_str_list(_load_json_list(row.get("tags")), 8)
     parts = [
-        str(row.get("ai_name") or ""),
-        str(row.get("ai_description") or ""),
-        str(row.get("ai_visible_text") or ""),
-        (
-            " ".join(_as_str_list(row.get("ai_emotions"), 4))
-            if isinstance(row.get("ai_emotions"), list)
-            else ""
-        ),
-        (
-            " ".join(_as_str_list(row.get("ai_intents"), 5))
-            if isinstance(row.get("ai_intents"), list)
-            else ""
-        ),
-        (
-            " ".join(_as_str_list(row.get("tags"), 8))
-            if isinstance(row.get("tags"), list)
-            else ""
-        ),
+        name,
+        _strip_tail_period(_as_text(row.get("ai_description"))),
+        visible,
+        " ".join(_as_str_list(_load_json_list(row.get("ai_emotions")), 4)),
+        " ".join(_as_str_list(_load_json_list(row.get("ai_intents")), 5)),
+        " ".join(t for t in tags if t != name),
     ]
-    return "。".join(p for p in parts if p and p.strip())
+    # 空段不参与拼接；同名段只留首个（名称与可见文字同词时不再重复出现）
+    kept = []
+    for p in parts:
+        if p and p not in kept:
+            kept.append(p)
+    # 正文内若自带连续句号，一并收敛为单个（输出里不出现「。。」）
+    return re.sub(r"。(?:。)+", "。", "。".join(kept))
 
 
 def text_hash(text):

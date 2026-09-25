@@ -151,7 +151,8 @@ class Config:
         "ai_embed_api_key": "",
         "ai_embed_model": "",
         "ai_embed_batch_size": 32,
-        "ai_embed_top_k": 30,
+        "ai_embed_top_k": 30,  # 检索返回条数上限（实际条数还受最低相似度约束）
+        "ai_embed_min_score": 0.35,  # 最低相似度阈值，低于此值视为不相关
     }
 
     def __init__(self, path: Path = None):
@@ -175,12 +176,6 @@ class Config:
             value = encrypt_data(str(value))
         self._data[key] = value
         self._dirty = True
-        self._apply_ai_invariant()
-
-    def _apply_ai_invariant(self):
-        """打标与嵌入是一组：打标开启则嵌入强制开启（嵌入的输入就是打标的产出）"""
-        if self._data.get("ai_tag_enabled") and not self._data.get("ai_embed_enabled"):
-            self._data["ai_embed_enabled"] = True
 
     def __getattr__(self, key):
         if key.startswith("_"):
@@ -228,7 +223,6 @@ class Config:
                 for k in self.DEFAULTS:
                     if k in raw:
                         self._data[k] = raw[k]
-                self._apply_ai_invariant()
                 self._migrate(raw)
             except (json.JSONDecodeError, OSError):
                 pass

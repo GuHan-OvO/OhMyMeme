@@ -2214,7 +2214,13 @@ function aiNum(id, dflt) {
   return isNaN(v) ? dflt : v;
 }
 
-// 总开关：关闭时隐藏全部 AI 配置（零入口），开启后按子开关展开
+// 阈值是小数，不能走 aiNum（parseInt 会把 0.35 截成 0）
+function aiFloat(id, dflt) {
+  const v = parseFloat(aiVal(id));
+  return isNaN(v) ? dflt : v;
+}
+
+// 总开关：关闭时隐藏全部 AI 配置（零入口），开启后按各子开关独立展开
 function toggleAiEnabled() {
   const on = aiChecked('s-ai-enabled');
   const cfg = document.getElementById('ai-config-sections');
@@ -2225,18 +2231,24 @@ function toggleAiEnabled() {
   if (embed) embed.style.display = on ? 'block' : 'none';
   if (stats) stats.style.display = on ? 'block' : 'none';
   if (hint) hint.style.display = on ? 'none' : 'block';
-  if (on) toggleAiTag();
+  if (on) {
+    toggleAiTag();
+    toggleAiEmbed();
+  }
 }
 
-// 打标开关：嵌入随打标强制开启（嵌入的输入就是打标的产出），故置灰不可单独关
+// 打标开关：仅控制打标表单显隐（与嵌入相互独立，不再强制联动）
 function toggleAiTag() {
   const on = aiChecked('s-ai-tag-enabled');
   const body = document.getElementById('ai-tag-body');
-  const embedBody = document.getElementById('ai-embed-body');
-  const embedCb = document.getElementById('s-ai-embed-enabled');
   if (body) body.style.display = on ? 'block' : 'none';
-  if (embedBody) embedBody.style.display = on ? 'block' : 'none';
-  if (embedCb) embedCb.checked = on;
+}
+
+// 嵌入开关：独立控制嵌入表单显隐（总开关开启后即可自由开关）
+function toggleAiEmbed() {
+  const on = aiChecked('s-ai-embed-enabled');
+  const body = document.getElementById('ai-embed-body');
+  if (body) body.style.display = on ? 'block' : 'none';
 }
 
 // 收集 AI 配置（键名与 config.DEFAULTS 一致，走 save_settings 白名单写入）
@@ -2258,6 +2270,7 @@ function collectAiSettings() {
     ai_embed_model: aiVal('s-ai-embed-model').trim(),
     ai_embed_batch_size: aiNum('s-ai-embed-batch', 32),
     ai_embed_top_k: aiNum('s-ai-embed-topk', 30),
+    ai_embed_min_score: aiFloat('s-ai-embed-minscore', 0.35),
   };
 }
 
@@ -2291,6 +2304,7 @@ async function loadAiSettings() {
   setV('s-ai-embed-model', s.ai_embed_model || '');
   setV('s-ai-embed-batch', s.ai_embed_batch_size ?? 32);
   setV('s-ai-embed-topk', s.ai_embed_top_k ?? 30);
+  setV('s-ai-embed-minscore', s.ai_embed_min_score ?? 0.35);
   toggleAiEnabled();
 }
 

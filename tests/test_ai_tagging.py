@@ -385,6 +385,118 @@ def test_build_embed_text_tolerates_missing_fields():
     assert at.build_embed_text({}) == ""
 
 
+def test_build_embed_text_accepts_json_string_fields():
+    """生产路径从 DB 取出的 emotions/intents 是 JSON 文本，必须与 list 等价
+
+    真实缺陷：旧实现用 isinstance(..., list) 判断，字符串被判为非列表而整段
+    丢弃 —— 全库 54 条 100% 丢词（共 256 个），「开心」「喜爱」等情绪词从未
+    进入向量，这是语义召回不准的直接原因之一。
+    """
+    row = {
+        "ai_name": "讨厌",
+        "ai_description": "Q版角色张嘴呼喊",
+        "ai_visible_text": "",
+        "ai_emotions": '["委屈", "抗拒", "傲娇"]',
+        "ai_intents": '["拒绝", "撒娇", "吐槽"]',
+        "tags": ["Q版", "委屈"],
+    }
+    t = at.build_embed_text(row)
+    for part in ("委屈", "抗拒", "傲娇", "拒绝", "撒娇", "吐槽"):
+        assert part in t, "JSON 文本形态的字段被丢弃: %s" % part
+
+
+def test_build_embed_text_json_string_matches_list():
+    """两种形态必须产出完全相同的源文本，否则 hash 会随数据来源漂移"""
+    base = {
+        "ai_name": "猫",
+        "ai_description": "一只猫",
+        "ai_visible_text": "无语",
+        "tags": ["可爱"],
+    }
+    as_list = dict(base, ai_emotions=["开心"], ai_intents=["接梗"])
+    as_json = dict(base, ai_emotions='["开心"]', ai_intents='["接梗"]')
+    assert at.build_embed_text(as_list) == at.build_embed_text(as_json)
+
+
+def test_build_embed_text_keeps_list_contract():
+    """原有契约：list 形态必须继续工作（单测与模型产出都是 list）"""
+    t = at.build_embed_text(
+        {
+            "ai_name": "猫",
+            "ai_emotions": ["开心"],
+            "ai_intents": ["接梗"],
+            "tags": ["可爱"],
+        }
+    )
+    for part in ("猫", "开心", "接梗", "可爱"):
+        assert part in t
+
+
+def test_build_embed_text_tolerates_bad_json():
+    """脏数据（非法 JSON / 非列表 / 嵌套）一律退空，绝不抛异常"""
+    for bad in ('["未闭合', "not json", '{"a": 1}', "123", None, ["ok", 1, None]):
+        t = at.build_embed_text({"ai_name": "猫", "ai_emotions": bad, "tags": bad})
+        assert "猫" in t, "脏数据不应影响其它字段: %r" % (bad,)
+
+
+def test_build_embed_text_name_not_duplicated():
+    """name 只能出现一次：tags 里的同名项必须剔除
+
+    旧实现让 name 在开头与末尾各出现一次（id=41 的「讨厌」共出现 4 次），
+    既双重加权该词，又让所有记录退化成「短名+描述+重复名+标签」的同构文本，
+    格式相似性压过语义差异 —— 这是「搜讨厌搜出我喜欢你」的另一成因。
+    """
+    row = {
+        "ai_name": "讨厌",
+        "ai_description": "闭眼呼喊",
+        "ai_visible_text": "讨厌",
+        "ai_emotions": '["委屈"]',
+        "ai_intents": '["拒绝"]',
+        "tags": ["Q版", "讨厌", "委屈"],
+    }
+    t = at.build_embed_text(row)
+    assert t.count("讨厌") == 1, "name 重复出现: %r" % t
+    assert "Q版" in t and "委屈" in t, "剔除同名标签不得连坐其它标签"
+
+
+def test_build_embed_text_no_consecutive_separator():
+    """句尾句号与正文内的连续句号都不得漏进输出（分隔符只能由拼接给出）"""
+    row = {
+        "ai_name": "讨厌",
+        "ai_description": "Q版角色张嘴呼喊。",
+        "ai_visible_text": "",
+        "ai_emotions": '["委屈"]',
+        "tags": ["Q版"],
+    }
+    t = at.build_embed_text(row)
+    assert "。。" not in t, "句尾句号拼出连续分隔符: %r" % t
+    # 正文内部自带连续句号时也必须收敛（只有分隔符折叠能兜住这一形态）
+    t2 = at.build_embed_text(
+        {"ai_name": "猫", "ai_description": "张嘴呼喊。。然后闭嘴"}
+    )
+    assert "。。" not in t2, "正文内连续句号未被收敛: %r" % t2
+
+
+def test_build_embed_text_drops_duplicate_segments():
+    """名称与可见文字同词时只保留一次（否则该词被重复加权）"""
+    t = at.build_embed_text(
+        {"ai_name": "讨厌", "ai_visible_text": "讨厌", "ai_description": "呼喊"}
+    )
+    assert t.count("讨厌") == 1
+
+
+def test_build_embed_text_name_duplicate_with_trailing_period():
+    """可见文字写成「拿来。」时也要判出与名称同词（真库 id=6 的形态）
+
+    只 strip 空白不去句尾句号，就会漏判成两段不同词，名称照样被重复加权。
+    """
+    t = at.build_embed_text(
+        {"ai_name": "拿来", "ai_visible_text": "拿来。", "tags": ["拿来", "索要"]}
+    )
+    assert t.count("拿来") == 1, "带句尾句号的同名词未被去重: %r" % t
+    assert "索要" in t
+
+
 def test_text_hash_changes_with_content():
     assert at.text_hash("a") != at.text_hash("b")
     assert at.text_hash("a") == at.text_hash("a")
@@ -440,12 +552,6 @@ def _mk_db_with_vectors(tmp_path, monkeypatch):
         db.apply_embedding(mid, at.pack_vector(norm), "m", len(norm), "hash%d" % mid)
     monkeypatch.setattr(database_mod, "_db", db)
     return db
-
-
-def test_cosine_topk_orders_by_similarity():
-    rows = [(1, [1.0, 0.0]), (2, [0.0, 1.0]), (3, [0.7, 0.7])]
-    got = at.cosine_topk([1.0, 0.0], rows, 2)
-    assert [mid for mid, _ in got] == [1, 3]
 
 
 def test_get_by_ids_preserves_nothing_but_returns_rows(tmp_path):
@@ -583,8 +689,8 @@ def test_semantic_search_ranks_by_similarity(tmp_path, monkeypatch):
             }.get(k, d)
 
     api._cfg = Cfg()
-    # 查询向量最接近 id=2 的 [0,1,0]
-    monkeypatch.setattr(webui, "_query_embedding", lambda *a, **kw: [0.0, 1.0, 0.0])
+    # 查询向量与三条都非零相似（都过最低阈值），最接近 id=2 的 [0,1,0]
+    monkeypatch.setattr(webui, "_query_embedding", lambda *a, **kw: [0.5, 1.0, 0.6])
     got = api._semantic_search_ids("嘲讽", None, None, False, False)
     assert got is not None and got[0] == 2, "首位应为最相似者，实际 %r" % (got,)
     assert set(got) == {1, 2, 3}
@@ -612,7 +718,8 @@ def test_search_memes_uses_semantic_branch(tmp_path, monkeypatch):
             }.get(k, d)
 
     api._cfg = Cfg()
-    monkeypatch.setattr(webui, "_query_embedding", lambda *a, **kw: [0.0, 1.0, 0.0])
+    # 查询与三条都非零相似（都过最低阈值），最近的是 id=2
+    monkeypatch.setattr(webui, "_query_embedding", lambda *a, **kw: [0.5, 1.0, 0.6])
     # 关键词在库里任何字段都不存在，只有语义分支才可能返回结果
     rows = api.search_memes("完全不存在的字面词", None, None, 0, 10)
     assert len(rows) == 3, "语义分支应返回全部 3 条，实际 %d" % len(rows)
@@ -1022,3 +1129,207 @@ def test_jsapi_has_ai_forwarders():
         "ai_tag_discard",
     ):
         assert hasattr(webui.JsApi, name), name
+
+
+# ---------- 打标与嵌入相互独立（2026-09-25 用户改定）----------
+
+
+def test_tag_and_embed_are_independent(tmp_path):
+    """打标开启不得强制开启嵌入（原不变量已按用户要求移除）
+
+    改定理由：嵌入并非只能服务打标产出，用户可能只想给已有内容建向量，
+    也可能只想打标不想付嵌入费用。故两开关彼此独立，只在 UI 文案里推荐开启。
+    """
+    from src.config import Config
+
+    cfg = Config(tmp_path / "ind.json")
+    cfg.set("ai_tag_enabled", True)
+    cfg.set("ai_embed_enabled", False)
+    assert cfg.get("ai_embed_enabled") is False, "打标开启不应强制开嵌入"
+
+    # 反向：只开嵌入不开打标也必须允许
+    cfg2 = Config(tmp_path / "ind2.json")
+    cfg2.set("ai_embed_enabled", True)
+    cfg2.set("ai_tag_enabled", False)
+    assert cfg2.get("ai_embed_enabled") is True
+    assert cfg2.get("ai_tag_enabled") is False
+
+
+def test_invariant_word_order_does_not_matter(tmp_path):
+    """乱序 dict 与手改 config.json 都不得把嵌入翻回 True（旧不变量的两种触发路径）"""
+    import json
+
+    from src.config import Config
+
+    cfg = Config(tmp_path / "order.json")
+    cfg.update_from_dict({"ai_embed_enabled": False, "ai_tag_enabled": True})
+    assert cfg.get("ai_embed_enabled") is False
+
+    p = tmp_path / "hand.json"
+    p.write_text(
+        json.dumps({"ai_tag_enabled": True, "ai_embed_enabled": False}),
+        encoding="utf-8",
+    )
+    cfg2 = Config(p)
+    assert cfg2.get("ai_embed_enabled") is False
+
+
+def test_semantic_search_requires_embed_switch(tmp_path, monkeypatch):
+    """总开关开 + 嵌入关 时语义检索必须不可用（回退关键字）"""
+    from src import webui
+
+    db, _mid = _make_db(tmp_path)
+    api = webui.JsApi.__new__(webui.JsApi)
+    api._db = db
+
+    class Cfg:
+        def get(self, k, d=None):
+            return {
+                "ai_enabled": True,
+                "ai_tag_enabled": True,
+                "ai_embed_enabled": False,  # 只开打标
+                "ai_embed_endpoint": "https://x/v1",
+                "ai_embed_model": "m",
+            }.get(k, d)
+
+    api._cfg = Cfg()
+    assert api._semantic_search_ids("词", None, None, False, False) is None
+
+
+# ---------- 语义检索的最低相似度阈值（缺陷 3）----------
+
+
+def _mk_api_with_scores(tmp_path, monkeypatch, scores):
+    """造 pairs：查询向量固定 [1,0,0]，各 id 的余弦分数被精确钉在 scores 上"""
+    from src import webui
+
+    db = _mk_db_with_vectors(tmp_path, monkeypatch)
+    with db._lock:
+        conn = db._get_conn()
+        for mid in scores:
+            conn.execute(
+                "INSERT OR IGNORE INTO memes (id, filename, original_name, file_hash,"
+                " width, height, mime_type, ai_status)"
+                " VALUES (?,?,?,?,?,?,?,'done')",
+                (
+                    mid,
+                    "f%d.png" % mid,
+                    "名字%d" % mid,
+                    "h%d" % mid,
+                    10,
+                    10,
+                    "image/png",
+                ),
+            )
+        conn.commit()
+    for mid, cos in scores.items():
+        norm = at.l2_normalize([cos, (1.0 - cos * cos) ** 0.5])
+        db.apply_embedding(mid, at.pack_vector(norm), "m", 2, "h%d" % mid)
+    api = webui.JsApi.__new__(webui.JsApi)
+    api._db = db
+    api._cfg = _ScoreCfg({})
+    monkeypatch.setattr(webui, "_query_embedding", lambda *a, **kw: [1.0, 0.0])
+    return api
+
+
+class _ScoreCfg:
+    """按需返回配置（未给的键走 dflt，模拟 Config.get）"""
+
+    def __init__(self, data):
+        self._d = dict(data)
+
+    def get(self, k, d=None):
+        base = {
+            "ai_enabled": True,
+            "ai_embed_enabled": True,
+            "ai_embed_endpoint": "https://x/v1",
+            "ai_embed_model": "m",
+            "ai_embed_top_k": 30,
+        }
+        base.update(self._d)
+        return base.get(k, d)
+
+
+def test_semantic_search_filters_below_min_score(tmp_path, monkeypatch):
+    """低于阈值的候选不得返回（库小的时候 top_k=30 会半库命中）"""
+    api = _mk_api_with_scores(tmp_path, monkeypatch, {2: 0.9, 3: 0.2})
+    got = api._semantic_search_ids("词", None, None, False, False)
+    assert got is not None
+    # id=1 得分 1.0、id=2 得分 0.9 保留；id=3 得分 0.2 低于默认阈值 0.35
+    assert set(got) == {1, 2}, "低于阈值的项被返回: %r" % (got,)
+
+
+def test_semantic_search_relative_cutoff(tmp_path, monkeypatch):
+    """库中大段候选都略高于阈值时，返回条数应受 top_k 上限约束而非塞满
+
+    实测 0.35 这类绝对阈值在本机库上切不动任何东西（top-30 最低分 0.501），
+    故「实际相关数」主要靠阈值调到合适高度 + top_k 上限共同约束。
+    """
+    scores = {1: 0.68, 2: 0.65}
+    for i in range(3, 13):
+        scores[i] = 0.40
+    api = _mk_api_with_scores(tmp_path, monkeypatch, scores)
+    api._cfg = _ScoreCfg({"ai_embed_top_k": 3})
+    got = api._semantic_search_ids("词", None, None, False, False)
+    assert len(got) == 3, "top_k 上限未生效: %r" % (got,)
+    assert got[:2] == [1, 2], "应按相似度降序: %r" % (got,)
+    # 阈值调高到相关项之上即只留真相关（阈值是可用的相关性闸门）
+    api._cfg = _ScoreCfg({"ai_embed_top_k": 30, "ai_embed_min_score": 0.6})
+    assert api._semantic_search_ids("词", None, None, False, False) == [1, 2]
+
+
+def test_semantic_search_min_score_configurable(tmp_path, monkeypatch):
+    """阈值可配置：调高会滤掉更多，调低会放回（配置项不得形同虚设）"""
+    api = _mk_api_with_scores(tmp_path, monkeypatch, {2: 0.9, 3: 0.2})
+    api._cfg = _ScoreCfg({"ai_embed_min_score": 0.95})
+    assert api._semantic_search_ids("词", None, None, False, False) == [1]
+    api._cfg = _ScoreCfg({"ai_embed_min_score": 0.1})
+    assert set(api._semantic_search_ids("词", None, None, False, False)) == {1, 2, 3}
+
+
+def test_semantic_search_min_score_bad_value_falls_back(tmp_path, monkeypatch):
+    """配置成非数字时退回默认阈值，不得让搜索整体崩掉"""
+    api = _mk_api_with_scores(tmp_path, monkeypatch, {2: 0.9, 3: 0.1})
+    api._cfg = _ScoreCfg({"ai_embed_min_score": "abc"})
+    assert set(api._semantic_search_ids("词", None, None, False, False)) == {1, 2}
+
+
+def test_semantic_search_all_below_threshold_falls_back(tmp_path, monkeypatch):
+    """一条都不够相关时回退关键字路径（返回 None），而不是给出空结果页"""
+    api = _mk_api_with_scores(tmp_path, monkeypatch, {2: 0.01, 3: 0.01, 1: 0.9})
+    api._cfg = _ScoreCfg({"ai_embed_min_score": 0.95})
+    assert api._semantic_search_ids("词", None, None, False, False) is None
+
+
+def test_semantic_search_top_k_still_caps(tmp_path, monkeypatch):
+    """top_k 仍是上限：关闭过滤时返回条数不得突破 top_k"""
+    api = _mk_api_with_scores(tmp_path, monkeypatch, {2: 0.9, 3: 0.2})
+    api._cfg = _ScoreCfg({"ai_embed_min_score": 0.0, "ai_embed_top_k": 2})
+    got = api._semantic_search_ids("词", None, None, False, False)
+    assert len(got) == 2, "top_k 上限失效: %r" % (got,)
+
+
+def test_semantic_search_returns_only_real_matches(tmp_path, monkeypatch):
+    """低于阈值的弱相关项不得随 top_k 一起返回
+
+    这是缺陷 3 的回归守卫——修前 top_k=30 在本机 54 条库上恒返回 30 条，
+    与查询无关的项也一并混入。
+    """
+    scores = {1: 1.0, 2: 0.92, 3: 0.88}
+    for i in range(4, 13):
+        scores[i] = 0.30
+    api = _mk_api_with_scores(tmp_path, monkeypatch, scores)
+    api._cfg = _ScoreCfg({"ai_embed_top_k": 30})
+    got = api._semantic_search_ids("词", None, None, False, False)
+    assert got == [1, 2, 3], "返回了 %d 条，过阈值只有 3 条: %r" % (len(got), got)
+
+
+def test_default_min_score_is_sane():
+    """默认阈值必须落在「滤掉噪声」与「不误杀相关项」之间（实测 0.3 一带是噪声）"""
+    from src import webui
+
+    assert 0.2 <= webui._DEFAULT_EMBED_MIN_SCORE <= 0.6
+    from src.config import Config
+
+    assert "ai_embed_min_score" in Config.DEFAULTS
+    assert Config.DEFAULTS["ai_embed_min_score"] == webui._DEFAULT_EMBED_MIN_SCORE

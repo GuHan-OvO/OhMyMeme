@@ -403,7 +403,15 @@ class JsApi:
             if not pairs:
                 return None
             top_k = max(1, int(cfg.get("ai_embed_top_k", 30) or 30))
+            min_score = _embed_min_score(cfg)
             ranked = ai_tagging.cosine_topk(query_vec, pairs, top_k)
+            # 最低相似度过滤：低于阈值的候选按不相关丢弃，否则库里只有几十条时
+            # top_k=30 相当于把半个库当结果返回，不相关项必然混入。top_k 仍是
+            # 上限，真正的返回条数由「实际相关数」决定。
+            ranked = [(mid, score) for mid, score in ranked if score >= min_score]
+            if not ranked:
+                # 一个都不够相关时回退关键字搜索，避免语义冷门词变成空结果页
+                return None
             ids = [mid for mid, _score in ranked]
             # 必须在当前视图范围内过滤：否则切到某分组后仍会搜出全库结果
             allowed = set(
@@ -2984,6 +2992,23 @@ def get_import_progress() -> dict:
 _QUERY_VEC_CACHE = {}
 _QUERY_VEC_CACHE_MAX = 64
 _QUERY_VEC_LOCK = threading.Lock()
+
+# 最低相似度默认值（绝对下界）：实测 text-embedding-3-small 在本机 54 条库上
+# 成对余弦中位 0.505、最低 0.287，各条目身最近邻最低 0.551。0.35 取得偏保守
+# ——刻意低于「真相关项」的分数带，只当噪声地板用（不同模型的分数分布差异很
+# 大，阈值过硬会误杀相关项，故只作默认值、可经 ai_embed_min_score 调整）。
+_DEFAULT_EMBED_MIN_SCORE = 0.35
+
+
+def _embed_min_score(cfg):
+    """取最低相似度阈值（非法值退回默认，允许调低到 0 以关闭过滤）"""
+    try:
+        val = float(cfg.get("ai_embed_min_score", _DEFAULT_EMBED_MIN_SCORE))
+    except (TypeError, ValueError):
+        return _DEFAULT_EMBED_MIN_SCORE
+    if val < 0:
+        return _DEFAULT_EMBED_MIN_SCORE
+    return val
 
 
 def _query_embedding(endpoint, api_key, model, keyword):

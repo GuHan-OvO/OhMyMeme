@@ -229,10 +229,11 @@
 
     <div class="section" data-group="ai" id="ai-embed-section" style="display:none">
       <div class="section-title">语义检索（嵌入）</div>
-      <p style="font-size:11.5px;color:var(--muted);margin-bottom:10px;line-height:1.6">为已打标的表情生成向量，支持按含义搜索。嵌入的输入就是打标的产出，故随打标一起启用。</p>
-      <label class="check-row" style="margin-bottom:12px">
-        <input id="s-ai-embed-enabled" type="checkbox" disabled>启用语义检索<span class="immediate-hint">随打标开启</span>
+      <p style="font-size:11.5px;color:var(--muted);margin-bottom:10px;line-height:1.6">为表情生成向量，支持直接输入一句话按含义搜索（如「想怼人的表情」），不必精确匹配名称或标签。</p>
+      <label class="check-row">
+        <input id="s-ai-embed-enabled" type="checkbox" onchange="toggleAiEmbed()">启用语义检索
       </label>
+      <p style="font-size:11.5px;color:var(--muted);margin-top:4px;margin-bottom:12px;line-height:1.6">推荐开启：AI 打标产出的名称、描述与标签本身就是优质语义信号，开启后可整句搜索；需先生成向量，检索才生效。与视觉打标相互独立，可只开其一。</p>
 
       <div id="ai-embed-body" style="display:none">
         <div class="form-group">
@@ -254,6 +255,10 @@
         <div class="form-group">
           <label>检索返回条数</label>
           <input id="s-ai-embed-topk" placeholder="30">
+        </div>
+        <div class="form-group">
+          <label>最低相似度</label>
+          <input id="s-ai-embed-minscore" placeholder="0.35">
         </div>
 
         <div style="display:flex;gap:8px;margin-bottom:8px">
