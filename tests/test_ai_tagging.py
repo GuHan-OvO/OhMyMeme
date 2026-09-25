@@ -314,6 +314,19 @@ def test_normalize_endpoint_variants():
     assert at.normalize_endpoint("") == ""
 
 
+def test_normalize_endpoint_keeps_non_v1_path():
+    """已有版本段的端点不得再追加 /v1
+
+    部分服务商的版本段不是 /v1（/v4、/api/v3 等），旧实现一律追加会拼成
+    /v4/v1 导致请求 404。只有路径为空时才补默认版本段。
+    """
+    assert at.normalize_endpoint("https://x.com/v4") == "https://x.com/v4"
+    assert at.normalize_endpoint("https://x.com/api/v3") == "https://x.com/api/v3"
+    assert at.normalize_endpoint("https://x.com/v4/") == "https://x.com/v4"
+    # 带子路径但无版本段同样保留，不猜测用户意图
+    assert at.normalize_endpoint("https://x.com/openai") == "https://x.com/openai"
+
+
 # ---------- 向量工具 ----------
 
 
@@ -1131,6 +1144,44 @@ def test_jsapi_has_ai_forwarders():
         assert hasattr(webui.JsApi, name), name
 
 
+def test_jsapi_ai_get_settings_hides_secrets():
+    """主窗口只应拿到开关布尔值，不得下发已解密的 API key
+
+    JsApi 绑主窗口，其返回值对页面脚本可见；透传 SettingsApi 的全量配置
+    等于把解密后的密钥暴露给主窗口。设置页回填另走 SettingsApi 通道。
+    """
+    from src import webui
+
+    sentinel = "sk-should-never-reach-main-window"
+
+    class FakeSettingsApi:
+        def ai_get_settings(self):
+            return {
+                "ok": True,
+                "settings": {
+                    "ai_enabled": True,
+                    "ai_tag_enabled": False,
+                    "ai_embed_enabled": True,
+                    "ai_tag_api_key": sentinel,
+                    "ai_embed_api_key": sentinel,
+                },
+            }
+
+    class FakeWebUI:
+        _settings_api = FakeSettingsApi()
+
+    api = webui.JsApi.__new__(webui.JsApi)
+    api._webui = FakeWebUI()
+    res = api.ai_get_settings()
+    assert res["ok"] is True
+    assert res["settings"]["ai_enabled"] is True
+    assert res["settings"]["ai_tag_enabled"] is False
+    assert res["settings"]["ai_embed_enabled"] is True
+    # 关键断言：任何密钥都不得出现在返回值里
+    assert sentinel not in repr(res)
+    assert "api_key" not in repr(res)
+
+
 # ---------- 打标与嵌入相互独立（2026-09-25 用户改定）----------
 
 
@@ -1333,3 +1384,24 @@ def test_default_min_score_is_sane():
 
     assert "ai_embed_min_score" in Config.DEFAULTS
     assert Config.DEFAULTS["ai_embed_min_score"] == webui._DEFAULT_EMBED_MIN_SCORE
+
+
+def test_semantic_search_scopes_before_ranking(tmp_path, monkeypatch):
+    """先按视图范围过滤再取 top_k，否则分组内搜索会被全局 top_k 挤空
+
+    场景：全库高分项都排在 top_k 之外的分组内。旧实现先取全局 top_k 再过滤，
+    该分组的结果会被截断成空 → 返回 None 回退关键字，语义检索在分组视图内
+    静默失效。
+    """
+    scores = {1: 1.0, 2: 0.95, 3: 0.9, 4: 0.85}  # 全库 4 条
+    api = _mk_api_with_scores(tmp_path, monkeypatch, scores)
+    # top_k=2：若不先过滤，只留下 id=1、2，而它们不在分组内 → 过滤后为空
+    api._cfg = _ScoreCfg({"ai_embed_top_k": 2, "ai_embed_min_score": 0.0})
+    db = api._db
+    cid = db.create_collection("组")
+    for mid in (3, 4):
+        db.add_to_collection(mid, cid)
+
+    got = api._semantic_search_ids("词", None, cid, False, False)
+    assert got is not None, "分组内语义检索不应回退关键字"
+    assert got == [3, 4], "应只返回该分组内的命中项，实际: %r" % (got,)

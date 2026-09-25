@@ -11,6 +11,7 @@ import re
 import struct
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 
 # 单次请求超时与输出上限
 _HTTP_TIMEOUT = 30
@@ -287,13 +288,17 @@ def _raw_data_url(path, suffix):
 
 
 def normalize_endpoint(endpoint):
-    """归一化端点：补协议、去尾斜杠、缺 /v1 时补上"""
+    """归一化端点：补协议、去尾斜杠；仅当 URL 无路径时补默认版本段
+
+    部分服务商的版本段不是 /v1（如 /v4、/api/v3），对这类端点盲目追加 /v1
+    会拼成 /v4/v1 而请求 404，故只在路径为空时补 /v1。
+    """
     url = str(endpoint or "").strip().rstrip("/")
     if not url:
         return ""
     if not re.match(r"^https?://", url, re.I):
         url = "https://" + url
-    if not url.lower().endswith("/v1") and "/v1/" not in url.lower():
+    if not urlsplit(url).path:
         url += "/v1"
     return url
 

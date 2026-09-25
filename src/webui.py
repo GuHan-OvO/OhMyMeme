@@ -403,6 +403,21 @@ class JsApi:
                     pairs.append((int(r["id"]), vec))
             if not pairs:
                 return None
+            # 先在当前视图范围内过滤，再排序取前 k：若先取全局 top_k 再过滤，
+            # 在某分组内搜索时这 k 条可能全在分组外，过滤后为空会导致语义
+            # 检索在该视图中静默失效（回退关键字）。
+            allowed = set(
+                self._db.filter_ids_by_scope(
+                    [mid for mid, _vec in pairs],
+                    tags=tags,
+                    collection_id=scope_cid,
+                    favorite_only=fav_only,
+                    uncategorized_only=uncategorized,
+                )
+            )
+            if not allowed:
+                return None
+            pairs = [(mid, vec) for mid, vec in pairs if mid in allowed]
             top_k = max(1, int(cfg.get("ai_embed_top_k", 30) or 30))
             min_score = _embed_min_score(cfg)
             ranked = ai_tagging.cosine_topk(query_vec, pairs, top_k)
@@ -413,18 +428,7 @@ class JsApi:
             if not ranked:
                 # 一个都不够相关时回退关键字搜索，避免语义冷门词变成空结果页
                 return None
-            ids = [mid for mid, _score in ranked]
-            # 必须在当前视图范围内过滤：否则切到某分组后仍会搜出全库结果
-            allowed = set(
-                self._db.filter_ids_by_scope(
-                    ids,
-                    tags=tags,
-                    collection_id=scope_cid,
-                    favorite_only=fav_only,
-                    uncategorized_only=uncategorized,
-                )
-            )
-            return [mid for mid in ids if mid in allowed]
+            return [mid for mid, _score in ranked]
         except Exception as e:
             logger.warning("语义检索失败，回退关键字搜索: %s", e)
             return None
@@ -1290,8 +1294,21 @@ class JsApi:
         return get_ai_summary()
 
     def ai_get_settings(self) -> dict:
-        """AI 配置（主窗口据总开关决定是否显示入口）"""
-        return self._webui._settings_api.ai_get_settings()
+        """AI 开关状态（主窗口据总开关决定是否显示入口）
+
+        只回传开关布尔值，不下发 api_key 等密钥：主窗口并不需要它们，
+        而 webview 桥的返回值对页面脚本可见，透传全量配置等于把已解密的
+        密钥暴露给主窗口。设置页回填走 SettingsApi.ai_get_settings 独立通道。
+        """
+        s = self._webui._settings_api.ai_get_settings().get("settings") or {}
+        return {
+            "ok": True,
+            "settings": {
+                "ai_enabled": bool(s.get("ai_enabled")),
+                "ai_tag_enabled": bool(s.get("ai_tag_enabled")),
+                "ai_embed_enabled": bool(s.get("ai_embed_enabled")),
+            },
+        }
 
     def ai_tag_start(self, meme_ids=None) -> dict:
         """开始打标；不传表示处理全部待打标"""
