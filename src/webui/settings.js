@@ -2192,7 +2192,7 @@ async function startBackupRestore() {
   backupPollTimer = setInterval(pollBackupProgress, 300);
 }
 
-/* ~~~ AI 智能 ~~~ */
+/* ~~~ AI ~~~ */
 let aiTagPollTimer = null;
 let aiEmbedPollTimer = null;
 let aiReviewItems = [];
@@ -2237,7 +2237,7 @@ function toggleAiEnabled() {
   }
 }
 
-// 打标开关：仅控制打标表单显隐（与嵌入相互独立，不再强制联动）
+// tagging 开关：仅控制 tagging 表单显隐（与嵌入相互独立，不再强制联动）
 function toggleAiTag() {
   const on = aiChecked('s-ai-tag-enabled');
   const body = document.getElementById('ai-tag-body');
@@ -2329,7 +2329,7 @@ function aiStatusEl(id, msg, isError) {
   setStatusColor(el, isError ? 'error' : 'ok');
 }
 
-/* --- 打标 --- */
+/* --- tagging --- */
 
 async function testAiTagConnection() {
   aiStatusPending('ai-tag-status', '正在测试...');
@@ -2360,7 +2360,7 @@ async function retryAiTagFailed() {
 }
 
 function showAiTagProgress() {
-  document.getElementById('ai-tag-progress-title').textContent = '正在打标...';
+  document.getElementById('ai-tag-progress-title').textContent = '正在 tagging...';
   document.getElementById('ai-tag-progress-msg').textContent = '准备中';
   document.getElementById('ai-tag-progress-bar').style.width = '0%';
   document.getElementById('ai-tag-progress-pct').textContent = '0%';
@@ -2382,12 +2382,12 @@ function showAiTagProgress() {
         nullCount++;
         if (nullCount > 20) {
           if (aiTagPollTimer) { clearInterval(aiTagPollTimer); aiTagPollTimer = null; }
-          document.getElementById('ai-tag-progress-title').textContent = '打标中断';
+          document.getElementById('ai-tag-progress-title').textContent = 'tagging 中断';
           const err = document.getElementById('ai-tag-progress-error');
           err.style.display = 'block';
           err.textContent = '连接中断';
           if (cb) { cb.style.display = 'none'; }
-          aiStatusEl('ai-tag-status', '打标失败：连接中断', true);
+          aiStatusEl('ai-tag-status', 'tagging 失败：连接中断', true);
         }
         return;
       }
@@ -2401,7 +2401,7 @@ function showAiTagProgress() {
       if (aiTagPollTimer) { clearInterval(aiTagPollTimer); aiTagPollTimer = null; }
       if (cb) cb.style.display = 'none';
       if (s.status === 'done') {
-        document.getElementById('ai-tag-progress-title').textContent = '打标完成';
+        document.getElementById('ai-tag-progress-title').textContent = 'tagging 完成';
         let msg = '完成：已处理 ' + (s.done || 0) + ' 张';
         if (s.suggested) msg += '，产出建议 ' + s.suggested + ' 条';
         if (s.failed) msg += '，失败 ' + s.failed + ' 张';
@@ -2409,14 +2409,14 @@ function showAiTagProgress() {
         loadAiStats();
       } else if (s.status === 'cancelled') {
         document.getElementById('ai-tag-progress-title').textContent = '已取消';
-        aiStatusEl('ai-tag-status', '打标已取消', false);
+        aiStatusEl('ai-tag-status', 'tagging 已取消', false);
         loadAiStats();
       } else {
-        document.getElementById('ai-tag-progress-title').textContent = '打标失败';
+        document.getElementById('ai-tag-progress-title').textContent = 'tagging 失败';
         const err = document.getElementById('ai-tag-progress-error');
         err.style.display = 'block';
         err.textContent = s.error || '未知错误';
-        aiStatusEl('ai-tag-status', '打标失败：' + (s.error || '未知错误'), true);
+        aiStatusEl('ai-tag-status', 'tagging 失败：' + (s.error || '未知错误'), true);
       }
     } finally {
       pollInFlight = false;
@@ -2570,7 +2570,7 @@ async function loadAiStats() {
   const s = r.stats;
   // 各状态键是动态的：某状态 0 行时该键不存在，必须兜底
   const rows = [
-    ['未打标', s.unprocessed ?? 0],
+    ['待 tagging', s.unprocessed ?? 0],
     ['待审核', s.pending_review ?? 0],
     ['已完成', s.done ?? 0],
     ['进行中', s.running ?? 0],

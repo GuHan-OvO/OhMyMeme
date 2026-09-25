@@ -85,12 +85,12 @@ defineExpose({ open })
         </div>
         <div class="ai-info-right">
           <div v-if="detail.status === null || detail.status === undefined" class="ai-info-note">
-            这张表情还没有 AI 解读。可在设置页「AI 智能」中打标，或在右键菜单里对单张打标。
+            这张表情还没有 AI 解读。可在设置页「AI」中 tagging，或在右键菜单里对单张 tagging。
           </div>
           <div v-else-if="detail.status === 'failed'" class="ai-info-note error">
-            上次打标失败{{ detail.error ? '：' + detail.error : '' }}
+            上次 tagging 失败{{ detail.error ? '：' + detail.error : '' }}
           </div>
-          <div v-else-if="detail.status === 'running'" class="ai-info-note">正在打标...</div>
+          <div v-else-if="detail.status === 'running'" class="ai-info-note">正在 tagging...</div>
 
           <div v-if="detail.name" class="ai-info-row">
             <span class="ai-info-label">名称</span>

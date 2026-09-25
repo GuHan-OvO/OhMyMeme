@@ -1,9 +1,5 @@
 """AI 打标与嵌入 - 视觉请求、GIF 抽帧与向量工具
 
-提示词与 GIF 宫格算法移植自 astrbot_plugin_private_companion（v6.6.2）：
-- 提示词：page_api.py 的 _reaction_library_analysis_prompt
-- 宫格：reaction_asset_library.py 的 get_analysis_image_data
-
 本模块只做纯逻辑（编码/解析/HTTP/向量），不依赖 database 与 webui，便于单测。
 """
 

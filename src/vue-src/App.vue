@@ -205,7 +205,7 @@ function showToast(msg: string) {
   setTimeout(() => el.classList.remove('show'), 1600)
 }
 
-// ---- AI 智能接线 ----
+// ---- AI 接线 ----
 
 // 读取总开关与子开关（主窗口据总开关决定是否出现入口）
 async function loadAiSettings() {
@@ -238,14 +238,14 @@ async function refreshAiPending() {
 async function aiStartForMeme(memeId: number) {
   const r = await window.pywebview?.api?.ai_tag_start([memeId])
   if (r && r.ok) {
-    showToast('已开始打标')
+    showToast('已开始 tagging')
     aiWatchTagProgress()
   } else {
-    showToast((r && r.error) || '打标启动失败')
+    showToast((r && r.error) || 'tagging 启动失败')
   }
 }
 
-// 单张打标后轮询到终态，刷新角标与卡片（search(false) 保留当前页）
+// 单张 tagging 后轮询到终态，刷新角标与卡片（search(false) 保留当前页）
 function aiWatchTagProgress() {
   let nullCount = 0
   const timer = setInterval(async () => {
@@ -253,7 +253,7 @@ function aiWatchTagProgress() {
     if (!s) {
       if (++nullCount > 20) {
         clearInterval(timer)
-        showToast('打标状态读取中断')
+        showToast('tagging 状态读取中断')
       }
       return
     }
@@ -261,13 +261,13 @@ function aiWatchTagProgress() {
     if (!s.status || s.status === 'idle' || s.status === 'running') return
     clearInterval(timer)
     if (s.status === 'done') {
-      showToast('打标完成')
+      showToast('tagging 完成')
       refreshAiPending()
       search(false)
     } else if (s.status === 'cancelled') {
-      showToast('打标已取消')
+      showToast('tagging 已取消')
     } else {
-      showToast('打标失败：' + (s.error || '未知错误'))
+      showToast('tagging 失败：' + (s.error || '未知错误'))
     }
   }, 500)
 }
@@ -424,7 +424,7 @@ function onMemeRightClick(e: MouseEvent, meme: Meme) {
   const items: MenuItem[] = [
     { action: 'rename', label: '重命名' },
     { action: 'favorite', label: meme.favorited ? '取消收藏' : '收藏' },
-    { action: 'tag', label: '打标签' },
+    { action: 'tag', label: 'tag' },
     { action: 'collection', label: '添加分组' },
   ]
   if (state.activeCollection && state.activeCollection > 0) {
@@ -433,7 +433,7 @@ function onMemeRightClick(e: MouseEvent, meme: Meme) {
   items.push({ action: 'add-to-subgroup', label: '加入分组' })
   // AI 入口：总开关关闭时完全不出现（零入口）
   if (aiEnabled.value) {
-    items.push({ action: 'ai-tag', label: 'AI 打标', disabled: !aiTagEnabled.value })
+    items.push({ action: 'ai-tag', label: 'AI tagging', disabled: !aiTagEnabled.value })
     items.push({ action: 'ai-detail', label: '查看 AI 解读' })
     if (aiPendingCount.value > 0) {
       items.push({ action: 'ai-review', label: '审核 AI 建议（' + aiPendingCount.value + '）' })
@@ -713,7 +713,7 @@ function batchMoveToCollection() {
   }, 'move', ids, fromId)
 }
 
-// 批量打标签：合并追加语义（不清空各表情已有标签）
+// 批量 tag：合并追加语义（不清空各表情已有标签）
 async function batchTag() {
   const ids = [...state.selectedIds]
   if (ids.length === 0) return
@@ -723,7 +723,7 @@ async function batchTag() {
   try {
     result = await window.pywebview?.api?.batch_add_tags(ids, tags)
   } catch (_) {
-    showToast('批量打标签失败')
+    showToast('批量 tag 失败')
     return
   }
   if (result?.ok) {
@@ -731,7 +731,7 @@ async function batchTag() {
     refreshTags()
     search()
   } else {
-    showToast('批量打标签失败')
+    showToast('批量 tag 失败')
   }
 }
 
@@ -1133,7 +1133,7 @@ onUnmounted(() => {
           <button class="btn btn-sm" :disabled="state.memes.length === 0" @click="selectAllVisible">全选当前页</button>
           <button class="btn btn-sm btn-secondary" :disabled="state.selectedIds.size === 0" @click="clearSelection">取消选择</button>
           <button class="btn btn-sm" :disabled="state.selectedIds.size === 0" @click="batchAddToCollection">加入分组</button>
-          <button class="btn btn-sm" :disabled="state.selectedIds.size === 0" @click="batchTag">打标签</button>
+          <button class="btn btn-sm" :disabled="state.selectedIds.size === 0" @click="batchTag">tag</button>
           <button v-if="state.activeCollection && state.activeCollection > 0" class="btn btn-sm" :disabled="state.selectedIds.size === 0" @click="batchMoveToCollection">移动到分组</button>
           <button class="btn btn-sm btn-danger" :disabled="state.selectedIds.size === 0" @click="batchDelete">批量删除</button>
         </div>
@@ -1210,7 +1210,7 @@ onUnmounted(() => {
                   </button>
                   <span v-if="meme.from_stego" class="gif-badge stego-badge">隐写导入</span>
                   <span v-else-if="meme.is_animated" class="gif-badge">{{ meme.is_gif ? 'GIF' : 'WebP' }}</span>
-                  <span v-if="aiEnabled && aiTagEnabled && !meme.ai_status" class="gif-badge ai-pending-badge">未打标</span>
+                  <span v-if="aiEnabled && aiTagEnabled && !meme.ai_status" class="gif-badge ai-pending-badge">待 tagging</span>
                   <span v-if="aiEnabled && aiPendingIds.has(meme.id)" class="gif-badge ai-review-badge">AI 待审</span>
                   <span class="meme-name">{{ meme.name }}</span>
                 </div>
